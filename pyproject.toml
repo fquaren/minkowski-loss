@@ -1,0 +1,53 @@
+[project]
+name = "mink-ddpm"
+version = "1.0.0"
+description = "Emulating non-differentiable Minkowski functionals via knowledge-guided learning"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Filippo Quarenghi", email = "filippo.quarenghi@gmail.com" },
+]
+keywords = [
+    "differentiability",
+    "knowledge-guided machine learning",
+    "Minkowski functionals",
+    "radar precipitation",
+    "super-resolution",
+]
+
+dependencies = [
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+    "numpy>=2.2",
+    "scipy>=1.15",
+    "scikit-image>=0.25",
+    "scikit-learn>=1.7",
+    "gudhi>=3.11",
+    "zarr>=2.18,<3",
+    "numcodecs>=0.13",
+    "xarray",
+    "rasterio",
+    "pyyaml>=6.0",
+    "tqdm",
+    "matplotlib",
+    "pandas",
+    "optuna>=4.0",
+    "pillow",
+    "seaborn",
+    "statsmodels",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "flake8",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
