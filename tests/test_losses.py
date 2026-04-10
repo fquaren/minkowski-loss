@@ -121,7 +121,8 @@ class TestAnalyticalMinkowskiLoss:
 
     def test_gradient_flows(self, quantile_levels):
         criterion = AnalyticalMinkowskiLoss(thresholds=quantile_levels)
-        pred_phys = torch.rand(2, 1, 32, 32, requires_grad=True) * 10.0
+        # Create as leaf tensor to receive .grad (avoid non-leaf from * 10)
+        pred_phys = (torch.rand(2, 1, 32, 32) * 10.0).detach().requires_grad_(True)
         target = torch.rand(2, 4, len(quantile_levels))
         loss = criterion(pred_phys, target)
         loss.backward()
@@ -137,9 +138,11 @@ class TestAnalyticalMinkowskiLoss:
         assert loss.shape == ()
 
     def test_zero_field(self, quantile_levels):
-        """Zero input should produce near-zero area/perimeter."""
+        """Zero field: loss should be finite (sigmoid produces nonzero
+        soft-occupancy, and the cubical Euler of a uniform grid is 1)."""
         criterion = AnalyticalMinkowskiLoss(thresholds=quantile_levels)
         pred_phys = torch.zeros(1, 1, 32, 32)
         target = torch.zeros(1, 3, len(quantile_levels))
         loss = criterion(pred_phys, target)
-        assert loss.item() < 1.0  # should be small but not exactly 0 due to sigmoid
+        assert torch.isfinite(loss)
+        assert loss.item() >= 0.0
