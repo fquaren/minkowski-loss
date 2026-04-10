@@ -1,15 +1,17 @@
 """
-Integral-geometric target computation via persistent homology.
+Computation of Minkowski functionals (area, perimeter, topology) via
+persistent homology and excursion set analysis.
 
-This module is the single source of truth for computing the gamma-vector
-(Area, Perimeter, B0/Euler) from 2D precipitation fields. It consolidates
-logic previously duplicated across compute_gamma_targets.py,
-compute_persistence_thresholds.py, evaluate_baselines.py, and
-test_emulator_suite.py.
+This module is the single source of truth for all topological target
+computation in the Mink-DDPM project. It is used by:
+  - Preprocessing (offline gamma target generation)
+  - Evaluation (exact metric computation on predictions)
+  - Testing (mechanistic emulator verification)
 
 References:
-    Schneider & Weil (2008), Stochastic and Integral Geometry, Springer.
-    Maria et al. (2014), The GUDHI library, INRIA.
+  - GUDHI library: Maria et al., 2014
+  - Persistent homology for excursion sets: Edelsbrunner & Harer, 2010
+  - Minkowski functionals: Schneider & Weil, 2008
 """
 
 import warnings
@@ -19,388 +21,482 @@ from skimage import measure
 
 
 # ---------------------------------------------------------------------------
-# Low-level TDA
+# 1. Low-level TDA primitives
 # ---------------------------------------------------------------------------
 
 def compute_persistence_diagram(field_2d: np.ndarray) -> list:
-    """
-    Compute the persistence diagram of a 2D precipitation field using
-    superlevel-set filtration (implemented via negation + sublevel-set).
+    """Compute the persistence diagram of a 2D field via superlevel-set filtration.
+
+    We negate the field so that GUDHI's sublevel-set filtration recovers
+    superlevel-set features (precipitation peaks → connected components).
 
     Parameters
     ----------
     field_2d : np.ndarray, shape (H, W)
-        Physical precipitation field. NaNs are replaced with 0.0 prior
-        to filtration so they map to the background level after negation.
+        Physical precipitation field. NaN values are replaced with 0.0
+        (background / no precipitation).
 
     Returns
     -------
-    list of (dim, (birth, death)) tuples in the *negated* domain.
+    list of (dim, (birth, death))
+        Raw persistence pairs from GUDHI, in the *negated* domain.
     """
     clean = np.nan_to_num(field_2d, nan=0.0).astype(np.float64)
-    neg = -clean
+    neg_field = -clean
     cc = gd.CubicalComplex(
-        dimensions=neg.shape, top_dimensional_cells=neg.flatten()
+        dimensions=neg_field.shape,
+        top_dimensional_cells=neg_field.flatten(),
     )
     return cc.persistence()
 
 
-def extract_persistence_pairs(diagram: list, dim: int) -> np.ndarray:
+def _extract_pairs(persistence_pairs: list, dim: int) -> np.ndarray:
+    """Extract (birth, death) pairs for a given homological dimension.
+
+    Returns an empty (0, 2) array if no pairs exist for that dimension.
     """
-    Extract birth-death pairs for a given homological dimension,
-    converted back to the original (non-negated) domain.
-
-    Parameters
-    ----------
-    diagram : list
-        Output of compute_persistence_diagram.
-    dim : int
-        Homological dimension (0 for components, 1 for holes).
-
-    Returns
-    -------
-    np.ndarray, shape (n_pairs, 4)
-        Columns: [birth_orig, death_orig, persistence, is_essential]
-        where is_essential=1 for infinite-persistence features.
-    """
-    raw = np.array(
-        [p[1] for p in diagram if p[0] == dim], dtype=np.float64
-    )
-    if raw.shape[0] == 0:
-        return np.empty((0, 4), dtype=np.float64)
-
-    # Convert from negated sublevel-set to original superlevel-set coords
-    births = -raw[:, 0]
-    deaths = -raw[:, 1]
-
-    # Identify essential features (infinite death in negated domain
-    # becomes -inf in original; these are the global background)
-    is_essential = np.isinf(deaths) & (deaths < 0)
-    deaths[is_essential] = np.inf
-    persistence = births - deaths
-    persistence[is_essential] = np.inf
-
-    return np.column_stack([births, deaths, persistence,
-                            is_essential.astype(np.float64)])
+    pairs = [p[1] for p in persistence_pairs if p[0] == dim]
+    if not pairs:
+        return np.empty((0, 2), dtype=np.float64)
+    return np.array(pairs, dtype=np.float64)
 
 
 # ---------------------------------------------------------------------------
-# Betti number counting at given thresholds
+# 2. Betti number counting at given thresholds
 # ---------------------------------------------------------------------------
 
-def count_betti_at_thresholds(
-    pairs: np.ndarray,
+def _count_b0(
+    persistence_pairs: list,
     thresholds: np.ndarray,
-    persistence_threshold: float,
-    include_background_at_low: bool = True,
-    background_threshold: float = 0.01,
+    thresh_b0: float,
 ) -> np.ndarray:
-    """
-    Count the number of significant topological features alive at each
-    physical threshold, implementing Proposition 1 from the paper.
+    """Count persistence-filtered connected components (B0) at each threshold.
 
-    A feature born at b and dying at d is alive at threshold u iff:
-        b >= u  AND  d < u  (for finite features)
-    The essential (background) component is counted only when
-    u <= background_threshold.
+    In superlevel-set persistence (obtained by negating the field for
+    GUDHI's sublevel-set algorithm):
+
+    - Components are **born** at local maxima of the precipitation field.
+    - Components **die** at saddle points where they merge into an older
+      (higher-born) component.
+    - The **essential** feature is the global maximum: it never merges
+      and is alive at every threshold t < birth.
+
+    A finite component is alive at threshold t if:
+        birth >= t  AND  death < t  AND  persistence > thresh_b0
+
+    The essential component is alive at threshold t if:
+        birth >= t  (it never dies, so no death condition)
 
     Parameters
     ----------
-    pairs : np.ndarray, shape (n, 4)
-        Output of extract_persistence_pairs.
+    persistence_pairs : list
+        Raw GUDHI output from `compute_persistence_diagram`.
     thresholds : np.ndarray, shape (Q,)
-        Physical intensity thresholds.
-    persistence_threshold : float
-        Minimum persistence to count a feature as significant.
-    include_background_at_low : bool
-        Whether to include the essential feature at low thresholds.
-    background_threshold : float
-        Maximum threshold value at which the essential feature is counted.
+        Physical intensity thresholds in mm/h.
+    thresh_b0 : float
+        Minimum persistence to consider a feature significant.
 
     Returns
     -------
     np.ndarray, shape (Q,)
-        Feature count at each threshold.
+        Filtered B0 counts at each threshold.
     """
-    if pairs.shape[0] == 0:
-        return np.zeros(len(thresholds), dtype=np.float32)
+    pairs_d0 = _extract_pairs(persistence_pairs, dim=0)
+    counts = np.zeros(len(thresholds), dtype=np.float32)
 
-    births = pairs[:, 0]
-    deaths = pairs[:, 1]
-    persistence = pairs[:, 2]
-    is_essential = pairs[:, 3].astype(bool)
+    if pairs_d0.shape[0] == 0:
+        return counts
 
-    is_significant = persistence > persistence_threshold
-    thresh_bcast = thresholds[np.newaxis, :]  # (1, Q)
+    # Convert from negated domain back to original coordinates.
+    # GUDHI sublevel: birth_neg < death_neg.
+    # Original superlevel: birth_orig = -birth_neg > -death_neg = death_orig.
+    births = -pairs_d0[:, 0]   # peak intensity where component appears
+    deaths = -pairs_d0[:, 1]   # saddle intensity where component merges
 
-    # Finite features: born >= u AND dead < u AND significant
-    finite_mask = (
+    # Essential feature: GUDHI returns death_neg = +inf for the component
+    # that never merges.  After negation: death_orig = -inf.
+    is_essential = ~np.isfinite(deaths)
+
+    # Persistence: birth - death for finite pairs, inf for essential.
+    persistence = np.where(is_essential, np.inf, births - deaths)
+    is_significant = persistence > thresh_b0
+
+    # Broadcast: (n_pairs, 1) vs (1, Q)
+    thresh_1d = thresholds[np.newaxis, :]
+
+    # Finite features: alive at threshold t if born above t and dead below t
+    alive_finite = (
         is_significant[:, np.newaxis]
-        & (births[:, np.newaxis] >= thresh_bcast)
-        & (deaths[:, np.newaxis] < thresh_bcast)
         & (~is_essential[:, np.newaxis])
+        & (births[:, np.newaxis] >= thresh_1d)
+        & (deaths[:, np.newaxis] < thresh_1d)
     )
-    counts = np.sum(finite_mask, axis=0).astype(np.float32)
 
-    # Essential (background) feature at low thresholds
-    if include_background_at_low:
-        bg_mask = (
-            is_significant[:, np.newaxis]
-            & (births[:, np.newaxis] >= thresh_bcast)
-            & is_essential[:, np.newaxis]
-            & (thresh_bcast <= background_threshold)
-        )
-        counts += np.sum(bg_mask, axis=0).astype(np.float32)
+    # Essential feature: alive at every threshold below its birth value
+    alive_essential = (
+        is_essential[:, np.newaxis]
+        & (births[:, np.newaxis] >= thresh_1d)
+    )
 
-    return counts
+    counts = np.sum(alive_finite, axis=0) + np.sum(alive_essential, axis=0)
+    return counts.astype(np.float32)
 
 
-# ---------------------------------------------------------------------------
-# Area and perimeter computation
-# ---------------------------------------------------------------------------
-
-def compute_area_perimeter(
-    field_2d: np.ndarray,
+def _count_b1(
+    persistence_pairs: list,
     thresholds: np.ndarray,
-    pixel_size_km: float = 2.0,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Compute excursion-set area (km^2) and perimeter (km) at each threshold.
+    thresh_b1: float,
+) -> np.ndarray:
+    """Count persistence-filtered holes (B1) at each threshold.
 
-    Area is computed as the count of pixels above threshold times pixel area.
-    Perimeter uses the marching-squares algorithm at the 0.5 contour level
-    of the binary mask, scaled by pixel resolution.
+    A hole born at `birth_orig` and dying at `death_orig` is alive at
+    threshold t if: birth_orig >= t AND death_orig < t.
 
     Parameters
     ----------
-    field_2d : np.ndarray, shape (H, W)
-        Physical precipitation field (NaN-cleaned).
+    persistence_pairs : list
+        Raw GUDHI output from `compute_persistence_diagram`.
     thresholds : np.ndarray, shape (Q,)
-    pixel_size_km : float
+        Physical intensity thresholds in mm/h.
+    thresh_b1 : float
+        Minimum persistence to consider a hole significant.
 
     Returns
     -------
-    area : np.ndarray, shape (Q,)
-        Excursion-set area in km^2.
-    perimeter : np.ndarray, shape (Q,)
-        Excursion-set perimeter in km.
+    np.ndarray, shape (Q,)
+        Filtered B1 counts at each threshold.
     """
-    pixel_area = pixel_size_km ** 2
-    clean = np.nan_to_num(field_2d, nan=0.0)
-    Q = len(thresholds)
+    pairs_d1 = _extract_pairs(persistence_pairs, dim=1)
+    counts = np.zeros(len(thresholds), dtype=np.float32)
 
-    # Vectorized area via broadcasting: (H, W, 1) >= (1, 1, Q)
-    masks = clean[..., np.newaxis] >= thresholds[np.newaxis, np.newaxis, :]
-    area = np.sum(masks, axis=(0, 1)).astype(np.float32) * pixel_area
+    if pairs_d1.shape[0] == 0:
+        return counts
 
-    # Perimeter via marching squares (not vectorizable)
-    perimeter = np.zeros(Q, dtype=np.float32)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=UserWarning)
-        for i in range(Q):
-            if not np.any(masks[:, :, i]):
-                continue
-            contours = measure.find_contours(
-                masks[:, :, i].astype(np.float64), 0.5
-            )
-            perimeter[i] = sum(
-                np.linalg.norm(np.diff(c, axis=0), axis=1).sum()
-                for c in contours
-            ) * pixel_size_km
+    births = -pairs_d1[:, 0]
+    deaths = -pairs_d1[:, 1]
+    persistence = births - deaths
 
-    return area, perimeter
+    is_significant = persistence > thresh_b1
+    thresh_1d = thresholds[np.newaxis, :]
+
+    alive = (
+        is_significant[:, np.newaxis]
+        & (births[:, np.newaxis] >= thresh_1d)
+        & (deaths[:, np.newaxis] < thresh_1d)
+    )
+
+    counts = np.sum(alive, axis=0)
+    return counts.astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
-# Full gamma-matrix computation
+# 3. Area and perimeter via excursion sets
+# ---------------------------------------------------------------------------
+
+def _compute_area(masks_3d: np.ndarray, pixel_area_km2: float) -> np.ndarray:
+    """Compute excursion set area at each threshold.
+
+    Parameters
+    ----------
+    masks_3d : np.ndarray, shape (H, W, Q)
+        Boolean excursion set masks.
+    pixel_area_km2 : float
+        Physical area of a single pixel in km².
+
+    Returns
+    -------
+    np.ndarray, shape (Q,)
+    """
+    return np.sum(masks_3d, axis=(0, 1)).astype(np.float32) * pixel_area_km2
+
+
+def _compute_perimeter(masks_3d: np.ndarray, pixel_size_km: float) -> np.ndarray:
+    """Compute excursion set perimeter at each threshold via marching squares.
+
+    Uses sub-pixel contour extraction at the 0.5 level of the binary mask,
+    scaled by the physical pixel resolution.
+
+    Parameters
+    ----------
+    masks_3d : np.ndarray, shape (H, W, Q)
+        Boolean excursion set masks.
+    pixel_size_km : float
+        Physical pixel edge length in km.
+
+    Returns
+    -------
+    np.ndarray, shape (Q,)
+    """
+    n_thresholds = masks_3d.shape[2]
+    perimeters = np.zeros(n_thresholds, dtype=np.float32)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=UserWarning)
+        for i in range(n_thresholds):
+            mask = masks_3d[:, :, i]
+            if not np.any(mask):
+                continue
+            contours = measure.find_contours(mask.astype(float), 0.5)
+            total_px = sum(
+                np.linalg.norm(np.diff(c, axis=0), axis=1).sum()
+                for c in contours
+            )
+            perimeters[i] = total_px * pixel_size_km
+
+    return perimeters
+
+
+# ---------------------------------------------------------------------------
+# 4. Full gamma matrix computation
 # ---------------------------------------------------------------------------
 
 def compute_gamma_matrix(
     field_2d: np.ndarray,
     thresholds: np.ndarray,
-    pixel_size_km: float = 2.0,
-    thresh_b0: float = 0.05,
-    thresh_b1: float = 0.05,
-    topology_target: str = "euler",
+    pixel_size_km: float,
+    thresh_b0: float,
+    thresh_b1: float,
 ) -> np.ndarray:
-    """
-    Compute the full gamma-matrix for a single precipitation field.
+    """Compute the 4-channel gamma matrix [A, P, B0, B1] for a precipitation field.
+
+    This is the lossless representation storing all four Minkowski-related
+    quantities. Downstream code selects the desired 3-channel subset
+    (A, P, B0) or (A, P, chi=B0-B1) via `select_topology_target`.
 
     Parameters
     ----------
     field_2d : np.ndarray, shape (H, W)
-        Physical precipitation field.
+        Physical precipitation field in mm/h.
     thresholds : np.ndarray, shape (Q,)
-        Physical intensity thresholds.
+        Physical intensity thresholds in mm/h.
     pixel_size_km : float
-        Spatial resolution of a single pixel.
+        Pixel edge length in km.
     thresh_b0 : float
-        Persistence noise floor for 0-dimensional features (components).
+        Persistence threshold for connected components.
     thresh_b1 : float
-        Persistence noise floor for 1-dimensional features (holes).
-    topology_target : str, one of {"euler", "b0"}
-        If "euler": third row is chi = B0 - B1 (Euler characteristic).
-        If "b0": third row is B0 only (connected component count).
+        Persistence threshold for holes.
 
     Returns
     -------
-    gamma : np.ndarray, shape (3, Q) if topology_target in {"euler", "b0"}
-            or shape (4, Q) if you need all four channels.
-        Row 0: Area (km^2)
-        Row 1: Perimeter (km)
-        Row 2: B0 or chi depending on topology_target
+    np.ndarray, shape (4, Q), dtype float32
+        Row 0: area (km²)
+        Row 1: perimeter (km)
+        Row 2: B0 (connected components)
+        Row 3: B1 (holes)
     """
-    if topology_target not in ("euler", "b0"):
-        raise ValueError(
-            f"topology_target must be 'euler' or 'b0', got '{topology_target}'"
-        )
-
-    Q = len(thresholds)
     thresholds = np.asarray(thresholds, dtype=np.float32)
+    n_q = len(thresholds)
+    gamma = np.zeros((4, n_q), dtype=np.float32)
 
-    # 1. Geometry
-    area, perimeter = compute_area_perimeter(field_2d, thresholds, pixel_size_km)
+    clean = np.nan_to_num(field_2d, nan=0.0)
+    pixel_area_km2 = pixel_size_km ** 2
 
-    # 2. Topology
-    diagram = compute_persistence_diagram(field_2d)
+    # Excursion set masks: (H, W, Q)
+    masks_3d = clean[..., np.newaxis] >= thresholds[np.newaxis, np.newaxis, :]
 
-    pairs_b0 = extract_persistence_pairs(diagram, dim=0)
-    b0 = count_betti_at_thresholds(
-        pairs_b0, thresholds, thresh_b0,
-        include_background_at_low=True
-    )
+    # Area and perimeter (geometric, no TDA)
+    gamma[0, :] = _compute_area(masks_3d, pixel_area_km2)
+    gamma[1, :] = _compute_perimeter(masks_3d, pixel_size_km)
 
-    if topology_target == "euler":
-        pairs_b1 = extract_persistence_pairs(diagram, dim=1)
-        b1 = count_betti_at_thresholds(
-            pairs_b1, thresholds, thresh_b1,
-            include_background_at_low=False
-        )
-        topo_row = b0 - b1  # Euler characteristic (can be negative)
-    else:
-        topo_row = b0
+    # Topological features via persistent homology
+    persistence_pairs = compute_persistence_diagram(clean)
+    gamma[2, :] = _count_b0(persistence_pairs, thresholds, thresh_b0)
+    gamma[3, :] = _count_b1(persistence_pairs, thresholds, thresh_b1)
 
-    gamma = np.stack([area, perimeter, topo_row], axis=0)
     return gamma
 
 
-def compute_gamma_matrix_4ch(
-    field_2d: np.ndarray,
-    thresholds: np.ndarray,
-    pixel_size_km: float = 2.0,
-    thresh_b0: float = 0.05,
-    thresh_b1: float = 0.05,
+def select_topology_target(
+    gamma_4ch: np.ndarray,
+    mode: str = "euler",
 ) -> np.ndarray:
-    """
-    Compute the 4-channel gamma matrix [A, P, B0, B1] for storage.
-
-    This is used during preprocessing to store all four channels,
-    allowing the choice of B0 vs Euler to be made at training time
-    without rerunning the TDA pipeline.
-
-    Returns
-    -------
-    gamma : np.ndarray, shape (4, Q)
-    """
-    thresholds = np.asarray(thresholds, dtype=np.float32)
-
-    area, perimeter = compute_area_perimeter(field_2d, thresholds, pixel_size_km)
-
-    diagram = compute_persistence_diagram(field_2d)
-
-    pairs_b0 = extract_persistence_pairs(diagram, dim=0)
-    b0 = count_betti_at_thresholds(
-        pairs_b0, thresholds, thresh_b0,
-        include_background_at_low=True
-    )
-
-    pairs_b1 = extract_persistence_pairs(diagram, dim=1)
-    b1 = count_betti_at_thresholds(
-        pairs_b1, thresholds, thresh_b1,
-        include_background_at_low=False
-    )
-
-    return np.stack([area, perimeter, b0, b1], axis=0)
-
-
-# ---------------------------------------------------------------------------
-# Persistence threshold estimation
-# ---------------------------------------------------------------------------
-
-def estimate_persistence_thresholds(
-    fields: np.ndarray,
-    percentile: float = 95.0,
-) -> dict:
-    """
-    Estimate empirical persistence noise floors from a collection of fields.
-
-    Collects all finite persistence values across the sample and returns
-    the specified percentile as the threshold for each homological dimension.
+    """Convert 4-channel gamma to 3-channel with the chosen topology target.
 
     Parameters
     ----------
-    fields : np.ndarray, shape (N, H, W)
-        Sample of precipitation fields (physical units).
-    percentile : float
-        Percentile of the persistence distribution to use as noise floor.
+    gamma_4ch : np.ndarray, shape (..., 4, Q)
+        Full gamma matrix with [A, P, B0, B1].
+    mode : str
+        "euler" → third channel is chi = B0 - B1 (Euler characteristic).
+        "b0"   → third channel is B0 (connected components only).
 
     Returns
     -------
-    dict with keys "thresh_b0", "thresh_b1", "thresh_unified".
+    np.ndarray, shape (..., 3, Q)
+        Gamma matrix with [A, P, topology_target].
     """
+    if mode == "euler":
+        topo = gamma_4ch[..., 2, :] - gamma_4ch[..., 3, :]
+    elif mode == "b0":
+        topo = gamma_4ch[..., 2, :]
+    else:
+        raise ValueError(f"Unknown topology mode: {mode!r}. Use 'euler' or 'b0'.")
+
+    return np.stack([gamma_4ch[..., 0, :], gamma_4ch[..., 1, :], topo], axis=-2)
+
+
+# ---------------------------------------------------------------------------
+# 5. Dataset-level statistics (used during preprocessing)
+# ---------------------------------------------------------------------------
+
+def compute_climatological_thresholds(
+    zarr_path: str,
+    quantiles: np.ndarray,
+    drizzle_threshold: float = 0.1,
+    max_pixels: int = 50_000_000,
+    chunk_size: int = 5000,
+    seed: int = 42,
+) -> np.ndarray:
+    """Compute physical precipitation thresholds from the training CDF.
+
+    Samples wet pixels (above drizzle threshold) from the training split
+    and returns the physical intensity values corresponding to the
+    requested quantile levels.
+
+    Parameters
+    ----------
+    zarr_path : str
+        Path to preprocessed_dataset.zarr.
+    quantiles : np.ndarray
+        Quantile levels in [0, 1], e.g. [0.01, 0.05, ..., 0.99].
+    drizzle_threshold : float
+        Minimum intensity to consider a pixel "wet".
+    max_pixels : int
+        Maximum number of wet pixels to sample (memory bound).
+    chunk_size : int
+        Number of samples to read per Zarr chunk.
+    seed : int
+        Random seed for reproducible sampling.
+
+    Returns
+    -------
+    np.ndarray, shape (len(quantiles),), dtype float32
+        Physical thresholds in mm/h.
+    """
+    import zarr
+    from tqdm import tqdm
+
+    store = zarr.open(zarr_path, mode="r")
+    if "train" not in store:
+        raise ValueError("Train group not found in Zarr store.")
+
+    train_data = store["train/original_precip"]
+    rng = np.random.default_rng(seed=seed)
+
+    indices = np.arange(train_data.shape[0])
+    rng.shuffle(indices)
+
+    sampled_wet = []
+    pixel_count = 0
+
+    for i in tqdm(range(0, len(indices), chunk_size), desc="Sampling wet pixels"):
+        if pixel_count >= max_pixels:
+            break
+        chunk_idx = np.sort(indices[i : i + chunk_size])
+        chunk = train_data.oindex[chunk_idx]
+        wet = chunk[chunk > drizzle_threshold]
+        sampled_wet.append(wet)
+        pixel_count += len(wet)
+
+    all_wet = np.concatenate(sampled_wet)
+    thresholds = np.quantile(all_wet, quantiles).astype(np.float32)
+
+    print(f"Sampled {len(all_wet)} wet pixels.")
+    for q, t in zip(quantiles, thresholds):
+        print(f"  q={q:.2f} → {t:.4f} mm/h")
+
+    return thresholds
+
+
+def compute_persistence_thresholds(
+    zarr_path: str,
+    num_samples: int = 2000,
+    target_percentile: float = 95.0,
+    seed: int = 42,
+    max_workers: int = 4,
+) -> dict:
+    """Estimate empirical persistence noise floors from the training data.
+
+    Computes persistence diagrams on a random subset of training images
+    and returns the requested percentile of the persistence distribution
+    for B0 and B1 independently.
+
+    Parameters
+    ----------
+    zarr_path : str
+        Path to preprocessed_dataset.zarr.
+    num_samples : int
+        Number of images to sample.
+    target_percentile : float
+        Percentile of the persistence distribution defining the noise floor.
+    seed : int
+        Random seed.
+    max_workers : int
+        Number of parallel workers for TDA computation.
+
+    Returns
+    -------
+    dict with keys:
+        "thresh_b0": float
+        "thresh_b1": float
+        "unified": float (max of both)
+    """
+    import zarr
+    from tqdm import tqdm
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    store = zarr.open(zarr_path, mode="r")
+    if "train" not in store:
+        raise ValueError("Train group not found in Zarr store.")
+
+    train_data = store["train/original_precip"]
+    total = train_data.shape[0]
+
+    rng = np.random.default_rng(seed=seed)
+    sample_idx = np.sort(
+        rng.choice(total, size=min(num_samples, total), replace=False)
+    )
+    images = train_data.oindex[sample_idx]
+
     all_p_b0 = []
     all_p_b1 = []
 
-    for i in range(fields.shape[0]):
-        diagram = compute_persistence_diagram(fields[i])
-
-        for dim, (b, d) in diagram:
+    def _extract_persistences(img):
+        pairs = compute_persistence_diagram(img)
+        p0, p1 = [], []
+        for dim, (b, d) in pairs:
             if not np.isfinite(b) or not np.isfinite(d):
                 continue
             pers = abs(b - d)
             if pers <= 1e-6:
                 continue
             if dim == 0:
-                all_p_b0.append(pers)
+                p0.append(pers)
             elif dim == 1:
-                all_p_b1.append(pers)
+                p1.append(pers)
+        return p0, p1
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_extract_persistences, img) for img in images]
+        for future in tqdm(as_completed(futures), total=len(futures), desc="TDA"):
+            b0_vals, b1_vals = future.result()
+            all_p_b0.extend(b0_vals)
+            all_p_b1.extend(b1_vals)
 
     all_p_b0 = np.array(all_p_b0)
     all_p_b1 = np.array(all_p_b1)
 
-    thresh_b0 = float(np.percentile(all_p_b0, percentile)) if len(all_p_b0) > 0 else 0.0
-    thresh_b1 = float(np.percentile(all_p_b1, percentile)) if len(all_p_b1) > 0 else 0.0
+    thresh_b0 = float(np.percentile(all_p_b0, target_percentile)) if len(all_p_b0) > 0 else 0.0
+    thresh_b1 = float(np.percentile(all_p_b1, target_percentile)) if len(all_p_b1) > 0 else 0.0
+    unified = max(thresh_b0, thresh_b1)
+
+    print(f"Persistence thresholds at {target_percentile}th percentile:")
+    print(f"  B0: {thresh_b0:.4f}")
+    print(f"  B1: {thresh_b1:.4f}")
+    print(f"  Unified (max): {unified:.4f}")
 
     return {
         "thresh_b0": thresh_b0,
         "thresh_b1": thresh_b1,
-        "thresh_unified": max(thresh_b0, thresh_b1),
+        "unified": unified,
     }
-
-
-# ---------------------------------------------------------------------------
-# Climatological threshold computation
-# ---------------------------------------------------------------------------
-
-def compute_climatological_thresholds(
-    wet_pixels: np.ndarray,
-    quantiles: np.ndarray,
-) -> np.ndarray:
-    """
-    Map probability quantiles to physical intensity thresholds using
-    the empirical CDF of precipitating (wet) pixels.
-
-    Parameters
-    ----------
-    wet_pixels : np.ndarray, shape (N_pixels,)
-        All pixel values exceeding the drizzle threshold from the
-        training set.
-    quantiles : np.ndarray, shape (Q,)
-        Probability levels in [0, 1].
-
-    Returns
-    -------
-    np.ndarray, shape (Q,)
-        Physical thresholds in mm/h.
-    """
-    return np.quantile(wet_pixels, quantiles).astype(np.float32)
