@@ -1,0 +1,3 @@
+# UNet + analytical Minkowski loss hyperparameters
+lr: 1.0e-3
+weight_decay: 1.0e-4

@@ -1,0 +1,4 @@
+# UNet + emulator loss hyperparameters
+# Tune with: scripts/train/train_unet_emulator.py --tune
+lr: 1.0e-4
+weight_decay: 1.0e-5

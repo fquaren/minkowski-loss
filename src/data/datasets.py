@@ -218,6 +218,7 @@ class DeterministicSRDataset(Dataset):
     ):
         self.dem_mean, self.dem_std = dem_stats
         self.scaler_max_val = float(scaler_max_val)
+        self.split = split
         self.is_train = (split == "train")
         self.topology_mode = topology_mode
         self.load_in_ram = load_in_ram
@@ -277,7 +278,7 @@ class DeterministicSRDataset(Dataset):
     def _init_zarr(self):
         if self._store is None:
             self._store = zarr.open(self.zarr_path, mode="r")
-            self._group = self._store[self.split if hasattr(self, 'split') else 'train']
+            self._group = self._store[self.split]
 
     def __len__(self):
         return len(self.valid_indices)
@@ -291,13 +292,7 @@ class DeterministicSRDataset(Dataset):
             gamma_phys = self.ram_gamma[real_idx]
             dem_patch = self.ram_dem[real_idx]
         else:
-            if self._store is None:
-                self._store = zarr.open(self.zarr_path, mode="r")
-                # Determine split from metadata path
-                for s in ["train", "validation", "test"]:
-                    if s in self._store:
-                        self._group = self._store[s]
-                        break
+            self._init_zarr()
             target_phys = self._group["original_precip"][real_idx]
             interp_phys = self._group["interpolated_precip"][real_idx]
             gamma_phys = self._group["gamma_targets"][real_idx]

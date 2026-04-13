@@ -1,0 +1,71 @@
+# ==============================================================================
+# Mink-DDPM Configuration
+# Emulating Non-Differentiable Metrics via Knowledge-Guided Learning
+# ==============================================================================
+
+# --- I/O PATHS ---
+RAW_OPERA_DATA_DIR: "/home/fquareng/work/data/extremes/OPERA/raw/OPERA"
+METADATA_DIR: "/home/fquareng/work/data/extremes/OPERA"
+PREPROCESSED_DATA_DIR: "/home/fquareng/work/data/extremes/OPERA/patches/precip"
+DEM_DATA_DIR: "/home/fquareng/work/data/extremes/OPERA/patches/dem"
+DEM_STATS: "/home/fquareng/work/data/extremes/OPERA/patches/dem/dem_stats.json"
+STATIC_DEM_PATH: "/home/fquareng/work/data/extremes/OPERA/europe_dem_laea.tif"
+
+TRAIN_METADATA_FILE: "/home/fquareng/work/data/extremes/OPERA/train_patches_metadata.txt"
+VAL_METADATA_FILE: "/home/fquareng/work/data/extremes/OPERA/val_patches_metadata.txt"
+TEST_METADATA_FILE: "/home/fquareng/work/data/extremes/OPERA/test_patches_metadata.txt"
+
+# --- PHYSICAL PREPROCESSING ---
+PRECIP_VAR_NAME: "TOT_PREC"
+PATCH_SIZE: 128
+DOWNSCALING_FACTOR: 12.5   # ERA5-like to OPERA (25km / 2km)
+PIXEL_SIZE_KM: 2.0
+DRIZZLE_THRESHOLD: 0.1     # mm/h — sensor noise floor
+DECLUTTER_THRESHOLD: 150.0  # mm/h — unphysical upper bound
+WORKER_CHUNK_SIZE: 250
+PREPROCESS_BATCH_SIZE: 1000  # batch size for Zarr preprocessing (distinct from training)
+
+SPLIT_RATIOS:
+  train: 0.8
+  validation: 0.1
+  test: 0.1
+
+# --- TOPOLOGY CONFIGURATION ---
+# "euler" = chi = B0 - B1 (Euler characteristic, matches analytical approx.)
+# "b0"    = connected components only (original paper setup)
+TOPOLOGY_MODE: "euler"
+
+# Climatological quantile levels for Minkowski functional thresholds.
+# These are quantiles of the wet-pixel CDF, mapped to physical mm/h thresholds.
+QUANTILE_LEVELS: [
+  0.01, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45,
+  0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.99
+]
+
+# --- EMULATOR ---
+ARCHITECTURE: "Constrained"  # "Baseline", "Lipschitz", or "Constrained"
+EMULATOR_CHECKPOINT_PATH: ""  # set after training
+
+# Mixup augmentation
+MIXUP_ALPHA: 0.2
+NOISE_STD: 0.05
+
+# --- TRAINING (shared defaults) ---
+DEVICE: "cuda"
+NUM_WORKERS: 4
+MAX_WORKERS: 4
+BATCH_SIZE: 128
+NUM_EPOCHS: 25
+PATIENCE: 5
+EARLY_STOPPING_PATIENCE: 15  # emulator (longer patience)
+
+# Dataset balancing
+WET_DRY_RATIO: 1.0
+
+# --- MINKOWSKI LOSS CONFIGURATION ---
+MINKOWSKI_TARGET_WEIGHT: 0.0   # 0 = MSE only; >0 = MSE + geometric loss
+MINKOWSKI_WARMUP_EPOCHS: 5     # epochs before geometric loss activates
+TRUST_TAU: 0.005725            # trust gating coefficient for emulator loss
+
+# --- EXPERIMENT ---
+EXPERIMENT_NAME: "DDPM_SR_Minkowski"
