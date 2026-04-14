@@ -17,16 +17,25 @@ echo "Starting preprocessing pipeline — log: $LOG_FILE"
 {
     echo "=== Preprocessing started at $(date) on $(hostname) ==="
 
-    echo "--- Stage 1: Zarr store creation ---"
+    echo "--- Stage 0: Download digital elevation model ---"
+    "${PROJECT_ROOT}/scripts/preprocess/download_dem.sh" "$CONFIG"
+
+    echo "--- Stage 1: Generate metadata ---"
+    micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/generate_metadata.py" "$CONFIG"
+
+    echo "--- Stage 2: Split and shuffle metadata ---"
+    micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/split_metadata.py" "$CONFIG"
+
+    echo "--- Stage 3: Zarr store creation ---"
     micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/preprocess_data.py" "$CONFIG"
 
-    echo "--- Stage 2: Persistence thresholds ---"
+    echo "--- Stage 4: Persistence thresholds ---"
     micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/compute_persistence_thresholds.py" "$CONFIG"
 
-    echo "--- Stage 3: Gamma targets ---"
+    echo "--- Stage 5: Gamma targets ---"
     micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/compute_gamma_targets.py" "$CONFIG"
 
-    echo "--- Stage 4: Mixup augmentation ---"
+    echo "--- Stage 6: Mixup augmentation ---"
     micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/apply_mixup.py" "$CONFIG"
 
     echo "=== Preprocessing complete at $(date) ==="
