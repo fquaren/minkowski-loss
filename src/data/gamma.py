@@ -408,6 +408,27 @@ def compute_climatological_thresholds(
     return thresholds
 
 
+def _extract_persistences(img: np.ndarray) -> tuple:
+    """Worker function to compute persistence diagram metrics for a single image.
+    
+    Extracted from compute_persistence_thresholds to allow Python's pickle 
+    module to serialize the function across process boundaries.
+    """
+    pairs = compute_persistence_diagram(img)
+    p0, p1 = [], []
+    for dim, (b, d) in pairs:
+        if not np.isfinite(b) or not np.isfinite(d):
+            continue
+        pers = abs(b - d)
+        if pers <= 1e-6:
+            continue
+        if dim == 0:
+            p0.append(pers)
+        elif dim == 1:
+            p1.append(pers)
+    return p0, p1
+
+
 def compute_persistence_thresholds(
     zarr_path: str,
     num_samples: int = 2000,
@@ -460,21 +481,6 @@ def compute_persistence_thresholds(
 
     all_p_b0 = []
     all_p_b1 = []
-
-    def _extract_persistences(img):
-        pairs = compute_persistence_diagram(img)
-        p0, p1 = [], []
-        for dim, (b, d) in pairs:
-            if not np.isfinite(b) or not np.isfinite(d):
-                continue
-            pers = abs(b - d)
-            if pers <= 1e-6:
-                continue
-            if dim == 0:
-                p0.append(pers)
-            elif dim == 1:
-                p1.append(pers)
-        return p0, p1
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(_extract_persistences, img) for img in images]

@@ -1,40 +1,41 @@
 #!/usr/bin/env python
 """Create the preprocessed Zarr store from raw OPERA data and metadata.
 
-This is Stage 3 of the preprocessing pipeline (after metadata generation
-and consolidation). It reads patch metadata, extracts precipitation and
-DEM patches, applies filtering and coarsening, and writes to Zarr.
+This orchestration script distributes tasks to a process pool while 
+enforcing strict threading constraints for safety across C-extensions.
 """
 
 import argparse
 import os
-import json
 import multiprocessing as mp
-import numpy as np
 import zarr
+import numcodecs
+import yaml
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from src.utils import load_config
 from src.data.preprocessing import (
     process_batch, compute_global_scaler, compute_dem_stats,
 )
 
 
+def load_config(config_path: str) -> dict:
+    """Load configuration variables from YAML file."""
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f)
+
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Preprocess OPERA patches into Zarr store."
-    )
+    parser = argparse.ArgumentParser(description="Preprocess OPERA patches into Zarr store.")
     parser.add_argument("config", type=str, help="Path to config.yaml")
     args = parser.parse_args()
 
     config = load_config(args.config)
 
-    # Load timestamp map
+    # Prevent thread deadlocks during multiprocessing fork/spawn
+    numcodecs.blosc.use_threads = False
+
     map_path = os.path.join(config["METADATA_DIR"], "timestamp_map.json")
-    print(f"Loading timestamp map from {map_path}...")
-    with open(map_path, "r") as f:
-        timestamp_map = json.load(f)
 
     metadata_paths = {
         "train": os.path.join(config["METADATA_DIR"], "train_patches_metadata.txt"),
@@ -42,9 +43,7 @@ def main():
         "test": os.path.join(config["METADATA_DIR"], "test_patches_metadata.txt"),
     }
 
-    output_zarr = os.path.join(
-        config["PREPROCESSED_DATA_DIR"], "preprocessed_dataset.zarr"
-    )
+    output_zarr = os.path.join(config["PREPROCESSED_DATA_DIR"], "preprocessed_dataset.zarr")
     print(f"Creating Zarr store at: {output_zarr}")
     root = zarr.open(output_zarr, mode="w")
 
@@ -66,24 +65,24 @@ def main():
         n = len(lines)
         if n == 0:
             continue
+        print(f"Found {n} patches for '{group_name}'.")
 
         group = root.create_group(group_name)
-        for name, shape, chunks in [
-            ("original_precip", (n, patch_size, patch_size),
-             (1, patch_size, patch_size)),
-            ("interpolated_precip", (n, patch_size, patch_size),
-             (1, patch_size, patch_size)),
-            ("coarse_precip", (n, coarse_size, coarse_size),
-             (1, coarse_size, coarse_size)),
-            ("dem", (n, patch_size, patch_size),
-             (1, patch_size, patch_size)),
-        ]:
+        compressor = numcodecs.Blosc(cname="zstd", clevel=3, shuffle=numcodecs.Blosc.BITSHUFFLE)
+
+        # Initialize lock-free chunking structure (one patch per disk file)
+        for name, shape, chunks in tqdm([
+            ("original_precip", (n, patch_size, patch_size), (1, patch_size, patch_size)),
+            ("interpolated_precip", (n, patch_size, patch_size), (1, patch_size, patch_size)),
+            ("coarse_precip", (n, coarse_size, coarse_size), (1, coarse_size, coarse_size)),
+            ("dem", (n, patch_size, patch_size), (1, patch_size, patch_size)),
+        ], desc="Initializing Zarr datasets"):
             group.create_dataset(
-                name, shape=shape, chunks=chunks, dtype="float32"
+                name, shape=shape, chunks=chunks, dtype="float32", compressor=compressor
             )
 
-        # timestamp_map is included in static_args (not per-task)
-        static_args = (output_zarr, dem_path, group_name, config, timestamp_map)
+        # Transmit map_path rather than the loaded JSON mapping
+        static_args = (output_zarr, dem_path, group_name, config, map_path)
 
         tasks = []
         for i, line in enumerate(lines):
@@ -98,30 +97,27 @@ def main():
 
         all_payloads[group_name] = payloads
 
-    # Process each split
     max_workers = config.get("MAX_WORKERS", 4)
 
     for group_name, payloads in all_payloads.items():
         total = sum(len(p["tasks"]) for p in payloads)
-        print(f"\n--- Processing '{group_name}' ({total} patches, "
-              f"{len(payloads)} batches) ---")
+        print(f"\n--- Processing '{group_name}' ({total} patches) ---")
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(process_batch, p) for p in payloads]
-            for future in tqdm(as_completed(futures), total=len(payloads),
-                               desc=group_name):
+            for future in tqdm(as_completed(futures), total=len(payloads), desc=group_name):
                 results = future.result()
-                for msg in results:
-                    print(msg)
+                if results:
+                    for msg in results:
+                        print(msg)
 
     print("\nZarr store creation complete.")
 
-    # Compute normalisation statistics
+    # Compute global scaler and DEM stats
     compute_global_scaler(output_zarr, config["PREPROCESSED_DATA_DIR"])
-
+    
     dem_stats_path = config.get(
-        "DEM_STATS",
-        os.path.join(config["PREPROCESSED_DATA_DIR"], "dem_stats.json"),
+        "DEM_STATS", os.path.join(config["PREPROCESSED_DATA_DIR"], "dem_stats.json")
     )
     compute_dem_stats(output_zarr, dem_stats_path)
 

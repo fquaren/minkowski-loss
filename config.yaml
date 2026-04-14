@@ -57,7 +57,7 @@ MAX_WORKERS: 4
 BATCH_SIZE: 128
 NUM_EPOCHS: 25
 PATIENCE: 5
-EARLY_STOPPING_PATIENCE: 15  # emulator (longer patience)
+EARLY_STOPPING_PATIENCE: 15  # emulator
 
 # Dataset balancing
 WET_DRY_RATIO: 1.0

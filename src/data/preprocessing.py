@@ -2,7 +2,8 @@
 Data preprocessing: physical filtering, coarsening, and Zarr store creation.
 
 All operations run on CPU to avoid CUDA context initialization in
-multiprocessing workers.
+multiprocessing workers. IPC overhead is minimized by localizing 
+metadata loading to the worker process memory.
 """
 
 import os
@@ -13,11 +14,12 @@ import zarr
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
+
+# Module-level cache for worker processes
+_WORKER_TIMESTAMP_MAP = None
 
 
-def filter_precip_bounds(arr: np.ndarray, min_thresh: float,
-                         max_thresh: float) -> np.ndarray:
+def filter_precip_bounds(arr: np.ndarray, min_thresh: float, max_thresh: float) -> np.ndarray:
     """Zero out precipitation outside [min_thresh, max_thresh].
 
     Parameters
@@ -72,16 +74,25 @@ def process_batch(batch_payload: dict) -> list:
     Reads precipitation and DEM patches, applies filtering and
     coarsening, and writes results to the shared Zarr store.
     """
+    global _WORKER_TIMESTAMP_MAP
+
     static_args = batch_payload["static"]
     tasks = batch_payload["tasks"]
-    output_zarr_path, dem_path, group_name, config, timestamp_map = static_args
+    
+    # Receive map_path instead of the loaded dictionary
+    output_zarr_path, dem_path, group_name, config, map_path = static_args
+    
     patch_size = config["PATCH_SIZE"]
     drizzle = config.get("DRIZZLE_THRESHOLD", 0.1)
     declutter = config.get("DECLUTTER_THRESHOLD", 150.0)
     factor = config["DOWNSCALING_FACTOR"]
 
-    results = []
+    # Load into memory strictly once per worker process
+    if _WORKER_TIMESTAMP_MAP is None:
+        with open(map_path, "r") as f:
+            _WORKER_TIMESTAMP_MAP = json.load(f)
 
+    results = []
     target_zarr = zarr.open(output_zarr_path, mode="r+")
 
     try:
@@ -100,7 +111,8 @@ def process_batch(batch_payload: dict) -> list:
     for idx, patch_meta in tasks:
         timestamp_str, y_start, x_start = patch_meta
         try:
-            source_folder, time_idx = timestamp_map[timestamp_str]
+            # Query the localized cache
+            source_folder, time_idx = _WORKER_TIMESTAMP_MAP[timestamp_str]
 
             if source_folder not in source_cache:
                 try:
@@ -143,7 +155,6 @@ def process_batch(batch_payload: dict) -> list:
         except Exception as e:
             results.append(f"Error at {idx}: {e}")
 
-    # Batch coarsening (CPU only)
     for i, (idx, precip) in enumerate(zip(valid_indices, precip_list)):
         coarse, interpolated = coarsen_and_interpolate(precip, factor)
         target_zarr[f"{group_name}/original_precip"][idx] = precip
