@@ -1,9 +1,11 @@
 #!/bin/bash
-set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "${SCRIPT_DIR}/env.sh"
+
+# Enforce strict mode for the scientific pipeline
+set -euo pipefail
 
 CONFIG="${PROJECT_ROOT}/config.yaml"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
