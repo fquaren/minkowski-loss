@@ -1,21 +1,24 @@
 #!/usr/bin/env python
 """Create the preprocessed Zarr store from raw OPERA data and metadata.
 
-This orchestration script distributes tasks to a process pool while 
+This orchestration script distributes tasks to a process pool while
 enforcing strict threading constraints for safety across C-extensions.
 """
 
 import argparse
-import os
 import multiprocessing as mp
-import zarr
-import numcodecs
-import yaml
-from tqdm import tqdm
+import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+import numcodecs
+import yaml
+import zarr
+from tqdm import tqdm
+
 from src.data.preprocessing import (
-    process_batch, compute_global_scaler, compute_dem_stats,
+    compute_dem_stats,
+    compute_global_scaler,
+    process_batch,
 )
 
 
@@ -26,7 +29,9 @@ def load_config(config_path: str) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Preprocess OPERA patches into Zarr store.")
+    parser = argparse.ArgumentParser(
+        description="Preprocess OPERA patches into Zarr store."
+    )
     parser.add_argument("config", type=str, help="Path to config.yaml")
     args = parser.parse_args()
 
@@ -43,7 +48,9 @@ def main():
         "test": os.path.join(config["METADATA_DIR"], "test_patches_metadata.txt"),
     }
 
-    output_zarr = os.path.join(config["PREPROCESSED_DATA_DIR"], "preprocessed_dataset.zarr")
+    output_zarr = os.path.join(
+        config["PREPROCESSED_DATA_DIR"], "preprocessed_dataset.zarr"
+    )
     print(f"Creating Zarr store at: {output_zarr}")
     root = zarr.open(output_zarr, mode="w")
 
@@ -68,15 +75,37 @@ def main():
         print(f"Found {n} patches for '{group_name}'.")
 
         group = root.create_group(group_name)
-        compressor = numcodecs.Blosc(cname="zstd", clevel=3, shuffle=numcodecs.Blosc.BITSHUFFLE)
+        compressor = numcodecs.Blosc(
+            cname="zstd", clevel=3, shuffle=numcodecs.Blosc.BITSHUFFLE
+        )
 
         # Initialize lock-free chunking structure (one patch per disk file)
-        for name, shape, chunks in tqdm([
-            ("original_precip", (n, patch_size, patch_size), (1, patch_size, patch_size)),
-            ("interpolated_precip", (n, patch_size, patch_size), (1, patch_size, patch_size)),
-            ("coarse_precip", (n, coarse_size, coarse_size), (1, coarse_size, coarse_size)),
-            ("dem", (n, patch_size, patch_size), (1, patch_size, patch_size)),
-        ], desc="Initializing Zarr datasets"):
+        for name, shape, chunks in tqdm(
+            [
+                (
+                    "original_precip",
+                    (n, patch_size, patch_size),
+                    (1, patch_size, patch_size),
+                ),
+                (
+                    "interpolated_precip",
+                    (n, patch_size, patch_size),
+                    (1, patch_size, patch_size),
+                ),
+                (
+                    "coarse_precip",
+                    (n, coarse_size, coarse_size),
+                    (1, coarse_size, coarse_size),
+                ),
+                ("dem", (n, patch_size, patch_size), (1, patch_size, patch_size)),
+                (
+                    "quality_map",
+                    (n, patch_size, patch_size),
+                    (1, patch_size, patch_size),
+                ),
+            ],
+            desc="Initializing Zarr datasets",
+        ):
             group.create_dataset(
                 name, shape=shape, chunks=chunks, dtype="float32", compressor=compressor
             )
@@ -105,7 +134,9 @@ def main():
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(process_batch, p) for p in payloads]
-            for future in tqdm(as_completed(futures), total=len(payloads), desc=group_name):
+            for future in tqdm(
+                as_completed(futures), total=len(payloads), desc=group_name
+            ):
                 results = future.result()
                 if results:
                     for msg in results:
@@ -115,7 +146,7 @@ def main():
 
     # Compute global scaler and DEM stats
     compute_global_scaler(output_zarr, config["PREPROCESSED_DATA_DIR"])
-    
+
     dem_stats_path = config.get(
         "DEM_STATS", os.path.join(config["PREPROCESSED_DATA_DIR"], "dem_stats.json")
     )

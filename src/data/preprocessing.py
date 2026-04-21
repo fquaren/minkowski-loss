@@ -2,7 +2,7 @@
 Data preprocessing: physical filtering, coarsening, and Zarr store creation.
 
 All operations run on CPU to avoid CUDA context initialization in
-multiprocessing workers. IPC overhead is minimized by localizing 
+multiprocessing workers. IPC overhead is minimized by localizing
 metadata loading to the worker process memory.
 """
 
@@ -15,11 +15,15 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
+from src.data.anomaly_score import compute_anomaly_score_numba
+
 # Module-level cache for worker processes
 _WORKER_TIMESTAMP_MAP = None
 
 
-def filter_precip_bounds(arr: np.ndarray, min_thresh: float, max_thresh: float) -> np.ndarray:
+def filter_precip_bounds(
+    arr: np.ndarray, min_thresh: float, max_thresh: float
+) -> np.ndarray:
     """Zero out precipitation outside [min_thresh, max_thresh].
 
     Parameters
@@ -78,10 +82,10 @@ def process_batch(batch_payload: dict) -> list:
 
     static_args = batch_payload["static"]
     tasks = batch_payload["tasks"]
-    
+
     # Receive map_path instead of the loaded dictionary
     output_zarr_path, dem_path, group_name, config, map_path = static_args
-    
+
     patch_size = config["PATCH_SIZE"]
     drizzle = config.get("DRIZZLE_THRESHOLD", 0.1)
     declutter = config.get("DECLUTTER_THRESHOLD", 150.0)
@@ -126,10 +130,13 @@ def process_batch(batch_payload: dict) -> list:
             ds = source_cache[source_folder]
             precip = (
                 ds[config["PRECIP_VAR_NAME"]]
-                .isel(time=time_idx,
-                      y=slice(y_start, y_start + patch_size),
-                      x=slice(x_start, x_start + patch_size))
-                .load().values
+                .isel(
+                    time=time_idx,
+                    y=slice(y_start, y_start + patch_size),
+                    x=slice(x_start, x_start + patch_size),
+                )
+                .load()
+                .values
             )
 
             if precip.shape != (patch_size, patch_size):
@@ -157,10 +164,12 @@ def process_batch(batch_payload: dict) -> list:
 
     for i, (idx, precip) in enumerate(zip(valid_indices, precip_list)):
         coarse, interpolated = coarsen_and_interpolate(precip, factor)
+        q_map = compute_anomaly_score_numba(precip, size=5, epsilon=0.1)
         target_zarr[f"{group_name}/original_precip"][idx] = precip
         target_zarr[f"{group_name}/interpolated_precip"][idx] = interpolated
         target_zarr[f"{group_name}/coarse_precip"][idx] = coarse
         target_zarr[f"{group_name}/dem"][idx] = dem_list[i]
+        target_zarr[f"{group_name}/quality_map"][idx] = q_map
 
     return results if results else []
 
@@ -203,14 +212,14 @@ def compute_dem_stats(zarr_path: str, output_path: str):
         valid = chunk[~np.isnan(chunk)]
         count += valid.size
         sum_val += np.sum(valid, dtype=np.float64)
-        sum_sq += np.sum(valid ** 2, dtype=np.float64)
+        sum_sq += np.sum(valid**2, dtype=np.float64)
 
     if count == 0:
         print("Error: No valid DEM data.")
         return
 
     mean = sum_val / count
-    std = np.sqrt(sum_sq / count - mean ** 2)
+    std = np.sqrt(sum_sq / count - mean**2)
 
     stats = {"dem_mean": float(mean), "dem_std": float(std)}
     with open(output_path, "w") as f:

@@ -1,21 +1,24 @@
 #!/usr/bin/env python
 """Generate patch metadata and timestamp map in parallel."""
 
-import os
-import glob
 import argparse
-import shutil
+import glob
 import json
+import os
+import shutil
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 import numpy as np
 import xarray as xr
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from src.utils import load_config
 from src.data.metadata import find_valid_patches_numba
+from src.utils import load_config
 
 
-def scan_zarr_folder_for_patches(folder_path: str, precip_var_name: str, patch_size: int):
+def scan_zarr_folder_for_patches(
+    folder_path: str, precip_var_name: str, patch_size: int
+):
     local_coords_lines = []
     local_timestamp_map = {}
     try:
@@ -77,7 +80,9 @@ def main():
             ): os.path.join(temp_meta_dir, f"{os.path.basename(folder)}.txt")
             for folder in zarr_folders
         }
-        for future in tqdm(as_completed(future_to_path), total=len(zarr_folders), desc="Scanning data"):
+        for future in tqdm(
+            as_completed(future_to_path), total=len(zarr_folders), desc="Scanning data"
+        ):
             output_path = future_to_path[future]
             result_lines, local_map = future.result()
             if result_lines:

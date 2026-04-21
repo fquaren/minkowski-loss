@@ -17,8 +17,8 @@ echo "Starting preprocessing pipeline — log: $LOG_FILE"
 {
     echo "=== Preprocessing started at $(date) on $(hostname) ==="
 
-    echo "--- Stage 0: Download digital elevation model ---"
-    "${PROJECT_ROOT}/scripts/preprocess/download_dem.sh" "$CONFIG"
+    # echo "--- Stage 0: Download digital elevation model ---"
+    # "${PROJECT_ROOT}/scripts/preprocess/download_dem.sh" "$CONFIG"
 
     echo "--- Stage 1: Generate metadata ---"
     micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/generate_metadata.py" "$CONFIG"

@@ -3,13 +3,14 @@
 
 import argparse
 import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 import numpy as np
 import zarr
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
+from src.data.gamma import compute_climatological_thresholds, compute_gamma_matrix
 from src.utils import load_config, load_persistence_thresholds
-from src.data.gamma import compute_gamma_matrix, compute_climatological_thresholds
 
 
 def _worker(args):
@@ -20,7 +21,11 @@ def _worker(args):
     gamma = np.zeros((precip.shape[0], 4, len(thresholds)), dtype=np.float32)
     for i in range(precip.shape[0]):
         gamma[i] = compute_gamma_matrix(
-            precip[i], thresholds, pixel_km, tb0, tb1,
+            precip[i],
+            thresholds,
+            pixel_km,
+            tb0,
+            tb1,
         )
     group["gamma_targets"][start:end] = gamma
     return f"{split} {start}:{end}"
@@ -74,10 +79,18 @@ def main():
         tasks = []
         for start in range(0, n, chunk_size):
             end = min(start + chunk_size, n)
-            tasks.append((
-                start, end, zarr_path, split, phys_thresh,
-                pixel_km, thresh_b0, thresh_b1,
-            ))
+            tasks.append(
+                (
+                    start,
+                    end,
+                    zarr_path,
+                    split,
+                    phys_thresh,
+                    pixel_km,
+                    thresh_b0,
+                    thresh_b1,
+                )
+            )
 
         print(f"\n--- Computing gamma targets: {split} ({n} samples) ---")
         with ProcessPoolExecutor(max_workers=max_workers) as executor:

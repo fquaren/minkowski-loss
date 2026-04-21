@@ -44,7 +44,7 @@ QUANTILE_LEVELS: [
 
 # --- EMULATOR ---
 ARCHITECTURE: "Constrained"  # "Baseline", "Lipschitz", or "Constrained"
-EMULATOR_CHECKPOINT_PATH: ""  # set after training
+EMULATOR_CHECKPOINT_PATH: "/home/fquareng/work/ch2/runs/emulator/Emulator_Constrained_single_2026-04-19_05-38-02/best_model_checkpoint.pth"  # set after training
 
 # Mixup augmentation
 MIXUP_ALPHA: 0.2
@@ -52,7 +52,7 @@ NOISE_STD: 0.05
 
 # --- TRAINING (shared defaults) ---
 DEVICE: "cuda"
-NUM_WORKERS: 4
+NUM_WORKERS: 10
 MAX_WORKERS: 4
 BATCH_SIZE: 128
 NUM_EPOCHS: 25

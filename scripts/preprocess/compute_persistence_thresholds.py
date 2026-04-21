@@ -3,9 +3,11 @@
 
 import argparse
 import os
+
 import yaml
-from src.utils import load_config
+
 from src.data.gamma import compute_persistence_thresholds
+from src.utils import load_config
 
 
 def main():
@@ -34,8 +36,9 @@ def main():
         "PERSISTENCE_THRESHOLD_UNIFIED": result["unified"],
     }
 
-    out_path = os.path.join(config["PREPROCESSED_DATA_DIR"],
-                            "persistence_thresholds.yaml")
+    out_path = os.path.join(
+        config["PREPROCESSED_DATA_DIR"], "persistence_thresholds.yaml"
+    )
     with open(out_path, "w") as f:
         yaml.dump(out, f)
     print(f"Saved to {out_path}")

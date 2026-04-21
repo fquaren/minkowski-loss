@@ -14,11 +14,11 @@ functionals are nonlinear).
 """
 
 import os
-import yaml
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 import numpy as np
 import zarr
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from src.data.gamma import compute_gamma_matrix
 from src.utils import load_config, load_persistence_thresholds, load_physical_thresholds
@@ -60,8 +60,16 @@ def apply_mixup_numpy(
 
 def worker_mixup_chunk(args):
     """Process a chunk: mixup + gamma recomputation."""
-    (start_idx, end_idx, zarr_path, physical_thresholds, config,
-     thresh_b0, thresh_b1, global_seed) = args
+    (
+        start_idx,
+        end_idx,
+        zarr_path,
+        physical_thresholds,
+        config,
+        thresh_b0,
+        thresh_b1,
+        global_seed,
+    ) = args
 
     store = zarr.open(zarr_path, mode="r+")
     group = store["train"]
@@ -118,10 +126,18 @@ def run_mixup_pipeline(config_path: str, seed: int = 42):
     tasks = []
     for start in range(0, num_samples, chunk_size):
         end = min(start + chunk_size, num_samples)
-        tasks.append((
-            start, end, zarr_path, physical_thresholds, config,
-            thresh_b0, thresh_b1, seed,
-        ))
+        tasks.append(
+            (
+                start,
+                end,
+                zarr_path,
+                physical_thresholds,
+                config,
+                thresh_b0,
+                thresh_b1,
+                seed,
+            )
+        )
 
     max_workers = config.get("MAX_WORKERS", max(1, os.cpu_count() // 4))
     with ProcessPoolExecutor(max_workers=max_workers) as executor:

@@ -24,6 +24,7 @@ from skimage import measure
 # 1. Low-level TDA primitives
 # ---------------------------------------------------------------------------
 
+
 def compute_persistence_diagram(field_2d: np.ndarray) -> list:
     """Compute the persistence diagram of a 2D field via superlevel-set filtration.
 
@@ -64,6 +65,7 @@ def _extract_pairs(persistence_pairs: list, dim: int) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # 2. Betti number counting at given thresholds
 # ---------------------------------------------------------------------------
+
 
 def _count_b0(
     persistence_pairs: list,
@@ -110,8 +112,8 @@ def _count_b0(
     # Convert from negated domain back to original coordinates.
     # GUDHI sublevel: birth_neg < death_neg.
     # Original superlevel: birth_orig = -birth_neg > -death_neg = death_orig.
-    births = -pairs_d0[:, 0]   # peak intensity where component appears
-    deaths = -pairs_d0[:, 1]   # saddle intensity where component merges
+    births = -pairs_d0[:, 0]  # peak intensity where component appears
+    deaths = -pairs_d0[:, 1]  # saddle intensity where component merges
 
     # Essential feature: GUDHI returns death_neg = +inf for the component
     # that never merges.  After negation: death_orig = -inf.
@@ -133,10 +135,7 @@ def _count_b0(
     )
 
     # Essential feature: alive at every threshold below its birth value
-    alive_essential = (
-        is_essential[:, np.newaxis]
-        & (births[:, np.newaxis] >= thresh_1d)
-    )
+    alive_essential = is_essential[:, np.newaxis] & (births[:, np.newaxis] >= thresh_1d)
 
     counts = np.sum(alive_finite, axis=0) + np.sum(alive_essential, axis=0)
     return counts.astype(np.float32)
@@ -193,6 +192,7 @@ def _count_b1(
 # 3. Area and perimeter via excursion sets
 # ---------------------------------------------------------------------------
 
+
 def _compute_area(masks_3d: np.ndarray, pixel_area_km2: float) -> np.ndarray:
     """Compute excursion set area at each threshold.
 
@@ -238,8 +238,7 @@ def _compute_perimeter(masks_3d: np.ndarray, pixel_size_km: float) -> np.ndarray
                 continue
             contours = measure.find_contours(mask.astype(float), 0.5)
             total_px = sum(
-                np.linalg.norm(np.diff(c, axis=0), axis=1).sum()
-                for c in contours
+                np.linalg.norm(np.diff(c, axis=0), axis=1).sum() for c in contours
             )
             perimeters[i] = total_px * pixel_size_km
 
@@ -249,6 +248,7 @@ def _compute_perimeter(masks_3d: np.ndarray, pixel_size_km: float) -> np.ndarray
 # ---------------------------------------------------------------------------
 # 4. Full gamma matrix computation
 # ---------------------------------------------------------------------------
+
 
 def compute_gamma_matrix(
     field_2d: np.ndarray,
@@ -289,7 +289,7 @@ def compute_gamma_matrix(
     gamma = np.zeros((4, n_q), dtype=np.float32)
 
     clean = np.nan_to_num(field_2d, nan=0.0)
-    pixel_area_km2 = pixel_size_km ** 2
+    pixel_area_km2 = pixel_size_km**2
 
     # Excursion set masks: (H, W, Q)
     masks_3d = clean[..., np.newaxis] >= thresholds[np.newaxis, np.newaxis, :]
@@ -338,6 +338,7 @@ def select_topology_target(
 # ---------------------------------------------------------------------------
 # 5. Dataset-level statistics (used during preprocessing)
 # ---------------------------------------------------------------------------
+
 
 def compute_climatological_thresholds(
     zarr_path: str,
@@ -410,8 +411,8 @@ def compute_climatological_thresholds(
 
 def _extract_persistences(img: np.ndarray) -> tuple:
     """Worker function to compute persistence diagram metrics for a single image.
-    
-    Extracted from compute_persistence_thresholds to allow Python's pickle 
+
+    Extracted from compute_persistence_thresholds to allow Python's pickle
     module to serialize the function across process boundaries.
     """
     pairs = compute_persistence_diagram(img)
@@ -474,9 +475,7 @@ def compute_persistence_thresholds(
     total = train_data.shape[0]
 
     rng = np.random.default_rng(seed=seed)
-    sample_idx = np.sort(
-        rng.choice(total, size=min(num_samples, total), replace=False)
-    )
+    sample_idx = np.sort(rng.choice(total, size=min(num_samples, total), replace=False))
     images = train_data.oindex[sample_idx]
 
     all_p_b0 = []
@@ -492,8 +491,12 @@ def compute_persistence_thresholds(
     all_p_b0 = np.array(all_p_b0)
     all_p_b1 = np.array(all_p_b1)
 
-    thresh_b0 = float(np.percentile(all_p_b0, target_percentile)) if len(all_p_b0) > 0 else 0.0
-    thresh_b1 = float(np.percentile(all_p_b1, target_percentile)) if len(all_p_b1) > 0 else 0.0
+    thresh_b0 = (
+        float(np.percentile(all_p_b0, target_percentile)) if len(all_p_b0) > 0 else 0.0
+    )
+    thresh_b1 = (
+        float(np.percentile(all_p_b1, target_percentile)) if len(all_p_b1) > 0 else 0.0
+    )
     unified = max(thresh_b0, thresh_b1)
 
     print(f"Persistence thresholds at {target_percentile}th percentile:")

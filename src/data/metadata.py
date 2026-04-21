@@ -1,8 +1,10 @@
 """
 Core logic for metadata generation and coordinate extraction.
 """
+
 import numpy as np
 import numba
+
 
 @numba.jit(nopython=True, cache=True)
 def find_valid_patches_numba(frame: np.ndarray, patch_size: int, stride: int):
