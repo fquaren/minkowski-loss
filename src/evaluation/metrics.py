@@ -27,7 +27,7 @@ def compute_isoperimetric_violation(pred_phys: np.ndarray) -> float:
     A = pred_phys[:, 0, :]
     P = pred_phys[:, 1, :]
     P_min_sq = 4.0 * np.pi * A
-    violations = P ** 2 < P_min_sq - 1e-6
+    violations = P**2 < P_min_sq - 1e-6
     total = violations.size
     return float(np.sum(violations) / total * 100) if total > 0 else 0.0
 
@@ -127,8 +127,11 @@ def calculate_grouped_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
     Returns a DataFrame with groups [Zero, Low, Mid, High, All].
     """
-    metric_cols = [c for c in df.columns
-                   if c.startswith(("total_loss", "geom_loss", "R2_", "MSE_", "Var_"))]
+    metric_cols = [
+        c
+        for c in df.columns
+        if c.startswith(("total_loss", "geom_loss", "R2_", "MSE_", "Var_"))
+    ]
 
     grouped = df.groupby("precip_group")[metric_cols].mean()
     counts = df.groupby("precip_group").size().to_frame("n_samples")
@@ -169,7 +172,8 @@ def calculate_per_feature_metrics(
     if np.sum(valid) < 2:
         nan_df = pd.DataFrame(np.nan, index=idx, columns=cols)
         return {
-            "r2_matrix": nan_df, "mse_matrix": nan_df.copy(),
+            "r2_matrix": nan_df,
+            "mse_matrix": nan_df.copy(),
             "var_matrix": nan_df.copy(),
             "mean_by_component": pd.DataFrame(
                 {"Avg_R2": np.nan, "Avg_MSE": np.nan, "Avg_Var": np.nan},
@@ -187,15 +191,20 @@ def calculate_per_feature_metrics(
     mse_df = pd.DataFrame(mse.reshape(n_comp, n_q), index=idx, columns=cols)
     var_df = pd.DataFrame(var.reshape(n_comp, n_q), index=idx, columns=cols)
 
-    mean_df = pd.DataFrame({
-        "Avg_R2": r2_df.mean(axis=1),
-        "Avg_MSE": mse_df.mean(axis=1),
-        "Avg_Var": var_df.mean(axis=1),
-    })
+    mean_df = pd.DataFrame(
+        {
+            "Avg_R2": r2_df.mean(axis=1),
+            "Avg_MSE": mse_df.mean(axis=1),
+            "Avg_Var": var_df.mean(axis=1),
+        }
+    )
 
     return {
-        "r2_matrix": r2_df, "mse_matrix": mse_df, "var_matrix": var_df,
-        "mean_by_component": mean_df, "quantiles": quantiles,
+        "r2_matrix": r2_df,
+        "mse_matrix": mse_df,
+        "var_matrix": var_df,
+        "mean_by_component": mean_df,
+        "quantiles": quantiles,
     }
 
 
@@ -228,14 +237,14 @@ def evaluate_predictions(
         ),
     }
 
-    abs_diff = np.abs(y_pred_log - y_true_log)
+    abs_diff = np.abs(y_pred_log - y_true_log.unsqueeze(-1))
     dist = np.trapezoid(abs_diff, x=quantiles, axis=2)
     metrics["Minkowski_Total"] = float(dist.sum(axis=1).mean())
 
     for i, name in enumerate(feature_names):
-        metrics[f"R2_{name}"] = float(r2_score(
-            y_true_log[:, i, :].flatten(), y_pred_log[:, i, :].flatten()
-        ))
+        metrics[f"R2_{name}"] = float(
+            r2_score(y_true_log[:, i, :].flatten(), y_pred_log[:, i, :].flatten())
+        )
         metrics[f"Minkowski_{name}"] = float(dist[:, i].mean())
 
     return metrics

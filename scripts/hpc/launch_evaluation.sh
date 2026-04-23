@@ -3,7 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+set +u
 source "${SCRIPT_DIR}/env.sh"
+set -u
 
 CONFIG="${PROJECT_ROOT}/config.yaml"
 EMULATOR_CKPT="${1:?Usage: $0 <emulator_checkpoint_path>}"
@@ -16,9 +19,9 @@ echo "Running evaluation pipeline — log: $LOG_FILE"
 {
     echo "=== Evaluation started at $(date) ==="
 
-    echo "--- Emulator evaluation ---"
-    micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/evaluate/eval_emulator.py" \
-        "$CONFIG" --checkpoint "$EMULATOR_CKPT"
+    # echo "--- Emulator evaluation ---"
+    # micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/evaluate/eval_emulator.py" \
+    #     "$CONFIG" --checkpoint "$EMULATOR_CKPT"
 
     echo "--- Baselines ---"
     micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/evaluate/eval_baselines.py" \

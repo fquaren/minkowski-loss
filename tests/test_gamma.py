@@ -11,8 +11,6 @@ from src.data.gamma import (
     compute_persistence_diagram,
     compute_gamma_matrix,
     select_topology_target,
-    _count_b0,
-    _count_b1,
 )
 
 
@@ -68,8 +66,9 @@ class TestGammaMatrix:
         """Single disk above threshold → B0=1, B1=0."""
         field = _make_disk(size=64, center=(32, 32), radius=10, intensity=5.0)
         thresholds = np.array([1.0], dtype=np.float32)
-        gamma = compute_gamma_matrix(field, thresholds, pixel_size_km=1.0,
-                                      thresh_b0=0.01, thresh_b1=0.01)
+        gamma = compute_gamma_matrix(
+            field, thresholds, pixel_size_km=1.0, thresh_b0=0.01, thresh_b1=0.01
+        )
 
         assert gamma.shape == (4, 1)
         assert gamma[0, 0] > 0, "Area should be positive"
@@ -85,17 +84,20 @@ class TestGammaMatrix:
         field[((x - 48) ** 2 + (y - 32) ** 2) <= 64] = 5.0
 
         thresholds = np.array([1.0], dtype=np.float32)
-        gamma = compute_gamma_matrix(field, thresholds, pixel_size_km=1.0,
-                                      thresh_b0=0.01, thresh_b1=0.01)
+        gamma = compute_gamma_matrix(
+            field, thresholds, pixel_size_km=1.0, thresh_b0=0.01, thresh_b1=0.01
+        )
         assert gamma[2, 0] == 2, f"Expected B0=2, got {gamma[2, 0]}"
 
     def test_annulus_b1(self):
         """Annulus → B0=1, B1=1 (one component with one hole)."""
-        field = _make_annulus(size=64, center=(32, 32), r_inner=5,
-                              r_outer=15, intensity=5.0)
+        field = _make_annulus(
+            size=64, center=(32, 32), r_inner=5, r_outer=15, intensity=5.0
+        )
         thresholds = np.array([1.0], dtype=np.float32)
-        gamma = compute_gamma_matrix(field, thresholds, pixel_size_km=1.0,
-                                      thresh_b0=0.01, thresh_b1=0.01)
+        gamma = compute_gamma_matrix(
+            field, thresholds, pixel_size_km=1.0, thresh_b0=0.01, thresh_b1=0.01
+        )
         assert gamma[2, 0] == 1, f"Expected B0=1, got {gamma[2, 0]}"
         assert gamma[3, 0] == 1, f"Expected B1=1, got {gamma[3, 0]}"
 
@@ -103,8 +105,9 @@ class TestGammaMatrix:
         """Zero field → all zeros except possibly background at low threshold."""
         field = np.zeros((32, 32))
         thresholds = np.array([0.5, 1.0, 5.0], dtype=np.float32)
-        gamma = compute_gamma_matrix(field, thresholds, pixel_size_km=2.0,
-                                      thresh_b0=0.01, thresh_b1=0.01)
+        gamma = compute_gamma_matrix(
+            field, thresholds, pixel_size_km=2.0, thresh_b0=0.01, thresh_b1=0.01
+        )
         np.testing.assert_array_equal(gamma[0, :], 0.0)  # no area
         np.testing.assert_array_equal(gamma[1, :], 0.0)  # no perimeter
 
@@ -112,8 +115,9 @@ class TestGammaMatrix:
         """Area must be non-increasing with increasing threshold."""
         field = np.random.default_rng(42).exponential(2.0, size=(64, 64))
         thresholds = np.array([0.1, 0.5, 1.0, 2.0, 5.0], dtype=np.float32)
-        gamma = compute_gamma_matrix(field, thresholds, pixel_size_km=2.0,
-                                      thresh_b0=0.1, thresh_b1=0.1)
+        gamma = compute_gamma_matrix(
+            field, thresholds, pixel_size_km=2.0, thresh_b0=0.1, thresh_b1=0.1
+        )
         area = gamma[0, :]
         assert np.all(np.diff(area) <= 0), "Area must be non-increasing"
 
@@ -121,31 +125,36 @@ class TestGammaMatrix:
         """Verify area is in km² given pixel_size_km."""
         field = np.ones((10, 10)) * 5.0
         thresholds = np.array([1.0], dtype=np.float32)
-        gamma = compute_gamma_matrix(field, thresholds, pixel_size_km=2.0,
-                                      thresh_b0=0.01, thresh_b1=0.01)
+        gamma = compute_gamma_matrix(
+            field, thresholds, pixel_size_km=2.0, thresh_b0=0.01, thresh_b1=0.01
+        )
         expected_area = 10 * 10 * 4.0  # 100 pixels × 4 km²/pixel
         assert gamma[0, 0] == expected_area
 
     def test_persistence_filtering(self):
         """High persistence threshold should filter out small features."""
         field = np.zeros((64, 64))
-        field[10:12, 10:12] = 0.5   # small, low-intensity feature
+        field[10:12, 10:12] = 0.5  # small, low-intensity feature
         field[30:50, 30:50] = 10.0  # large, high-intensity feature
 
         thresholds = np.array([0.1], dtype=np.float32)
-        gamma_lax = compute_gamma_matrix(field, thresholds, pixel_size_km=1.0,
-                                          thresh_b0=0.01, thresh_b1=0.01)
-        gamma_strict = compute_gamma_matrix(field, thresholds, pixel_size_km=1.0,
-                                             thresh_b0=5.0, thresh_b1=5.0)
+        gamma_lax = compute_gamma_matrix(
+            field, thresholds, pixel_size_km=1.0, thresh_b0=0.01, thresh_b1=0.01
+        )
+        gamma_strict = compute_gamma_matrix(
+            field, thresholds, pixel_size_km=1.0, thresh_b0=5.0, thresh_b1=5.0
+        )
 
-        assert gamma_lax[2, 0] >= gamma_strict[2, 0], \
-            "Stricter threshold should yield fewer components"
+        assert (
+            gamma_lax[2, 0] >= gamma_strict[2, 0]
+        ), "Stricter threshold should yield fewer components"
 
     def test_output_shape_and_dtype(self):
         field = np.random.default_rng(0).uniform(0, 10, (64, 64))
         thresholds = np.linspace(0.5, 5.0, 20).astype(np.float32)
-        gamma = compute_gamma_matrix(field, thresholds, pixel_size_km=2.0,
-                                      thresh_b0=0.1, thresh_b1=0.1)
+        gamma = compute_gamma_matrix(
+            field, thresholds, pixel_size_km=2.0, thresh_b0=0.1, thresh_b1=0.1
+        )
         assert gamma.shape == (4, 20)
         assert gamma.dtype == np.float32
 
@@ -154,23 +163,29 @@ class TestSelectTopologyTarget:
     """Verify the 4→3 channel conversion."""
 
     def test_euler_mode(self):
-        gamma_4 = np.array([
-            [100, 50, 10],   # A
-            [40, 20, 5],     # P
-            [3, 2, 1],       # B0
-            [1, 0, 0],       # B1
-        ], dtype=np.float32)
+        gamma_4 = np.array(
+            [
+                [100, 50, 10],  # A
+                [40, 20, 5],  # P
+                [3, 2, 1],  # B0
+                [1, 0, 0],  # B1
+            ],
+            dtype=np.float32,
+        )
         gamma_3 = select_topology_target(gamma_4, mode="euler")
         assert gamma_3.shape == (3, 3)
         np.testing.assert_array_equal(gamma_3[2, :], [2, 2, 1])  # B0-B1
 
     def test_b0_mode(self):
-        gamma_4 = np.array([
-            [100, 50, 10],
-            [40, 20, 5],
-            [3, 2, 1],
-            [1, 0, 0],
-        ], dtype=np.float32)
+        gamma_4 = np.array(
+            [
+                [100, 50, 10],
+                [40, 20, 5],
+                [3, 2, 1],
+                [1, 0, 0],
+            ],
+            dtype=np.float32,
+        )
         gamma_3 = select_topology_target(gamma_4, mode="b0")
         assert gamma_3.shape == (3, 3)
         np.testing.assert_array_equal(gamma_3[2, :], [3, 2, 1])  # B0 only
@@ -193,9 +208,11 @@ class TestIsoperimetricInequality:
         """A disk should be close to the isoperimetric bound."""
         field = _make_disk(size=128, center=(64, 64), radius=30, intensity=5.0)
         thresholds = np.array([1.0], dtype=np.float32)
-        gamma = compute_gamma_matrix(field, thresholds, pixel_size_km=1.0,
-                                      thresh_b0=0.01, thresh_b1=0.01)
+        gamma = compute_gamma_matrix(
+            field, thresholds, pixel_size_km=1.0, thresh_b0=0.01, thresh_b1=0.01
+        )
         A, P = gamma[0, 0], gamma[1, 0]
         P_min = 2.0 * np.sqrt(np.pi * A)
-        assert P >= P_min * 0.95, \
-            f"Perimeter {P:.1f} violates isoperimetric bound {P_min:.1f}"
+        assert (
+            P >= P_min * 0.95
+        ), f"Perimeter {P:.1f} violates isoperimetric bound {P_min:.1f}"

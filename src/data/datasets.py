@@ -202,7 +202,6 @@ class DeterministicSRDataset(Dataset):
     input_stack : Tensor [3, H, W]
         Channel 0: log-normalized interpolated precip [0, 1].
         Channel 1: z-scored DEM.
-        Channel 2: normalized quality map [0, 1].
     target_tensor : Tensor [1, H, W]
         Log-normalized target precip [0, 1].
     target_gamma : Tensor [3, Q]
@@ -214,7 +213,6 @@ class DeterministicSRDataset(Dataset):
         preprocessed_data_dir: str,
         metadata_file: str,
         dem_stats: tuple,
-        qmap_stats: tuple,
         scaler_max_val: float,
         split: str = "train",
         data_percentage: float = 100.0,
@@ -224,7 +222,6 @@ class DeterministicSRDataset(Dataset):
         dem_clip_sigma: float = 3.0,
     ):
         self.dem_mean, self.dem_std = dem_stats
-        self.qmap_min, self.qmap_max = qmap_stats
         self.scaler_max_val = float(scaler_max_val)
         self.split = split
         self.is_train = split == "train"
@@ -270,7 +267,6 @@ class DeterministicSRDataset(Dataset):
             self.ram_interp = g["interpolated_precip"][:]
             self.ram_gamma = g["gamma_targets"][:]
             self.ram_dem = g["dem"][:]
-            self.ram_qmap = g["quality_map"][:]
         else:
             self._store = None
             self._group = None
@@ -298,33 +294,25 @@ class DeterministicSRDataset(Dataset):
             interp_phys = self.ram_interp[real_idx]
             gamma_phys = self.ram_gamma[real_idx]
             dem_patch = self.ram_dem[real_idx]
-            qmap_patch = self.ram_qmap[real_idx]
         else:
             self._init_zarr()
             target_phys = self._group["original_precip"][real_idx]
             interp_phys = self._group["interpolated_precip"][real_idx]
             gamma_phys = self._group["gamma_targets"][real_idx]
             dem_patch = self._group["dem"][real_idx]
-            qmap_patch = self._group["quality_map"][real_idx]
 
         target_norm = np.clip(np.log1p(target_phys) / self.scaler_max_val, 0.0, 1.0)
         interp_norm = np.clip(np.log1p(interp_phys) / self.scaler_max_val, 0.0, 1.0)
-        qmap_norm = np.clip(
-            (qmap_patch - self.qmap_min) / (self.qmap_max - self.qmap_min + 1e-8),
-            0.0,
-            1.0,
-        )
 
         target_t = torch.from_numpy(target_norm).float().unsqueeze(0)
         interp_t = torch.from_numpy(interp_norm).float().unsqueeze(0)
-        qmap_t = torch.from_numpy(qmap_norm).float().unsqueeze(0)
 
         dem_z = (dem_patch - self.dem_mean) / (self.dem_std + 1e-8)
         if self.dem_clip_sigma > 0:
             dem_z = np.clip(dem_z, -self.dem_clip_sigma, self.dem_clip_sigma)
         dem_t = torch.from_numpy(dem_z).float().unsqueeze(0)
 
-        input_stack = torch.cat([interp_t, dem_t, qmap_t], dim=0)
+        input_stack = torch.cat([interp_t, dem_t], dim=0)
 
         if self.is_train:
             input_stack, target_t = self.geom_transform(input_stack, target_t)
@@ -348,7 +336,6 @@ class DiffusionSRDataset(Dataset):
     input_stack : Tensor [3, H, W]
         Channel 0: precip in [-1, 1]
         Channel 1: z-scored DEM.
-        Channel 2: normalized quality map in [-1, 1].
     target_tensor : Tensor [1, H, W]
         Target precip in [-1, 1].
     target_gamma : Tensor [3, Q]
@@ -360,7 +347,6 @@ class DiffusionSRDataset(Dataset):
         preprocessed_data_dir: str,
         metadata_file: str,
         dem_stats: tuple,
-        qmap_stats: tuple,
         scaler_max_val: float,
         split: str = "train",
         data_percentage: float = 100.0,
@@ -369,7 +355,6 @@ class DiffusionSRDataset(Dataset):
         dem_clip_sigma: float = 3.0,
     ):
         self.dem_mean, self.dem_std = dem_stats
-        self.qmap_min, self.qmap_max = qmap_stats
         self.scaler_max_val = float(scaler_max_val)
         self.split = split
         self.is_train = split == "train"
@@ -405,7 +390,6 @@ class DiffusionSRDataset(Dataset):
             self.ram_interp = g["interpolated_precip"].oindex[self.valid_indices]
             self.ram_gamma = g["gamma_targets"].oindex[self.valid_indices]
             self.ram_dem = g["dem"].oindex[self.valid_indices]
-            self.ram_qmap = g["quality_map"].oindex[self.valid_indices]
             self.valid_indices = np.arange(len(self.valid_indices))
         else:
             self._store = None
@@ -429,7 +413,6 @@ class DiffusionSRDataset(Dataset):
             interp_phys = self.ram_interp[real_idx]
             gamma_phys = self.ram_gamma[real_idx]
             dem_patch = self.ram_dem[real_idx]
-            qmap_patch = self.ram_qmap[real_idx]
         else:
             if self._store is None:
                 self._store = zarr.open(self.zarr_path, mode="r")
@@ -438,26 +421,19 @@ class DiffusionSRDataset(Dataset):
             interp_phys = self._group["interpolated_precip"][real_idx]
             gamma_phys = self._group["gamma_targets"][real_idx]
             dem_patch = self._group["dem"][real_idx]
-            qmap_patch = self._group["quality_map"][real_idx]
 
         target_norm = np.clip(np.log1p(target_phys) / self.scaler_max_val, 0.0, 1.0)
         interp_norm = np.clip(np.log1p(interp_phys) / self.scaler_max_val, 0.0, 1.0)
-        qmap_norm = np.clip(
-            (qmap_patch - self.qmap_min) / (self.qmap_max - self.qmap_min + 1e-8),
-            0.0,
-            1.0,
-        )
 
         target_t = torch.from_numpy(target_norm).float().unsqueeze(0) * 2.0 - 1.0
         interp_t = torch.from_numpy(interp_norm).float().unsqueeze(0) * 2.0 - 1.0
-        qmap_t = torch.from_numpy(qmap_norm).float().unsqueeze(0) * 2.0 - 1.0
 
         dem_z = (dem_patch - self.dem_mean) / (self.dem_std + 1e-8)
         if self.dem_clip_sigma > 0:
             dem_z = np.clip(dem_z, -self.dem_clip_sigma, self.dem_clip_sigma)
         dem_t = torch.from_numpy(dem_z).float().unsqueeze(0)
 
-        input_stack = torch.cat([interp_t, dem_t, qmap_t], dim=0)
+        input_stack = torch.cat([interp_t, dem_t], dim=0)
 
         if self.is_train:
             input_stack, target_t = self.geom_transform(input_stack, target_t)

@@ -13,10 +13,15 @@ from src.trainers.emulator import run_training
 def main():
     parser = argparse.ArgumentParser(description="Train Minkowski emulator")
     parser.add_argument("config", type=str, help="Path to config.yaml")
-    parser.add_argument("--arch", type=str, default="Constrained",
-                        choices=["Baseline", "Lipschitz", "Constrained"])
-    parser.add_argument("--optimize", action="store_true",
-                        help="Run Optuna hyperparameter search")
+    parser.add_argument(
+        "--arch",
+        type=str,
+        default="Constrained",
+        choices=["Baseline", "Lipschitz", "Constrained"],
+    )
+    parser.add_argument(
+        "--optimize", action="store_true", help="Run Optuna hyperparameter search"
+    )
     parser.add_argument("--n_trials", type=int, default=10)
     parser.add_argument("--data_fraction", type=float, default=1.0)
     parser.add_argument("--lr", type=float, default=7.75e-5)

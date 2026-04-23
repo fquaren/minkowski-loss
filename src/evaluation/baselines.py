@@ -45,10 +45,11 @@ def compute_analytical_gamma(
     thresholds_t = torch.tensor(thresholds, dtype=torch.float32, device=device)
     temps = torch.tensor(
         np.maximum(np.array(thresholds) * init_factor, min_temp),
-        dtype=torch.float32, device=device,
+        dtype=torch.float32,
+        device=device,
     )
 
-    pixel_area = pixel_size_km ** 2
+    pixel_area = pixel_size_km**2
     areas, perimeters, eulers = [], [], []
 
     # Morphological pre-processing
@@ -69,15 +70,13 @@ def compute_analytical_gamma(
         p_pad = F.pad(p_raw, (1, 1, 1, 1), mode="replicate")
         dx = (p_pad[:, :, 1:-1, 2:] - p_pad[:, :, 1:-1, :-2]) / 2.0
         dy = (p_pad[:, :, 2:, 1:-1] - p_pad[:, :, :-2, 1:-1]) / 2.0
-        perimeter = torch.sum(
-            torch.sqrt(dx ** 2 + dy ** 2 + 1e-8), dim=(2, 3)
-        ) * pixel_size_km
+        perimeter = (
+            torch.sum(torch.sqrt(dx**2 + dy**2 + 1e-8), dim=(2, 3)) * pixel_size_km
+        )
 
         # Euler characteristic from morphologically filtered field
         p_base = torch.sigmoid((field_topo - thresh) / temp)
-        pers_mask = torch.sigmoid(
-            (local_max - (thresh + persistence_thresh)) / temp
-        )
+        pers_mask = torch.sigmoid((local_max - (thresh + persistence_thresh)) / temp)
         p_topo = torch.min(p_base, pers_mask)
 
         V = torch.sum(p_topo, dim=(1, 2, 3))
@@ -100,11 +99,14 @@ def compute_analytical_gamma(
         perimeters.append(perimeter)
         eulers.append(euler)
 
-    gamma_phys = torch.stack([
-        torch.stack(areas, dim=1),
-        torch.stack(perimeters, dim=1),
-        torch.stack(eulers, dim=1),
-    ], dim=1)  # [B, 3, Q]
+    gamma_phys = torch.stack(
+        [
+            torch.stack(areas, dim=1).unsqueeze(-1),
+            torch.stack(perimeters, dim=1),
+            torch.stack(eulers, dim=1).unsqueeze(-1),
+        ],
+        dim=1,
+    )  # [B, 3, Q]
 
     return signed_log1p(gamma_phys)
 
@@ -149,7 +151,9 @@ def evaluate_analytical_baseline(
 
         with torch.no_grad():
             gamma_ana = compute_analytical_gamma(
-                phys, physical_thresholds, pixel_size_km=pixel_size_km,
+                phys,
+                physical_thresholds,
+                pixel_size_km=pixel_size_km,
             )
 
         y_pred_list.append(gamma_ana.numpy())

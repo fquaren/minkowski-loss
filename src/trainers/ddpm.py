@@ -25,7 +25,9 @@ from src.models.diffusion import Diffusion
 from src.data.datasets import DiffusionSRDataset
 from src.utils import load_config, load_scaler_val, DataDenormalizer, managed_logger
 from src.trainers.base import (
-    EarlyStopping, save_checkpoint, save_sample_images,
+    EarlyStopping,
+    save_checkpoint,
+    save_sample_images,
 )
 
 
@@ -68,37 +70,56 @@ def run_training(config, args, trial=None):
 
     with managed_logger(run_name, out_dir) as logger:
         train_ds = DiffusionSRDataset(
-            config["PREPROCESSED_DATA_DIR"], config["TRAIN_METADATA_FILE"],
-            dem_stats, scaler_val, split="train",
+            preprocessed_data_dir=config["PREPROCESSED_DATA_DIR"],
+            metadata_file=config["TRAIN_METADATA_FILE"],
+            dem_stats=dem_stats,
+            scaler_max_val=scaler_val,
+            split="train",
             data_percentage=args.data_percentage,
             topology_mode=topology_mode,
         )
+
         val_ds = DiffusionSRDataset(
-            config["PREPROCESSED_DATA_DIR"], config["VAL_METADATA_FILE"],
-            dem_stats, scaler_val, split="validation",
+            preprocessed_data_dir=config["PREPROCESSED_DATA_DIR"],
+            metadata_file=config["VAL_METADATA_FILE"],
+            dem_stats=dem_stats,
+            scaler_max_val=scaler_val,
+            split="validation",
             data_percentage=args.data_percentage,
             topology_mode=topology_mode,
         )
         train_loader = DataLoader(
-            train_ds, bs, shuffle=True, num_workers=nw, pin_memory=True,
+            train_ds,
+            bs,
+            shuffle=True,
+            num_workers=nw,
+            pin_memory=True,
             persistent_workers=nw > 0,
         )
         val_loader = DataLoader(
-            val_ds, bs, shuffle=False, num_workers=nw, pin_memory=True,
+            val_ds,
+            bs,
+            shuffle=False,
+            num_workers=nw,
+            pin_memory=True,
         )
 
         model = ContextUnet(
-            in_channels=1, c_in_condition=2, device=device,
+            in_channels=1,
+            c_in_condition=2,
+            device=device,
         ).to(device)
         diffusion = Diffusion(img_size=ps, device=device)
 
         optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
         mse_fn = nn.MSELoss()
         sched = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5,
+            optimizer,
+            mode="min",
+            factor=0.5,
             patience=max(1, patience // 2),
         )
-        amp_enabled = (device == "cuda")
+        amp_enabled = device == "cuda"
         grad_scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
         early_stopper = EarlyStopping(patience=patience, verbose=(trial is None))
 
@@ -159,21 +180,31 @@ def run_training(config, args, trial=None):
 
             save_checkpoint(
                 os.path.join(out_dir, "ddpm_latest.pth"),
-                epoch + 1, model, optimizer,
+                epoch + 1,
+                model,
+                optimizer,
                 scaler=grad_scaler if amp_enabled else None,
-                scheduler=sched, early_stopper=early_stopper,
+                scheduler=sched,
+                early_stopper=early_stopper,
             )
             if is_best:
                 save_checkpoint(
                     os.path.join(out_dir, "ddpm_best.pth"),
-                    epoch + 1, model, optimizer,
+                    epoch + 1,
+                    model,
+                    optimizer,
                     extra={"best_val_mse": best_val_mse},
                 )
 
             if not trial and ((epoch + 1) % 5 == 0 or epoch == 0):
                 save_sample_images(
-                    model, val_loader, device, out_dir, epoch + 1,
-                    denormalizer, diffusion=diffusion,
+                    model,
+                    val_loader,
+                    device,
+                    out_dir,
+                    epoch + 1,
+                    denormalizer,
+                    diffusion=diffusion,
                 )
 
             if trial:

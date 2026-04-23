@@ -15,7 +15,6 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from src.data.anomaly_score import compute_anomaly_score_numba
 
 # Module-level cache for worker processes
 _WORKER_TIMESTAMP_MAP = None
@@ -164,12 +163,10 @@ def process_batch(batch_payload: dict) -> list:
 
     for i, (idx, precip) in enumerate(zip(valid_indices, precip_list)):
         coarse, interpolated = coarsen_and_interpolate(precip, factor)
-        q_map = compute_anomaly_score_numba(precip, size=5, epsilon=0.1)
         target_zarr[f"{group_name}/original_precip"][idx] = precip
         target_zarr[f"{group_name}/interpolated_precip"][idx] = interpolated
         target_zarr[f"{group_name}/coarse_precip"][idx] = coarse
         target_zarr[f"{group_name}/dem"][idx] = dem_list[i]
-        target_zarr[f"{group_name}/quality_map"][idx] = q_map
 
     return results if results else []
 

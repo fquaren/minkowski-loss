@@ -26,15 +26,18 @@ from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss
 from src.utils import load_config, load_scaler_val, DataDenormalizer, managed_logger
 from src.trainers.base import (
-    EarlyStopping, save_checkpoint, cosine_warmup_weight, save_sample_images,
+    EarlyStopping,
+    save_checkpoint,
+    cosine_warmup_weight,
+    save_sample_images,
 )
 
 
 def run_training(config, args, trial=None):
     device = torch.device(
-        "cuda" if torch.cuda.is_available()
-        else "mps" if torch.backends.mps.is_available()
-        else "cpu"
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available() else "cpu"
     )
     if device.type == "cuda":
         torch.set_float32_matmul_precision("high")
@@ -57,11 +60,15 @@ def run_training(config, args, trial=None):
         lr = p.get("lr", 1e-3)
         wd = p.get("weight_decay", 1e-4)
 
-    epochs = args.optuna_epochs if (trial and hasattr(args, "optuna_epochs")) \
+    epochs = (
+        args.optuna_epochs
+        if (trial and hasattr(args, "optuna_epochs"))
         else config.get("NUM_EPOCHS", 25)
+    )
     patience = config.get("PATIENCE", 7)
     w_max = (
-        args.weight_geom if args.weight_geom is not None
+        args.weight_geom
+        if args.weight_geom is not None
         else config.get("MINKOWSKI_TARGET_WEIGHT", 1.0)
     )
     warmup = config.get("MINKOWSKI_WARMUP_EPOCHS", 5)
@@ -74,14 +81,20 @@ def run_training(config, args, trial=None):
 
     with managed_logger(run_name, out_dir) as logger:
         train_ds = DeterministicSRDataset(
-            config["PREPROCESSED_DATA_DIR"], config["TRAIN_METADATA_FILE"],
-            dem_stats, scaler_val, split="train",
+            config["PREPROCESSED_DATA_DIR"],
+            config["TRAIN_METADATA_FILE"],
+            dem_stats,
+            scaler_val,
+            split="train",
             data_percentage=args.data_percentage,
             topology_mode=topology_mode,
         )
         val_ds = DeterministicSRDataset(
-            config["PREPROCESSED_DATA_DIR"], config["VAL_METADATA_FILE"],
-            dem_stats, scaler_val, split="validation",
+            config["PREPROCESSED_DATA_DIR"],
+            config["VAL_METADATA_FILE"],
+            dem_stats,
+            scaler_val,
+            split="validation",
             data_percentage=args.data_percentage,
             topology_mode=topology_mode,
         )
@@ -89,16 +102,23 @@ def run_training(config, args, trial=None):
         nw = config.get("NUM_WORKERS", 4)
         bs = config.get("BATCH_SIZE", 128)
         train_loader = DataLoader(
-            train_ds, batch_size=bs,
+            train_ds,
+            batch_size=bs,
             sampler=WeightedRandomSampler(
-                train_ds.sample_weights, len(train_ds), replacement=True,
+                train_ds.sample_weights,
+                len(train_ds),
+                replacement=True,
             ),
-            num_workers=nw, pin_memory=True,
+            num_workers=nw,
+            pin_memory=True,
             persistent_workers=nw > 0,
         )
         val_loader = DataLoader(
-            val_ds, batch_size=bs, shuffle=False,
-            num_workers=nw, pin_memory=True,
+            val_ds,
+            batch_size=bs,
+            shuffle=False,
+            num_workers=nw,
+            pin_memory=True,
         )
 
         model = LogSpaceResidualUNet(in_channels=2, out_channels=1).to(device)
@@ -110,7 +130,9 @@ def run_training(config, args, trial=None):
 
         optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
         sched = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5,
+            optimizer,
+            mode="min",
+            factor=0.5,
             patience=max(1, patience // 2),
         )
         amp_enabled = device.type == "cuda"
@@ -131,7 +153,8 @@ def run_training(config, args, trial=None):
             pbar = tqdm(
                 train_loader,
                 desc=f"Epoch {epoch+1}/{epochs} [w={w_geom:.4f}]",
-                disable=(trial is not None), mininterval=15.0,
+                disable=(trial is not None),
+                mininterval=15.0,
             )
             for X, Y, Y_gamma in pbar:
                 X = X.to(device, non_blocking=True)
@@ -145,12 +168,12 @@ def run_training(config, args, trial=None):
                     loss_geom = torch.tensor(0.0, device=device)
 
                     if w_geom > 0:
-                        pred_scaled = torch.clamp(
-                            Y_pred[:, 0:1] * max_val_t, max=7.0
-                        )
+                        pred_scaled = torch.clamp(Y_pred[:, 0:1] * max_val_t, max=7.0)
                         pred_phys = F.relu(torch.expm1(pred_scaled))
                         loss_geom = geom_fn(
-                            pred_phys, Y_gamma, anneal_factor=anneal,
+                            pred_phys,
+                            Y_gamma,
+                            anneal_factor=anneal,
                         )
 
                     total = loss_mse + w_geom * loss_geom
@@ -205,19 +228,29 @@ def run_training(config, args, trial=None):
             if trial is None:
                 save_checkpoint(
                     os.path.join(out_dir, "unet_latest.pth"),
-                    epoch + 1, model, optimizer,
+                    epoch + 1,
+                    model,
+                    optimizer,
                     scaler=grad_scaler if amp_enabled else None,
-                    scheduler=sched, early_stopper=early_stopper,
+                    scheduler=sched,
+                    early_stopper=early_stopper,
                 )
                 if is_best:
                     save_checkpoint(
                         os.path.join(out_dir, "unet_best.pth"),
-                        epoch + 1, model, optimizer,
+                        epoch + 1,
+                        model,
+                        optimizer,
                         extra={"best_val_mse": best_val_loss},
                     )
                 if (epoch + 1) % 5 == 0 or epoch == 0:
                     save_sample_images(
-                        model, val_loader, device, out_dir, epoch + 1, denormalizer,
+                        model,
+                        val_loader,
+                        device,
+                        out_dir,
+                        epoch + 1,
+                        denormalizer,
                     )
 
             if trial:

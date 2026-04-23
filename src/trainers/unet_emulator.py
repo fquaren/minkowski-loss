@@ -23,18 +23,30 @@ from src.models.unet import LogSpaceResidualUNet
 from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import MinkowskiLoss
 from src.utils import (
-    load_config, load_scaler_val, load_emulator,
-    DataDenormalizer, managed_logger,
+    load_config,
+    load_scaler_val,
+    load_emulator,
+    DataDenormalizer,
+    managed_logger,
 )
 from src.trainers.base import (
-    EarlyStopping, save_checkpoint, load_checkpoint,
-    cosine_warmup_weight, save_sample_images,
+    EarlyStopping,
+    save_checkpoint,
+    load_checkpoint,
+    cosine_warmup_weight,
+    save_sample_images,
 )
 
 
 def _compute_geometric_loss(
-    emulator, criterion, denormalizer, Y_pred_norm, Y_clean_norm,
-    Y_gamma_log, trust_tau, compute_trust=True,
+    emulator,
+    criterion,
+    denormalizer,
+    Y_pred_norm,
+    Y_clean_norm,
+    Y_gamma_log,
+    trust_tau,
+    compute_trust=True,
 ):
     """Compute emulator-based geometric loss with optional trust weighting."""
     device = Y_pred_norm.device
@@ -70,9 +82,9 @@ def _compute_geometric_loss(
 
 def run_training(config, args, trial=None):
     device = torch.device(
-        "cuda" if torch.cuda.is_available()
-        else "mps" if torch.backends.mps.is_available()
-        else "cpu"
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available() else "cpu"
     )
     if device.type == "cuda":
         torch.set_float32_matmul_precision("high")
@@ -100,7 +112,8 @@ def run_training(config, args, trial=None):
     epochs = config.get("NUM_EPOCHS", 25)
     patience = config.get("PATIENCE", 5)
     w_max = (
-        args.weight_geom if args.weight_geom is not None
+        args.weight_geom
+        if args.weight_geom is not None
         else config.get("MINKOWSKI_TARGET_WEIGHT", 0.0)
     )
     warmup = config.get("MINKOWSKI_WARMUP_EPOCHS", 5)
@@ -116,14 +129,20 @@ def run_training(config, args, trial=None):
     with managed_logger(run_name, out_dir) as logger:
         # Data
         train_ds = DeterministicSRDataset(
-            config["PREPROCESSED_DATA_DIR"], config["TRAIN_METADATA_FILE"],
-            dem_stats, scaler_val, split="train",
+            config["PREPROCESSED_DATA_DIR"],
+            config["TRAIN_METADATA_FILE"],
+            dem_stats,
+            scaler_val,
+            split="train",
             data_percentage=args.data_percentage,
             topology_mode=topology_mode,
         )
         val_ds = DeterministicSRDataset(
-            config["PREPROCESSED_DATA_DIR"], config["VAL_METADATA_FILE"],
-            dem_stats, scaler_val, split="validation",
+            config["PREPROCESSED_DATA_DIR"],
+            config["VAL_METADATA_FILE"],
+            dem_stats,
+            scaler_val,
+            split="validation",
             data_percentage=args.data_percentage,
             topology_mode=topology_mode,
         )
@@ -131,16 +150,24 @@ def run_training(config, args, trial=None):
         nw = config.get("NUM_WORKERS", 4)
         bs = config.get("BATCH_SIZE", 128)
         sampler = WeightedRandomSampler(
-            train_ds.sample_weights, len(train_ds), replacement=True,
+            train_ds.sample_weights,
+            len(train_ds),
+            replacement=True,
         )
         train_loader = DataLoader(
-            train_ds, batch_size=bs, sampler=sampler,
-            num_workers=nw, pin_memory=True,
+            train_ds,
+            batch_size=bs,
+            sampler=sampler,
+            num_workers=nw,
+            pin_memory=True,
             persistent_workers=nw > 0,
         )
         val_loader = DataLoader(
-            val_ds, batch_size=bs, shuffle=False,
-            num_workers=nw, pin_memory=True,
+            val_ds,
+            batch_size=bs,
+            shuffle=False,
+            num_workers=nw,
+            pin_memory=True,
         )
 
         # Models
@@ -150,13 +177,17 @@ def run_training(config, args, trial=None):
         if w_max > 0:
             geom_criterion = MinkowskiLoss(config["QUANTILE_LEVELS"]).to(device)
             emulator = load_emulator(
-                config["EMULATOR_CHECKPOINT_PATH"], config, device,
+                config["EMULATOR_CHECKPOINT_PATH"],
+                config,
+                device,
             )
 
         optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
         mse_fn = nn.MSELoss()
         sched = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5,
+            optimizer,
+            mode="min",
+            factor=0.5,
             patience=max(1, patience // 2),
         )
         amp_enabled = device.type == "cuda"
@@ -175,7 +206,8 @@ def run_training(config, args, trial=None):
             pbar = tqdm(
                 train_loader,
                 desc=f"Epoch {epoch+1}/{epochs} [w={w_geom:.4f}]",
-                disable=(trial is not None), mininterval=30.0,
+                disable=(trial is not None),
+                mininterval=30.0,
             )
             for X, Y, Y_gamma in pbar:
                 X = X.to(device, non_blocking=True)
@@ -191,8 +223,13 @@ def run_training(config, args, trial=None):
 
                     if w_geom > 0 and emulator is not None:
                         loss_geom, trust = _compute_geometric_loss(
-                            emulator, geom_criterion, denormalizer,
-                            Y_pred, Y, Y_gamma, trust_tau,
+                            emulator,
+                            geom_criterion,
+                            denormalizer,
+                            Y_pred,
+                            Y,
+                            Y_gamma,
+                            trust_tau,
                         )
 
                     total = loss_mse + w_geom * loss_geom
@@ -226,8 +263,13 @@ def run_training(config, args, trial=None):
                         lg = torch.tensor(0.0, device=device)
                         if w_geom > 0 and emulator is not None:
                             lg, _ = _compute_geometric_loss(
-                                emulator, geom_criterion, denormalizer,
-                                Y_pred, Y, Y_gamma, trust_tau,
+                                emulator,
+                                geom_criterion,
+                                denormalizer,
+                                Y_pred,
+                                Y,
+                                Y_gamma,
+                                trust_tau,
                                 compute_trust=False,
                             )
                     v_total += (lm + w_geom * lg).item()
@@ -251,20 +293,30 @@ def run_training(config, args, trial=None):
 
             save_checkpoint(
                 os.path.join(out_dir, "unet_latest.pth"),
-                epoch + 1, model, optimizer,
+                epoch + 1,
+                model,
+                optimizer,
                 scaler=grad_scaler if amp_enabled else None,
-                scheduler=sched, early_stopper=early_stopper,
+                scheduler=sched,
+                early_stopper=early_stopper,
             )
             if is_best:
                 save_checkpoint(
                     os.path.join(out_dir, "unet_best.pth"),
-                    epoch + 1, model, optimizer,
+                    epoch + 1,
+                    model,
+                    optimizer,
                     extra={"best_val_mse": best_val_loss},
                 )
 
             if not trial and ((epoch + 1) % 5 == 0 or epoch == 0):
                 save_sample_images(
-                    model, val_loader, device, out_dir, epoch + 1, denormalizer,
+                    model,
+                    val_loader,
+                    device,
+                    out_dir,
+                    epoch + 1,
+                    denormalizer,
                 )
 
             if trial:

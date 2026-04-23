@@ -13,11 +13,19 @@ from src.trainers.unet_emulator import run_training
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("config", type=str)
-    parser.add_argument("--params_path", type=str, required=True,
-                        help="YAML with lr/weight_decay for the UNet")
+    parser.add_argument(
+        "--params_path",
+        type=str,
+        required=True,
+        help="YAML with lr/weight_decay for the UNet",
+    )
     parser.add_argument("--data_percentage", type=float, default=100.0)
-    parser.add_argument("--weight_geom", type=float, default=None,
-                        help="Max geometric loss weight (overrides config)")
+    parser.add_argument(
+        "--weight_geom",
+        type=float,
+        default=None,
+        help="Max geometric loss weight (overrides config)",
+    )
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--tune", action="store_true")
     parser.add_argument("--n_trials", type=int, default=10)

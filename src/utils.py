@@ -100,6 +100,7 @@ def load_physical_thresholds(config: dict) -> np.ndarray:
 # 2. Reproducibility
 # ---------------------------------------------------------------------------
 
+
 def set_seed(seed: int = 42):
     """Set all random seeds for reproducibility."""
     torch.manual_seed(seed)
@@ -113,6 +114,7 @@ def set_seed(seed: int = 42):
 # ---------------------------------------------------------------------------
 # 3. Logging
 # ---------------------------------------------------------------------------
+
 
 def setup_logger(
     name: str,
@@ -168,6 +170,7 @@ def managed_logger(name: str, log_dir: str = None):
 # 4. Data denormalization
 # ---------------------------------------------------------------------------
 
+
 class DataDenormalizer:
     """Converts between normalized log-space [0, 1] and physical mm/h.
 
@@ -198,6 +201,7 @@ class DataDenormalizer:
 # ---------------------------------------------------------------------------
 # 5. Model loading
 # ---------------------------------------------------------------------------
+
 
 def load_emulator(checkpoint_path: str, config: dict, device: str):
     """Load a frozen emulator from a checkpoint.
@@ -240,7 +244,7 @@ def load_emulator(checkpoint_path: str, config: dict, device: str):
             n_quantiles=n_quantiles,
             input_shape=input_shape,
             quantile_levels=config["QUANTILE_LEVELS"],
-            pixel_area_km2=pixel_size_km ** 2,
+            pixel_area_km2=pixel_size_km**2,
         )
     else:
         raise ValueError(f"Unknown architecture: {arch}")
@@ -254,8 +258,7 @@ def load_emulator(checkpoint_path: str, config: dict, device: str):
     state_dict = checkpoint.get("model_state_dict", checkpoint)
     # Strip "module." prefix from DataParallel checkpoints
     state_dict = {
-        (k[7:] if k.startswith("module.") else k): v
-        for k, v in state_dict.items()
+        (k[7:] if k.startswith("module.") else k): v for k, v in state_dict.items()
     }
     model.load_state_dict(state_dict)
     model.eval()
@@ -269,6 +272,7 @@ def load_emulator(checkpoint_path: str, config: dict, device: str):
 # ---------------------------------------------------------------------------
 # 6. Signed log transform (for Euler characteristic)
 # ---------------------------------------------------------------------------
+
 
 def signed_log1p(x):
     """sign(x) * log1p(|x|), applicable to numpy arrays or torch tensors.
