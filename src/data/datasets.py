@@ -233,6 +233,26 @@ class DeterministicSRDataset(Dataset):
             preprocessed_data_dir, "preprocessed_dataset.zarr"
         )
 
+        # Validate split exists in Zarr store at init time (not lazily in workers)
+        _store = zarr.open(self.zarr_path, mode="r")
+        if split not in _store:
+            available = list(_store.keys())
+            # Handle common val/validation mismatch
+            alt = {"validation": "val", "val": "validation"}
+            if split in alt and alt[split] in _store:
+                self.split = alt[split]
+                print(
+                    f"Warning: split '{split}' not found, using '{self.split}' "
+                    f"(available: {available})"
+                )
+            else:
+                raise KeyError(
+                    f"Split '{split}' not found in {self.zarr_path}. "
+                    f"Available groups: {available}"
+                )
+        else:
+            self.split = split
+
         self.metadata = []
         is_wet = []
         with open(metadata_file, "r") as f:
@@ -365,6 +385,26 @@ class DiffusionSRDataset(Dataset):
         self.zarr_path = os.path.join(
             preprocessed_data_dir, "preprocessed_dataset.zarr"
         )
+
+        # Validate split exists in Zarr store at init time (not lazily in workers)
+        _store = zarr.open(self.zarr_path, mode="r")
+        if split not in _store:
+            available = list(_store.keys())
+            # Handle common val/validation mismatch
+            alt = {"validation": "val", "val": "validation"}
+            if split in alt and alt[split] in _store:
+                self.split = alt[split]
+                print(
+                    f"Warning: split '{split}' not found, using '{self.split}' "
+                    f"(available: {available})"
+                )
+            else:
+                raise KeyError(
+                    f"Split '{split}' not found in {self.zarr_path}. "
+                    f"Available groups: {available}"
+                )
+        else:
+            self.split = split
 
         self.metadata = []
         with open(metadata_file, "r") as f:
