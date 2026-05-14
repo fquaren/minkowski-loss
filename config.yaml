@@ -44,7 +44,7 @@ QUANTILE_LEVELS: [
 
 # --- EMULATOR ---
 ARCHITECTURE: "Constrained"  # "Baseline", "Lipschitz", or "Constrained"
-EMULATOR_CHECKPOINT_PATH: "/home/fquareng/work/ch2/runs/emulator/Emulator_Constrained_single_2026-04-19_05-38-02/best_model_checkpoint.pth"  # set after training
+EMULATOR_CHECKPOINT_PATH: "/home/fquareng/work/ch2/minkowski-loss/runs/emulator/Emulator_Constrained_single_2026-05-12_09-13-07/best_model_checkpoint.pth"  # set after training
 
 # Mixup augmentation
 MIXUP_ALPHA: 0.2
@@ -52,11 +52,11 @@ NOISE_STD: 0.05
 
 # --- TRAINING (shared defaults) ---
 DEVICE: "cuda"
-NUM_WORKERS: 10
+NUM_WORKERS: 8
 MAX_WORKERS: 4
 BATCH_SIZE: 128
-NUM_EPOCHS: 25
-PATIENCE: 5
+NUM_EPOCHS: 100
+PATIENCE: 5  # super-resolution
 EARLY_STOPPING_PATIENCE: 15  # emulator
 
 # Dataset balancing
@@ -64,8 +64,8 @@ WET_DRY_RATIO: 1.0
 
 # --- MINKOWSKI LOSS CONFIGURATION ---
 MINKOWSKI_TARGET_WEIGHT: 0.0   # 0 = MSE only; >0 = MSE + geometric loss
-MINKOWSKI_WARMUP_EPOCHS: 5     # epochs before geometric loss activates
+MINKOWSKI_WARMUP_EPOCHS: 3     # epochs before geometric loss activates
 TRUST_TAU: 0.005725            # trust gating coefficient for emulator loss
 
 # --- EXPERIMENT ---
-EXPERIMENT_NAME: "DDPM_SR_Minkowski"
+EXPERIMENT_NAME: "debugging"

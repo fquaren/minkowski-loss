@@ -10,6 +10,7 @@ allowing MSE to stabilise before topological constraints are applied.
 import os
 import time
 import json
+from rasterio import mask
 import yaml
 import torch
 import torch.nn as nn
@@ -70,8 +71,10 @@ def _compute_geometric_loss(
                 avg_trust = trust_w.mean().item()
 
         pred_phys = denormalizer.to_physical_torch(pred_f32)
-        pred_phys = pred_phys * (pred_phys > 0.1).float()
-        pred_gamma_phys = emulator(pred_phys)
+        mask = torch.sigmoid((pred_phys - 0.1) / 0.05)  # temperature ~ 0.05
+        pred_phys_masked = pred_phys * mask
+        # pred_phys = pred_phys * (pred_phys > 0.1).float()
+        pred_gamma_phys = emulator(pred_phys_masked)
         pred_gamma_log = torch.log1p(pred_gamma_phys)
 
         batch_dist, _, _, _ = criterion(pred_gamma_log, gamma_f32)

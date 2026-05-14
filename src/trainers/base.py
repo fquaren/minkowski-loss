@@ -131,19 +131,9 @@ def load_checkpoint(path, model, optimizer=None, scaler=None,
 
 def cosine_warmup_weight(epoch: int, total_epochs: int, w_max: float,
                          warmup_epochs: int = 0) -> float:
-    """Cosine annealing from 0 → w_max (warmup variant).
-
-    Returns 0 during warmup, then ramps up via:
-        w = 0.5 * w_max * (1 - cos(π * (epoch - warmup) / (total - warmup)))
-
-    This is the INVERSE of the original code's schedule, which started
-    at w_max and decayed to 0 (wrong: geometric loss strongest when
-    model is worst). This schedule lets MSE stabilise first.
-    """
     if epoch < warmup_epochs:
-        return 0.0
-    progress = (epoch - warmup_epochs) / max(total_epochs - warmup_epochs, 1)
-    return 0.5 * w_max * (1.0 - np.cos(np.pi * progress))
+        return 0.5 * w_max * (1 - np.cos(np.pi * epoch / warmup_epochs))
+    return w_max
 
 
 # ---------------------------------------------------------------
