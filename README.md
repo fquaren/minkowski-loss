@@ -208,20 +208,6 @@ pytest tests/ -v
 
 The test suite verifies: topological correctness on fields with known Minkowski functionals (single disk → B₀ = 1; annulus → χ = 0; two disks → B₀ = 2), architectural constraint enforcement (area monotonicity, isoperimetric inequality, domain bound), loss function gradient flow and homoscedastic parameter updates, and preprocessing invariants (mass conservation, filter bounds).
 
-## Citation
-
-```bibtex
-@misc{quarenghi2026emulatingnondifferentiablemetricsknowledgeguided,
-      title={Emulating Non-Differentiable Metrics via Knowledge-Guided Learning: Introducing the Minkowski Image Loss}, 
-      author={Filippo Quarenghi and Ryan Cotsakis and Tom Beucler},
-      year={2026},
-      eprint={2604.11422},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2604.11422}, 
-}
-```
-
 ## Acknowledgments
 
 F.Q. and T.B. acknowledge support from the Swiss National Science Foundation (SNSF) under Grant No. 10001754 ("RobustSR" project). The authors thank L. Räss for technical assistance and D. Nerini, D. Domeisen, V. Chavez, L. Moret, and O. Miralles for contributions to the initial conceptualisation.
