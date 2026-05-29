@@ -50,8 +50,8 @@ The constrained Lipschitz CNN pairs a spectrally normalised encoder with geometr
 ## Installation
 
 ```bash
-git clone https://github.com/<your-handle>/Mink-DDPM.git
-cd Mink-DDPM
+git clone https://github.com/<your-handle>/minkowski-loss.git
+cd minkowski-loss
 
 # Create environment
 micromamba create -n mink-ddpm python=3.10
