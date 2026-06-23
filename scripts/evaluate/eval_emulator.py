@@ -99,7 +99,8 @@ def main():
         batch_size=config.get("BATCH_SIZE", 32),
         shuffle=False,
         num_workers=config.get("NUM_WORKERS", 4),
-        pin_memory=True,
+        pin_memory=False,
+        multiprocessing_context="spawn",
     )
 
     # Predictions

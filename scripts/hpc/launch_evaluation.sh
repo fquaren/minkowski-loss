@@ -19,13 +19,13 @@ echo "Running evaluation pipeline — log: $LOG_FILE"
 {
     echo "=== Evaluation started at $(date) ==="
 
-    # echo "--- Emulator evaluation ---"
-    # micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/evaluate/eval_emulator.py" \
-    #     "$CONFIG" --checkpoint "$EMULATOR_CKPT"
+    echo "--- Emulator evaluation ---"
+    micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/evaluate/eval_emulator.py" \
+        "$CONFIG" --checkpoint "$EMULATOR_CKPT"
 
-    echo "--- Baselines ---"
-    micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/evaluate/eval_baselines.py" \
-        "$CONFIG"
+    # echo "--- Baselines ---"
+    # micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/evaluate/eval_baselines.py" \
+    #     "$CONFIG"
 
     echo "--- Feature inversion ---"
     micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/evaluate/eval_inversion.py" \

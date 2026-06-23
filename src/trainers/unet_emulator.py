@@ -185,13 +185,21 @@ def run_training(config, args, trial=None):
             train_ds.sample_weights, len(train_ds), replacement=True,
         )
         train_loader = DataLoader(
-            train_ds, batch_size=bs, sampler=sampler,
-            num_workers=nw, pin_memory=True,
-            persistent_workers=nw > 0,
+            train_ds,
+            batch_size=bs,
+            sampler=sampler,
+            num_workers=nw,
+            pin_memory=False,
+            persistent_workers=False, #nw > 0,
+            multiprocessing_context="spawn",
         )
         val_loader = DataLoader(
-            val_ds, batch_size=bs, shuffle=False,
-            num_workers=nw, pin_memory=True,
+            val_ds,
+            batch_size=bs,
+            shuffle=False,
+            num_workers=nw,
+            pin_memory=False,
+            multiprocessing_context="spawn",
         )
 
         # --- Models ---

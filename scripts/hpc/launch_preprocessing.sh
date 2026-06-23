@@ -29,14 +29,14 @@ echo "Starting preprocessing pipeline — log: $LOG_FILE"
     # echo "--- Stage 3: Zarr store creation ---"
     # micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/preprocess_data.py" "$CONFIG"
 
-    echo "--- Stage 4: Persistence thresholds ---"
-    micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/compute_persistence_thresholds.py" "$CONFIG"
+    # echo "--- Stage 4: Persistence thresholds ---"
+    # micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/compute_persistence_thresholds.py" "$CONFIG"
 
     echo "--- Stage 5: Gamma targets ---"
     micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/compute_gamma_targets.py" "$CONFIG"
 
-    # echo "--- Stage 6: Mixup augmentation ---"
-    # micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/apply_mixup.py" "$CONFIG"
+    echo "--- Stage 6: Mixup augmentation ---"
+    micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/preprocess/apply_mixup.py" "$CONFIG"
 
     echo "=== Preprocessing complete at $(date) ==="
 } > "$LOG_FILE" 2>&1

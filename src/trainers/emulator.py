@@ -66,13 +66,21 @@ def _get_loaders(config, scaler_val, data_fraction, topology_mode):
 
     bs = config.get("BATCH_SIZE", 128)
     train_loader = DataLoader(
-        train_ds, batch_size=bs, shuffle=True,
-        num_workers=nw, pin_memory=True,
-        persistent_workers=nw > 0,
+        train_ds,
+        batch_size=bs,
+        shuffle=True,
+        num_workers=nw,
+        pin_memory=False,
+        persistent_workers=False, #nw > 0,
+        multiprocessing_context="spawn",
     )
     val_loader = DataLoader(
-        val_ds, batch_size=bs, shuffle=False,
-        num_workers=nw, pin_memory=True,
+        val_ds,
+        batch_size=bs,
+        shuffle=False,
+        num_workers=nw,
+        pin_memory=False,
+        multiprocessing_context="spawn",
     )
     return train_loader, val_loader
 

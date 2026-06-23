@@ -139,7 +139,7 @@ def evaluate_analytical_baseline(
     from src.evaluation.metrics import evaluate_predictions
     from src.utils import signed_expm1
 
-    loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, multiprocessing_context="spawn",)
 
     y_true_list = []
     y_pred_list = []

@@ -44,7 +44,12 @@ def _gamma_to_log(gamma_phys: np.ndarray, topology_mode: str) -> np.ndarray:
     log_P = np.log1p(gamma_phys[..., 1, :])
 
     if topology_mode == "euler":
-        chi = gamma_phys[..., 2, :] - gamma_phys[..., 3, :]
+        # channel 4 = exact 4-connected Euler characteristic (loss-consistent).
+        # Legacy 4-channel targets fall back to B0 - B1 (inconsistent; regenerate).
+        if gamma_phys.shape[-2] >= 5:
+            chi = gamma_phys[..., 4, :]
+        else:
+            chi = gamma_phys[..., 2, :] - gamma_phys[..., 3, :]
         log_T = signed_log1p(chi)
     elif topology_mode == "b0":
         log_T = np.log1p(gamma_phys[..., 2, :])

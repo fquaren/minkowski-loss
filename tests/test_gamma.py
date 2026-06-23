@@ -70,11 +70,12 @@ class TestGammaMatrix:
             field, thresholds, pixel_size_km=1.0, thresh_b0=0.01, thresh_b1=0.01
         )
 
-        assert gamma.shape == (4, 1)
+        assert gamma.shape == (5, 1)
         assert gamma[0, 0] > 0, "Area should be positive"
         assert gamma[1, 0] > 0, "Perimeter should be positive"
         assert gamma[2, 0] == 1, f"Expected B0=1, got {gamma[2, 0]}"
         assert gamma[3, 0] == 0, f"Expected B1=0, got {gamma[3, 0]}"
+        assert gamma[4, 0] == 1, f"Expected chi_exact=0, got {gamma[4, 0]}"
 
     def test_two_disks_b0(self):
         """Two separated disks → B0=2."""
@@ -100,6 +101,7 @@ class TestGammaMatrix:
         )
         assert gamma[2, 0] == 1, f"Expected B0=1, got {gamma[2, 0]}"
         assert gamma[3, 0] == 1, f"Expected B1=1, got {gamma[3, 0]}"
+        assert gamma[4, 0] == 0, f"Expected chi_exact=0, got {gamma[4, 0]}"
 
     def test_empty_field_all_zero(self):
         """Zero field → all zeros except possibly background at low threshold."""
@@ -110,7 +112,7 @@ class TestGammaMatrix:
         )
         np.testing.assert_array_equal(gamma[0, :], 0.0)  # no area
         np.testing.assert_array_equal(gamma[1, :], 0.0)  # no perimeter
-
+        np.testing.assert_array_equal(gamma[4, :], 0.0)  # no chi_exact
     def test_area_monotonicity(self):
         """Area must be non-increasing with increasing threshold."""
         field = np.random.default_rng(42).exponential(2.0, size=(64, 64))
@@ -155,7 +157,7 @@ class TestGammaMatrix:
         gamma = compute_gamma_matrix(
             field, thresholds, pixel_size_km=2.0, thresh_b0=0.1, thresh_b1=0.1
         )
-        assert gamma.shape == (4, 20)
+        assert gamma.shape == (5, 20)
         assert gamma.dtype == np.float32
 
 
@@ -169,6 +171,7 @@ class TestSelectTopologyTarget:
                 [40, 20, 5],  # P
                 [3, 2, 1],  # B0
                 [1, 0, 0],  # B1
+                [2, 2, 1],  # chi_exact
             ],
             dtype=np.float32,
         )
@@ -183,6 +186,7 @@ class TestSelectTopologyTarget:
                 [40, 20, 5],
                 [3, 2, 1],
                 [1, 0, 0],
+                [2, 2, 1],
             ],
             dtype=np.float32,
         )

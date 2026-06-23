@@ -245,6 +245,90 @@ def _compute_perimeter(masks_3d: np.ndarray, pixel_size_km: float) -> np.ndarray
     return perimeters
 
 
+# Cauchy-Crofton weights (pixel units), calibrated to the continuous perimeter on
+# disks of radius 20..78 (max relative error ~1.31%). These MUST equal the weights
+# used by the differentiable loss (AnalyticalMinkowskiLoss) so target and prediction
+# use the same estimator and the loss has a fixed point at the true field.
+# Ref: Ohser & Schladitz (2009); Legland, Kieu & Devaux (2007),
+# doi:10.1016/j.imavis.2006.07.022.
+_CROFTON_W_AXIAL = 0.473215
+_CROFTON_W_DIAG = 0.217716
+
+
+def _compute_perimeter_crofton(
+    masks_3d: np.ndarray,
+    pixel_size_km: float,
+    w_axial: float = _CROFTON_W_AXIAL,
+    w_diag: float = _CROFTON_W_DIAG,
+) -> np.ndarray:
+    """Isotropic Cauchy-Crofton perimeter via 4-direction transition counts.
+
+    Hard-mask analogue of the differentiable estimator in AnalyticalMinkowskiLoss.
+    Unbiased and rotation-invariant, unlike marching-squares (which overestimates
+    smooth-boundary perimeter by ~6%) and unlike axis-aligned TV.
+
+    Parameters
+    ----------
+    masks_3d : np.ndarray, shape (H, W, Q)
+        Boolean excursion set masks.
+    pixel_size_km : float
+        Physical pixel edge length in km.
+
+    Returns
+    -------
+    np.ndarray, shape (Q,)
+    """
+    m = masks_3d.astype(np.float64)
+    ax = np.abs(np.diff(m, axis=1)).sum(axis=(0, 1)) + np.abs(
+        np.diff(m, axis=0)
+    ).sum(axis=(0, 1))
+    d1 = np.abs(m[1:, 1:, :] - m[:-1, :-1, :]).sum(axis=(0, 1))
+    d2 = np.abs(m[1:, :-1, :] - m[:-1, 1:, :]).sum(axis=(0, 1))
+    return ((w_axial * ax + w_diag * (d1 + d2)) * pixel_size_km).astype(np.float32)
+
+
+def compute_euler_characteristic_exact(
+    field_2d: np.ndarray,
+    thresholds: np.ndarray,
+    connectivity: int = 1,
+) -> np.ndarray:
+    """Exact Euler characteristic chi = beta_0 - beta_1 of each excursion set.
+
+    Uses skimage.measure.euler_number on the hard excursion set at each threshold.
+    With connectivity=1 (4-connected foreground / 8-connected background) this is
+    EXACTLY the hard limit of the analytical V - Ex - Ey + F relaxation used in the
+    loss (verified on disk/annulus/ring/random fields). It is the correct,
+    convention-consistent target for TOPOLOGY_MODE="euler".
+
+    This deliberately does NOT use persistent homology: the analytical relaxation is
+    unfiltered and local, so the target must be too, otherwise the loss has no fixed
+    point at the true field. (GUDHI B0 - B1 is 8-connected AND persistence-filtered.)
+
+    Parameters
+    ----------
+    field_2d : np.ndarray, shape (H, W)
+        Physical precipitation field in mm/h.
+    thresholds : np.ndarray, shape (Q,)
+        Physical intensity thresholds in mm/h.
+    connectivity : int
+        Foreground connectivity (1 -> 4-connected, matches the analytical chi).
+
+    Returns
+    -------
+    np.ndarray, shape (Q,), dtype float32
+    """
+    from skimage import measure as _measure
+
+    clean = np.nan_to_num(field_2d, nan=0.0)
+    thresholds = np.asarray(thresholds, dtype=np.float32)
+    chi = np.zeros(len(thresholds), dtype=np.float32)
+    for i, t in enumerate(thresholds):
+        mask = clean >= t
+        if mask.any():
+            chi[i] = _measure.euler_number(mask, connectivity=connectivity)
+    return chi
+
+
 # ---------------------------------------------------------------------------
 # 4. Full gamma matrix computation
 # ---------------------------------------------------------------------------
@@ -257,11 +341,11 @@ def compute_gamma_matrix(
     thresh_b0: float,
     thresh_b1: float,
 ) -> np.ndarray:
-    """Compute the 4-channel gamma matrix [A, P, B0, B1] for a precipitation field.
+    """Compute the 5-channel gamma matrix [A, P, B0, B1, chi_exact] for a field.
 
-    This is the lossless representation storing all four Minkowski-related
-    quantities. Downstream code selects the desired 3-channel subset
-    (A, P, B0) or (A, P, chi=B0-B1) via `select_topology_target`.
+    This is the lossless representation storing all Minkowski-related quantities.
+    Downstream code selects the desired 3-channel subset (A, P, B0) for "b0" mode
+    or (A, P, chi_exact) for "euler" mode via `select_topology_target`.
 
     Parameters
     ----------
@@ -278,15 +362,22 @@ def compute_gamma_matrix(
 
     Returns
     -------
-    np.ndarray, shape (4, Q), dtype float32
+    np.ndarray, shape (5, Q), dtype float32
         Row 0: area (km²)
-        Row 1: perimeter (km)
-        Row 2: B0 (connected components)
-        Row 3: B1 (holes)
+        Row 1: perimeter (km) -- isotropic Cauchy-Crofton (matches the loss estimator)
+        Row 2: B0 (persistence-filtered connected components; for TOPOLOGY_MODE="b0")
+        Row 3: B1 (persistence-filtered holes; diagnostics)
+        Row 4: chi_exact (4-connected Euler characteristic; for TOPOLOGY_MODE="euler")
+
+    Note: row 1 switched from marching-squares to Cauchy-Crofton, and row 4 (exact
+    chi) was added, so that the offline targets use the SAME estimators as the
+    differentiable AnalyticalMinkowskiLoss. Regenerate stored targets after this
+    change. The legacy marching-squares perimeter remains available as
+    _compute_perimeter.
     """
     thresholds = np.asarray(thresholds, dtype=np.float32)
     n_q = len(thresholds)
-    gamma = np.zeros((4, n_q), dtype=np.float32)
+    gamma = np.zeros((5, n_q), dtype=np.float32)
 
     clean = np.nan_to_num(field_2d, nan=0.0)
     pixel_area_km2 = pixel_size_km**2
@@ -296,43 +387,56 @@ def compute_gamma_matrix(
 
     # Area and perimeter (geometric, no TDA)
     gamma[0, :] = _compute_area(masks_3d, pixel_area_km2)
-    gamma[1, :] = _compute_perimeter(masks_3d, pixel_size_km)
+    gamma[1, :] = _compute_perimeter_crofton(masks_3d, pixel_size_km)
 
-    # Topological features via persistent homology
+    # Topological features via persistent homology (B0/B1, for b0 mode + diagnostics)
     persistence_pairs = compute_persistence_diagram(clean)
     gamma[2, :] = _count_b0(persistence_pairs, thresholds, thresh_b0)
     gamma[3, :] = _count_b1(persistence_pairs, thresholds, thresh_b1)
+
+    # Exact 4-connected Euler characteristic (for euler mode; loss-consistent)
+    gamma[4, :] = compute_euler_characteristic_exact(clean, thresholds, connectivity=1)
 
     return gamma
 
 
 def select_topology_target(
-    gamma_4ch: np.ndarray,
+    gamma_5ch: np.ndarray,
     mode: str = "euler",
 ) -> np.ndarray:
-    """Convert 4-channel gamma to 3-channel with the chosen topology target.
+    """Convert the 5-channel gamma to 3-channel with the chosen topology target.
 
     Parameters
     ----------
-    gamma_4ch : np.ndarray, shape (..., 4, Q)
-        Full gamma matrix with [A, P, B0, B1].
+    gamma_5ch : np.ndarray, shape (..., 5, Q)
+        Full gamma matrix [A, P, B0, B1, chi_exact]. A legacy (..., 4, Q) matrix
+        [A, P, B0, B1] is also accepted; in that case "euler" falls back to
+        B0 - B1 (8-connected, persistence-filtered -- inconsistent with the
+        analytical chi; regenerate targets to obtain chi_exact).
     mode : str
-        "euler" → third channel is chi = B0 - B1 (Euler characteristic).
-        "b0"   → third channel is B0 (connected components only).
+        "euler" -> third channel is the exact 4-connected Euler characteristic.
+        "b0"    -> third channel is B0 (connected components only).
 
     Returns
     -------
     np.ndarray, shape (..., 3, Q)
         Gamma matrix with [A, P, topology_target].
     """
+    n_ch = gamma_5ch.shape[-2]
     if mode == "euler":
-        topo = gamma_4ch[..., 2, :] - gamma_4ch[..., 3, :]
+        if n_ch >= 5:
+            topo = gamma_5ch[..., 4, :]
+        elif n_ch == 4:
+            # legacy, inconsistent convention -- see docstring
+            topo = gamma_5ch[..., 2, :] - gamma_5ch[..., 3, :]
+        else:
+            raise ValueError(f"euler mode needs >=4 channels, got {n_ch}")
     elif mode == "b0":
-        topo = gamma_4ch[..., 2, :]
+        topo = gamma_5ch[..., 2, :]
     else:
         raise ValueError(f"Unknown topology mode: {mode!r}. Use 'euler' or 'b0'.")
 
-    return np.stack([gamma_4ch[..., 0, :], gamma_4ch[..., 1, :], topo], axis=-2)
+    return np.stack([gamma_5ch[..., 0, :], gamma_5ch[..., 1, :], topo], axis=-2)
 
 
 # ---------------------------------------------------------------------------

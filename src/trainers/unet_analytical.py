@@ -110,15 +110,17 @@ def run_training(config, args, trial=None):
                 replacement=True,
             ),
             num_workers=nw,
-            pin_memory=True,
-            persistent_workers=nw > 0,
+            pin_memory=False,
+            persistent_workers=False, #nw > 0,
+            multiprocessing_context="spawn",
         )
         val_loader = DataLoader(
             val_ds,
             batch_size=bs,
             shuffle=False,
             num_workers=nw,
-            pin_memory=True,
+            pin_memory=False,
+            multiprocessing_context="spawn",
         )
 
         model = LogSpaceResidualUNet(in_channels=2, out_channels=1).to(device)

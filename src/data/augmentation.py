@@ -10,7 +10,8 @@ where λ ~ Beta(α, α) and ε ~ N(0, σ²I).
 
 The corresponding gamma targets are recomputed exactly on the mixed
 fields (not interpolated from the component gammas, since Minkowski
-functionals are nonlinear).
+functionals are nonlinear). Gamma now has 5 channels
+[A, P_crofton, B0, B1, chi_exact]; see src/data/gamma.compute_gamma_matrix.
 """
 
 import os
@@ -22,6 +23,9 @@ from tqdm import tqdm
 
 from src.data.gamma import compute_gamma_matrix
 from src.utils import load_config, load_persistence_thresholds, load_physical_thresholds
+
+N_CHANNELS = 5  # [A, P_crofton, B0, B1, chi_exact]
+CHANNEL_LAYOUT = "A,P_crofton,B0,B1,chi_exact"
 
 
 def apply_mixup_numpy(
@@ -86,7 +90,9 @@ def worker_mixup_chunk(args):
     rng = np.random.default_rng(seed=global_seed + start_idx)
     mixed = apply_mixup_numpy(real, interp, alpha, noise_std, rng)
 
-    gamma_chunk = np.zeros((N, 4, len(physical_thresholds)), dtype=np.float32)
+    # mixed is a convex combination of physical precip fields -> still mm/h,
+    # so compute_gamma_matrix (which thresholds in physical space) applies directly.
+    gamma_chunk = np.zeros((N, N_CHANNELS, len(physical_thresholds)), dtype=np.float32)
     for i in range(N):
         gamma_chunk[i] = compute_gamma_matrix(
             mixed[i], physical_thresholds, pixel_size_km, thresh_b0, thresh_b1
@@ -114,14 +120,16 @@ def run_mixup_pipeline(config_path: str, seed: int = 42):
     n_q = len(physical_thresholds)
     chunk_size = config.get("WORKER_CHUNK_SIZE", 500)
 
-    # Create or overwrite datasets
+    # Create or overwrite datasets (recreate to guarantee the 5-channel layout,
+    # in case a stale 4-channel mixup_gamma_targets exists from a previous run)
     for name, shape, chunks in [
         ("mixup_precip", (num_samples, H, W), (chunk_size, H, W)),
-        ("mixup_gamma_targets", (num_samples, 4, n_q), (chunk_size, 4, n_q)),
+        ("mixup_gamma_targets", (num_samples, N_CHANNELS, n_q), (chunk_size, N_CHANNELS, n_q)),
     ]:
         if name in group:
             del group[name]
         group.create_dataset(name, shape=shape, chunks=chunks, dtype="float32")
+    group["mixup_gamma_targets"].attrs["channels"] = CHANNEL_LAYOUT
 
     tasks = []
     for start in range(0, num_samples, chunk_size):
