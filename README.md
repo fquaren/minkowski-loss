@@ -1,7 +1,6 @@
 # Emulating Non-Differentiable Metrics via Knowledge-Guided Learning: Introducing the Minkowski Image Loss
 
 [![arXiv](https://img.shields.io/badge/arXiv-2604.11422-b31b1b.svg)](https://arxiv.org/abs/2604.11422)
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c.svg)](https://pytorch.org/)
 
@@ -50,8 +49,8 @@ The constrained Lipschitz CNN pairs a spectrally normalised encoder with geometr
 ## Installation
 
 ```bash
-git clone https://github.com/<your-handle>/Mink-DDPM.git
-cd Mink-DDPM
+git clone https://github.com/<your-handle>/minkowski-loss.git
+cd minkowski-loss
 
 # Create environment
 micromamba create -n mink-ddpm python=3.10
@@ -207,20 +206,6 @@ pytest tests/ -v
 ```
 
 The test suite verifies: topological correctness on fields with known Minkowski functionals (single disk → B₀ = 1; annulus → χ = 0; two disks → B₀ = 2), architectural constraint enforcement (area monotonicity, isoperimetric inequality, domain bound), loss function gradient flow and homoscedastic parameter updates, and preprocessing invariants (mass conservation, filter bounds).
-
-## Citation
-
-```bibtex
-@misc{quarenghi2026emulatingnondifferentiablemetricsknowledgeguided,
-      title={Emulating Non-Differentiable Metrics via Knowledge-Guided Learning: Introducing the Minkowski Image Loss}, 
-      author={Filippo Quarenghi and Ryan Cotsakis and Tom Beucler},
-      year={2026},
-      eprint={2604.11422},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2604.11422}, 
-}
-```
 
 ## Acknowledgments
 
