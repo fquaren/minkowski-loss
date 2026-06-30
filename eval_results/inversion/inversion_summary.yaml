@@ -1,0 +1,9 @@
+large_storm:
+  final_mse: 0.1734502613544464
+  rmse: 1.8286806344985962
+no_storm:
+  final_mse: 19.00050163269043
+  rmse: 8.410541534423828
+small_storm:
+  final_mse: 7.868038654327393
+  rmse: 3.441788911819458

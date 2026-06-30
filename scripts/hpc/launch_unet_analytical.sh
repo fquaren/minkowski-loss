@@ -3,7 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+set +u
 source "${SCRIPT_DIR}/env.sh"
+set -u
 
 CONFIG="${PROJECT_ROOT}/config.yaml"
 PARAMS="${1:-${PROJECT_ROOT}/configs/unet_analytical.yaml}"

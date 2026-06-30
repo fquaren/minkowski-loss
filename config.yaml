@@ -33,7 +33,7 @@ SPLIT_RATIOS:
 # --- TOPOLOGY CONFIGURATION ---
 # "euler" = chi = B0 - B1 (Euler characteristic, matches analytical approx.)
 # "b0"    = connected components only (original paper setup)
-TOPOLOGY_MODE: "b0"  #"euler"
+TOPOLOGY_MODE: "euler"
 
 # Climatological quantile levels for Minkowski functional thresholds.
 # These are quantiles of the wet-pixel CDF, mapped to physical mm/h thresholds.

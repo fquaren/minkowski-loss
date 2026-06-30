@@ -8,28 +8,35 @@ while the geometric weight warms up from 0 → w_max. This ensures
 the analytical approximation is most precise when its weight is highest.
 """
 
+import json
 import os
 import time
-import json
-import yaml
+
+import numpy as np
+import optuna
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import numpy as np
+import yaml
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from tqdm import tqdm
-import optuna
 
-from src.models.unet import LogSpaceResidualUNet
 from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss
-from src.utils import load_config, load_scaler_val, DataDenormalizer, managed_logger
+from src.models.unet import LogSpaceResidualUNet
 from src.trainers.base import (
     EarlyStopping,
-    save_checkpoint,
     cosine_warmup_weight,
+    save_checkpoint,
     save_sample_images,
+)
+from src.utils import (
+    DataDenormalizer,
+    load_persistence_thresholds,
+    load_physical_thresholds,
+    load_scaler_val,
+    managed_logger,
 )
 
 
@@ -126,8 +133,12 @@ def run_training(config, args, trial=None):
         model = LogSpaceResidualUNet(in_channels=2, out_channels=1).to(device)
         mse_fn = nn.MSELoss()
         geom_fn = AnalyticalMinkowskiLoss(
-            thresholds=config["QUANTILE_LEVELS"],
+            physical_thresholds=load_physical_thresholds(config),
+            quantile_levels=config["QUANTILE_LEVELS"],
             pixel_size_km=config.get("PIXEL_SIZE_KM", 2.0),
+            topology_mode=topology_mode,
+            area_mode="ste",
+            persistence_thresh_b0=load_persistence_thresholds(config)[0] if topology_mode == "b0" else 0.0,
         ).to(device)
 
         optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
