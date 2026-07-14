@@ -9,7 +9,7 @@ set -u
 
 CONFIG="${PROJECT_ROOT}/config.yaml"
 PARAMS="${1:-${PROJECT_ROOT}/configs/unet_analytical.yaml}"
-WEIGHT_GEOM="${2:-1.0}"
+WEIGHT_GEOM="${2:-0.0001}"
 DATA_PCT="${3:-100.0}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="${PROJECT_ROOT}/logs/unet_ana_${TIMESTAMP}.log"

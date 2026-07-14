@@ -217,7 +217,7 @@ def run_training(config, args, trial=None):
                         Y_pred = model(X)
                         lm = mse_fn(Y_pred, Y)
                         lg = torch.tensor(0.0, device=device)
-                        if w_geom > 0:
+                        if w_max > 0:
                             ps = torch.clamp(Y_pred[:, 0:1] * max_val_t, max=7.0)
                             pp = F.relu(torch.expm1(ps))
                             lg = geom_fn(pp, Y_gamma, anneal_factor=anneal)
@@ -227,16 +227,22 @@ def run_training(config, args, trial=None):
 
             n_val = len(val_loader)
             avg_val_mse = v_mse / n_val
-            sched.step(avg_val_mse)
+            avg_val_geom = v_geom / n_val
+            # Selection / early-stopping monitor: full-target-weight total loss.
+            # w_max (not the warmup w_geom) keeps the criterion stable across the
+            # warmup ramp; reduces to val_mse when w_max == 0 (MSE-only control).
+            val_monitor = avg_val_mse + w_max * avg_val_geom
+            sched.step(val_monitor)
 
             logger.info(
                 f"Epoch {epoch+1} | "
                 f"train_mse={r_mse/n_train:.4f} val_mse={avg_val_mse:.4f} "
-                f"geom={v_geom/n_val:.4f} w={w_geom:.4f} anneal={anneal:.3f}"
+                f"geom={avg_val_geom:.4f} val_monitor={val_monitor:.4f} "
+                f"w={w_geom:.4f} anneal={anneal:.3f}"
             )
 
-            is_best = avg_val_mse < best_val_loss
-            best_val_loss = min(best_val_loss, avg_val_mse)
+            is_best = val_monitor < best_val_loss
+            best_val_loss = min(best_val_loss, val_monitor)
 
             if trial is None:
                 save_checkpoint(
@@ -254,7 +260,7 @@ def run_training(config, args, trial=None):
                         epoch + 1,
                         model,
                         optimizer,
-                        extra={"best_val_mse": best_val_loss},
+                        extra={"best_val_monitor": best_val_loss},
                     )
                 if (epoch + 1) % 5 == 0 or epoch == 0:
                     save_sample_images(
@@ -267,11 +273,11 @@ def run_training(config, args, trial=None):
                     )
 
             if trial:
-                trial.report(avg_val_mse, epoch)
+                trial.report(val_monitor, epoch)
                 if trial.should_prune():
                     raise optuna.TrialPruned()
 
-            if early_stopper(avg_val_mse):
+            if early_stopper(val_monitor):
                 logger.info(f"Early stopping at epoch {epoch+1}.")
                 break
 

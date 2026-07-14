@@ -52,7 +52,7 @@ NOISE_STD: 0.05
 
 # --- TRAINING (shared defaults) ---
 DEVICE: "cuda"
-NUM_WORKERS: 8
+NUM_WORKERS: 4
 MAX_WORKERS: 4
 BATCH_SIZE: 128
 NUM_EPOCHS: 100
@@ -63,9 +63,9 @@ EARLY_STOPPING_PATIENCE: 15  # emulator
 WET_DRY_RATIO: 1.0
 
 # --- MINKOWSKI LOSS CONFIGURATION ---
-MINKOWSKI_TARGET_WEIGHT: 0.0   # 0 = MSE only; >0 = MSE + geometric loss
-MINKOWSKI_WARMUP_EPOCHS: 3     # epochs before geometric loss activates
-TRUST_TAU: 0.005725            # trust gating coefficient for emulator loss
+MINKOWSKI_TARGET_WEIGHT: 0.0001   # 0 = MSE only; >0 = MSE + geometric loss
+MINKOWSKI_WARMUP_EPOCHS: 3        # epochs before geometric loss activates
+TRUST_TAU: 0.005725               # trust gating coefficient for emulator loss
 
 # --- EXPERIMENT ---
 EXPERIMENT_NAME: "debugging"
