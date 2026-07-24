@@ -161,7 +161,7 @@ class AnalyticalMinkowskiLoss(nn.Module):
     def __init__(
         self,
         physical_thresholds,
-        quantile_levels,
+        quantile_levels=None,  # option 3: unused; grid is set by physical_thresholds
         pixel_size_km: float = 2.0,
         topology_mode: str = "euler",
         tau_factor: float = 0.1,
@@ -188,16 +188,20 @@ class AnalyticalMinkowskiLoss(nn.Module):
         self.tau_persistence = float(tau_persistence)
 
         u = np.asarray(physical_thresholds, dtype=np.float32)
-        q = np.asarray(quantile_levels, dtype=np.float32)
-        if u.shape != q.shape:
-            raise ValueError("physical_thresholds and quantile_levels must align 1:1.")
-        if np.any(np.diff(q) <= 0):
-            raise ValueError("quantile_levels must be strictly increasing.")
+        if np.any(np.diff(u) <= 0):
+            raise ValueError("physical_thresholds must be strictly increasing.")
+        if np.any(u <= 0):
+            raise ValueError("physical_thresholds must be positive (log-intensity integration).")
 
         self.register_buffer("u", torch.tensor(u, dtype=torch.float32).view(1, -1, 1, 1))
         base = np.maximum(u * tau_factor, tau_min)
         self.register_buffer("tau_base", torch.tensor(base, dtype=torch.float32).view(1, -1, 1, 1))
-        self.register_buffer("q", torch.tensor(q, dtype=torch.float32))
+        # option 3: integrate |log(gamma_hat) - log(gamma)| over log-intensity xi = log(u),
+        # i.e. equal weight per decade of intensity for the fixed log-spaced thresholds.
+        # Normalised by the xi-range so the loss magnitude stays ~O(1).
+        xi = np.log(u)
+        self.register_buffer("xi", torch.tensor(xi, dtype=torch.float32))
+        self.register_buffer("xi_range", torch.tensor(float(xi[-1] - xi[0]), dtype=torch.float32))
 
     # -- topology: dense Euler --------------------------------------------------
     def _euler(self, s: torch.Tensor) -> torch.Tensor:
@@ -284,5 +288,5 @@ class AnalyticalMinkowskiLoss(nn.Module):
             target_log = target_gamma_log.float()
 
         abs_diff = torch.abs(pred_log - target_log)               # [B,3,Q]
-        dist = torch.trapezoid(abs_diff, self.q, dim=2)           # integrate over q -> [B,3]
+        dist = torch.trapezoid(abs_diff, self.xi, dim=2) / self.xi_range  # log-intensity measure -> [B,3]
         return dist.sum(dim=1).mean()

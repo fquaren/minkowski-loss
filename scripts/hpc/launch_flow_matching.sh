@@ -16,9 +16,13 @@ mkdir -p "$(dirname "$LOG_FILE")"
 
 echo "Training Flow Matching (w_geom=${WEIGHT_GEOM}) — log: $LOG_FILE"
 
+export CUDA_VISIBLE_DEVICES=1
 micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/train/train_flow_matching.py" \
     "$CONFIG" \
     --backbone "/home/fquareng/work/ch2/minkowski-loss/runs/sr_analytical/UNet_Ana_20260623_144958/unet_best.pth" \
     --data_percentage "$DATA_PCT" \
+    --no_amp \
     > "$LOG_FILE" 2>&1
 echo "Done."
+
+    # --max_batches 20 \

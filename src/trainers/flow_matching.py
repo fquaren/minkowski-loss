@@ -10,6 +10,7 @@ sigma_r is a scalar (config FM_RESIDUAL_SCALE) or a per-pixel map (residual_std.
 recommendation from scripts/preprocess/compute_residual_stats.py.
 """
 
+import json
 import os
 import time
 
@@ -34,7 +35,18 @@ _META = {"train": "TRAIN_METADATA_FILE", "validation": "VAL_METADATA_FILE"}
 
 
 def _load_sigma(config, device):
-    """Return sigma_r as a float scalar or a broadcastable tensor [1,1,H,W] (floored)."""
+    """Resolve the residual scale sigma_r, returning (sigma, provenance_string).
+
+    Precedence:
+      1. per-pixel map, if FM_USE_RESIDUAL_MAP is set -> residual_std.npy (floored);
+      2. explicit scalar FM_RESIDUAL_SCALE in config;
+      3. sigma_r_scalar from residual_stats.json in PREPROCESSED_DATA_DIR
+         (written by scripts/preprocess/compute_residual_stats.py);
+      4. 1.0 (no standardisation) as a last resort, flagged in the provenance string.
+
+    The scalar written by the stats script is thus picked up automatically; without
+    this fallback a missing FM_RESIDUAL_SCALE silently defaulted to 1.0.
+    """
     if config.get("FM_USE_RESIDUAL_MAP", False):
         path = config.get(
             "FM_RESIDUAL_STD_PATH",
@@ -42,8 +54,18 @@ def _load_sigma(config, device):
         )
         arr = np.load(path).astype(np.float32)              # [1,H,W]
         t = torch.from_numpy(arr).to(device).clamp_min(1e-3)
-        return t.unsqueeze(0)                               # [1,1,H,W]
-    return float(config.get("FM_RESIDUAL_SCALE", 1.0))
+        return t.unsqueeze(0), f"per-pixel map {path} (mean {float(t.mean()):.4g})"
+
+    if "FM_RESIDUAL_SCALE" in config and config["FM_RESIDUAL_SCALE"] is not None:
+        return float(config["FM_RESIDUAL_SCALE"]), f"config FM_RESIDUAL_SCALE={float(config['FM_RESIDUAL_SCALE']):.4g}"
+
+    stats_path = os.path.join(config["PREPROCESSED_DATA_DIR"], "residual_stats.json")
+    if os.path.exists(stats_path):
+        with open(stats_path) as f:
+            sigma = float(json.load(f)["sigma_r_scalar"])
+        return sigma, f"residual_stats.json sigma_r_scalar={sigma:.4g}"
+
+    return 1.0, "DEFAULT 1.0 (no standardisation; run compute_residual_stats.py or set FM_RESIDUAL_SCALE)"
 
 
 def run_training(config, args, trial=None):
@@ -57,7 +79,6 @@ def run_training(config, args, trial=None):
     scaler_val = load_scaler_val(config)
     max_val = torch.tensor(scaler_val, device=device, dtype=torch.float32)
     topo_mode = config.get("TOPOLOGY_MODE", "euler")
-    import json
     with open(config["DEM_STATS"]) as f:
         dstats = json.load(f)
     dem_stats = (float(dstats["dem_mean"]), float(dstats["dem_std"]))
@@ -71,7 +92,7 @@ def run_training(config, args, trial=None):
         p.requires_grad_(False)
 
     # --- residual standardisation + flow-matching model ---
-    sigma = _load_sigma(config, device)
+    sigma, sigma_src = _load_sigma(config, device)
     condition_on_mean = config.get("FM_CONDITION_ON_MEAN", True)
     c_cond = 3 if condition_on_mean else 2
     fm = FlowMatching(
@@ -101,6 +122,7 @@ def run_training(config, args, trial=None):
         return torch.cat([X, mu[:, 0:1]], dim=1) if condition_on_mean else X
 
     with managed_logger(run_name, out_dir) as logger:
+        logger.info(f"residual scale sigma_r: {sigma_src}")
         train_ds = DeterministicSRDataset(
             config["PREPROCESSED_DATA_DIR"], config[_META["train"]], dem_stats, scaler_val,
             split="train", data_percentage=getattr(args, "data_percentage", 100.0),
@@ -123,14 +145,17 @@ def run_training(config, args, trial=None):
         sched = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5,
                                                      patience=max(1, patience // 2))
         early_stopper = EarlyStopping(patience=patience, verbose=(trial is None))
-        amp_enabled = device.type == "cuda"
+        amp_enabled = device.type == "cuda" and not getattr(args, "no_amp", False)
         grad_scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
         best_val = float("inf")
 
         for epoch in range(epochs):
             fm.train()
             r_train, n_train = 0.0, 0
-            for X, Y, _ in tqdm(train_loader, desc=f"FM {epoch+1}/{epochs}"):
+            max_batches = getattr(args, "max_batches", None)
+            for bi, (X, Y, _) in enumerate(tqdm(train_loader, desc=f"FM {epoch+1}/{epochs}")):
+                if max_batches is not None and bi >= max_batches:
+                    break
                 X, Y = X.to(device), Y.to(device)
                 with torch.no_grad():
                     mu = backbone(X)                          # [B,1,H,W] in [0,1]
@@ -139,6 +164,21 @@ def run_training(config, args, trial=None):
                 optimizer.zero_grad(set_to_none=True)
                 with torch.amp.autocast(device.type, enabled=amp_enabled):
                     loss = fm.training_loss(r_tilde, cond)
+                if epoch == 0 and bi == 0:
+                    logger.info(
+                        f"[diag] amp={amp_enabled} sigma={float(sigma) if isinstance(sigma, float) else 'map'} "
+                        f"r_tilde|max|={r_tilde.abs().max().item():.4g} "
+                        f"mu[min,max]=[{mu.min().item():.4g},{mu.max().item():.4g}] "
+                        f"Y[min,max]=[{Y.min().item():.4g},{Y.max().item():.4g}] "
+                        f"loss={loss.item():.4g}"
+                    )
+                if not torch.isfinite(loss):
+                    logger.info(
+                        f"[diag] non-finite loss at epoch {epoch+1} batch {bi}: "
+                        f"r_tilde_finite={torch.isfinite(r_tilde).all().item()} "
+                        f"mu_finite={torch.isfinite(mu).all().item()}"
+                    )
+                    raise FloatingPointError(f"non-finite FM loss at batch {bi}")
                 grad_scaler.scale(loss).backward()
                 grad_scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(fm.parameters(), max_norm=1.0)
@@ -151,7 +191,9 @@ def run_training(config, args, trial=None):
             fm.eval()
             v_loss, n_val = 0.0, 0
             with torch.no_grad():
-                for X, Y, _ in val_loader:
+                for vi, (X, Y, _) in enumerate(val_loader):
+                    if max_batches is not None and vi >= max_batches:
+                        break
                     X, Y = X.to(device), Y.to(device)
                     mu = backbone(X)
                     r_tilde = (Y[:, 0:1] - mu[:, 0:1]) / sigma

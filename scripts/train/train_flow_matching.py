@@ -24,6 +24,10 @@ def main():
     parser.add_argument("--tune", action="store_true")
     parser.add_argument("--n_trials", type=int, default=10)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--no_amp", action="store_true",
+                        help="disable fp16 autocast/GradScaler (fp32 probe for NaN)")
+    parser.add_argument("--max_batches", type=int, default=None,
+                        help="cap train/val batches per epoch for fast probing")
     args = parser.parse_args()
 
     config = load_config(args.config)

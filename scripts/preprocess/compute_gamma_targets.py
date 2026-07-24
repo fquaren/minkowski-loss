@@ -90,19 +90,18 @@ def main():
     zarr_path = os.path.join(
         config["PREPROCESSED_DATA_DIR"], "preprocessed_dataset.zarr"
     )
-    quantiles = np.array(config["QUANTILE_LEVELS"], dtype=np.float32)
     pixel_km = config.get("PIXEL_SIZE_KM", 2.0)
     drizzle = config.get("DRIZZLE_THRESHOLD", 0.1)
     thresh_b0, thresh_b1 = load_persistence_thresholds(config)
     chunk_size = config.get("WORKER_CHUNK_SIZE", 500)
     max_workers = config.get("MAX_WORKERS", 4)
 
-    # Physical climatological thresholds from the training CDF (same drizzle floor
-    # as the rest of the pipeline). These are the excursion-set thresholds and must
+    # Option 3: fixed, log-spaced PHYSICAL thresholds (mm/h) taken directly from config,
+    # not climatological percentiles. These are the excursion-set thresholds and must
     # match what the loss loads via load_physical_thresholds(config).
-    phys_thresh = compute_climatological_thresholds(
-        zarr_path, quantiles, drizzle_threshold=drizzle
-    )
+    phys_thresh = np.asarray(config["PHYSICAL_THRESHOLDS"], dtype=np.float32)
+    if np.any(np.diff(phys_thresh) <= 0):
+        raise ValueError("PHYSICAL_THRESHOLDS must be strictly increasing.")
     thresh_path = os.path.join(
         config["PREPROCESSED_DATA_DIR"], "physical_thresholds.npy"
     )
