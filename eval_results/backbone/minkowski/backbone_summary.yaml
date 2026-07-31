@@ -1,0 +1,46 @@
+checkpoint: /home/fquareng/work/ch2/minkowski-loss/runs/sr_analytical/UNet_Ana_20260630_111918/unet_best.pth
+split: test
+n_samples: 285383
+topology_mode: euler
+mae_overall: 0.05122721940279007
+rmse_overall: 0.22291560471057892
+mae_extreme: 0.4063575863838196
+rmse_extreme: 2.825289249420166
+extreme_threshold_mmph: 122.85001373291016
+minkowski_distance: 0.7501652322809792
+isoperimetric_violation_pct: 4.006245241357354
+rapsd_log_distance: 2.7296009063720703
+SAL_median:
+- 0.4482929848300087
+- 0.0
+- 0.02984579079858469
+SAL_mean:
+- 0.5338202551673539
+- 0.06901250645210498
+- 0.07131497334129175
+groups_mae_rmse:
+  all:
+    n: 285383
+    mae: 0.05122721940279007
+    rmse: 0.22291560471057892
+  q1_low:
+    n: 71403
+    mae: 1.6133286635522381e-06
+    rmse: 0.00011219010048080236
+  q2:
+    n: 71290
+    mae: 0.002438013209030032
+    rmse: 0.03359604254364967
+  q3:
+    n: 71345
+    mae: 0.025196995586156845
+    rmse: 0.18267950415611267
+  q4_high:
+    n: 71345
+    mae: 0.17727628350257874
+    rmse: 0.6753098368644714
+  extreme_top1pct:
+    n: 2855
+    mae: 0.4063575863838196
+    rmse: 2.825289249420166
+note_crps: 'omitted: deterministic CRPS == MAE; CRPS enters with the Phase-2 ensemble'
