@@ -65,7 +65,7 @@ DEVICE: "cuda"
 NUM_WORKERS: 4
 MAX_WORKERS: 4
 BATCH_SIZE: 128
-NUM_EPOCHS: 100
+NUM_EPOCHS: 25
 PATIENCE: 5  # super-resolution
 EARLY_STOPPING_PATIENCE: 15  # emulator
 
@@ -79,3 +79,31 @@ TRUST_TAU: 0.005725               # trust gating coefficient for emulator loss
 
 # --- EXPERIMENT ---
 EXPERIMENT_NAME: "Extremes"
+
+BACKBONE_CHECKPOINT: "/home/fquareng/work/ch2/minkowski-loss/runs/sr_analytical/UNet_Ana_20260623_144958/unet_best.pth"
+REWARD_MODE: "distributional"   # "distributional" | "per_sample"  <- the paper's ablation axis
+REWARD_K: 1                     # ODE steps carrying gradients (DRaFT-K); memory scales with K
+REWARD_ENSEMBLE: 4              # members per condition; distributional matching needs M > 1
+REWARD_WEIGHT: 1.0e-3           # weight on the structural reward
+REWARD_PROXIMAL_WEIGHT: 1.0     # trust region to the frozen clean model; raise if it drifts
+REWARD_SPREAD_WEIGHT: 0.5       # weight of the ensemble-spread term (distributional mode)
+REWARD_ANNEAL: 0.05             # threshold sharpness for the differentiable functionals
+REWARD_LR: 1.0e-5               # fine-tuning learning rate (small: this is not from-scratch)
+REWARD_EPOCHS: 10               # changed from original 5 to allow more time for the reward to converge; early stopping is still in place
+REWARD_BATCH_SIZE: 8            # keep small: memory ~ B x M x K forward graphs
+REWARD_VAL_BATCHES: 20
+REWARD_GRAD_CHECKPOINT: true
+
+REWARD_STEPS_PER_EPOCH: 2000    # ~7.7 s/step measured -> a full split would be ~600 h/epoch
+
+# Reward-hacking guards, evaluated on held-out data and NOT part of the reward, so they
+# cannot be optimised away. Training aborts if either is exceeded.
+# These are calibrated automatically from the frozen clean model: absolute constants do
+# NOT transfer, because measured OPERA baselines are anisotropy ~1.87 (backbone) and ~31
+# (bicubic) -- the coarse input carries grid-aligned interpolation structure. Leave the
+# two MAX keys null to auto-calibrate; set them only to override.
+REWARD_GUARD_AUTO: true
+REWARD_GUARD_FACTOR: 1.3        # bound = factor x the clean reference model's own value
+REWARD_GUARD_BATCHES: 8
+REWARD_ANISO_MAX: null          # absolute override (null => auto)
+REWARD_PEAK_RATIO_MAX: null     # absolute override (null => auto)
