@@ -89,12 +89,12 @@ REWARD_PROXIMAL_WEIGHT: 1.0     # trust region to the frozen clean model; raise 
 REWARD_SPREAD_WEIGHT: 0.5       # weight of the ensemble-spread term (distributional mode)
 REWARD_ANNEAL: 0.05             # threshold sharpness for the differentiable functionals
 REWARD_LR: 1.0e-5               # fine-tuning learning rate (small: this is not from-scratch)
-REWARD_EPOCHS: 10               # changed from original 5 to allow more time for the reward to converge; early stopping is still in place
+REWARD_EPOCHS: 8                # changed from original 5 to allow more time for the reward to converge; early stopping is still in place
 REWARD_BATCH_SIZE: 8            # keep small: memory ~ B x M x K forward graphs
 REWARD_VAL_BATCHES: 20
 REWARD_GRAD_CHECKPOINT: true
 
-REWARD_STEPS_PER_EPOCH: 2000    # ~7.7 s/step measured -> a full split would be ~600 h/epoch
+REWARD_STEPS_PER_EPOCH: 500    # ~7.7 s/step measured -> a full split would be ~600 h/epoch
 
 # Reward-hacking guards, evaluated on held-out data and NOT part of the reward, so they
 # cannot be optimised away. Training aborts if either is exceeded.
@@ -107,3 +107,45 @@ REWARD_GUARD_FACTOR: 1.3        # bound = factor x the clean reference model's o
 REWARD_GUARD_BATCHES: 8
 REWARD_ANISO_MAX: null          # absolute override (null => auto)
 REWARD_PEAK_RATIO_MAX: null     # absolute override (null => auto)
+
+# ------ Losses -------
+
+STRUCTURAL_LOSS: "minkowski"
+ 
+# spectral (FFT magnitude, kernel-CRPS form). With a deterministic backbone there is one
+# member, so this reduces to an L1 between magnitude spectra. NOTE: Fourier magnitude is
+# translation-invariant, so this loss cannot penalise displacement at all.
+SPECTRAL_ALPHA: 1.0
+ 
+# ssim (structural similarity, log-normalised space)
+SSIM_WINDOW: 11
+ 
+# wetarea (soft wet/dry agreement, physical mm/h). The threshold must be the drizzle
+# level and the temperature well below it: at threshold 0 a dry pixel scores 0.5 wet.
+WETAREA_TEMPERATURE: 0.05
+WETAREA_FP_WEIGHT: 1.0
+WETAREA_FN_WEIGHT: 1.0
+ 
+# opticalflow (advection consistency against the coarse conditioning field). Cost scales
+# as (2*OF_SEARCH_RADIUS+1)^2 correlation volumes per step; the flow itself is an argmin
+# and carries no gradient, only the prediction-to-teacher term does.
+OF_PATCH_SIZE: 21
+OF_SEARCH_RADIUS: 4
+OF_DOWNSAMPLE: 4
+OF_MASK_THRESHOLD: 0.1
+
+# Reward form. "energy" is the kernel-CRPS / energy score on the functional curves, using
+# the Minkowski distance as the metric. It is a proper score for the distribution of gamma:
+# verified empirically to be minimised at the true ensemble dispersion, whereas per_sample
+# prefers zero spread (the diversity-collapse mechanism).
+#   per_sample | distributional | energy
+REWARD_MODE: "energy"
+REWARD_ENSEMBLE: 16       # the fair estimator needs M >= 2; pairwise term wants M large
+REWARD_SPREAD_WEIGHT: 0.0 # ignored in energy mode: the negative pairwise term IS the spread reward
+
+# Data-fidelity retention. The reward is rigid-motion invariant and the proximal anchor
+# constrains the velocity field, so without this term NOTHING in the objective determines
+# where rain falls -- which is what the fractions skill score measures, and what regressed
+# in both Phase-3 routes. This re-adds the flow-matching velocity loss on the real residual.
+# Set to 0.0 only to reproduce the earlier (placement-free) configuration.
+REWARD_FM_RETENTION_WEIGHT: 1.0

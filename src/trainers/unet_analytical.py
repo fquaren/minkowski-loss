@@ -23,7 +23,8 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from tqdm import tqdm
 
 from src.data.datasets import DeterministicSRDataset
-from src.losses.minkowski import AnalyticalMinkowskiLoss
+from src.losses.minkowski import AnalyticalMinkowskiLoss  # noqa: F401 (kept for compatibility)
+from src.losses.competing import build_structural_loss
 from src.models.unet import LogSpaceResidualUNet
 from src.trainers.base import (
     EarlyStopping,
@@ -132,14 +133,11 @@ def run_training(config, args, trial=None):
 
         model = LogSpaceResidualUNet(in_channels=2, out_channels=1).to(device)
         mse_fn = nn.MSELoss()
-        geom_fn = AnalyticalMinkowskiLoss(
-            physical_thresholds=load_physical_thresholds(config),
-            quantile_levels=config["QUANTILE_LEVELS"],
-            pixel_size_km=config.get("PIXEL_SIZE_KM", 2.0),
-            topology_mode=topology_mode,
-            area_mode="ste",
-            persistence_thresh_b0=load_persistence_thresholds(config)[0] if topology_mode == "b0" else 0.0,
-        ).to(device)
+        # Study 1 selects the auxiliary structural loss by name; "minkowski" (the default)
+        # reproduces the previous behaviour exactly, so an unset key changes nothing.
+        structural_name = config.get("STRUCTURAL_LOSS", "minkowski")
+        geom_fn = build_structural_loss(structural_name, config, device)
+        logger.info(f"auxiliary structural loss: {geom_fn.name} (space={geom_fn.space})")
 
         optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
         sched = optim.lr_scheduler.ReduceLROnPlateau(
@@ -181,11 +179,16 @@ def run_training(config, args, trial=None):
                     loss_geom = torch.tensor(0.0, device=device)
 
                     if w_geom > 0:
-                        pred_scaled = torch.clamp(Y_pred[:, 0:1] * max_val_t, max=7.0)
-                        pred_phys = F.relu(torch.expm1(pred_scaled))
+                        pred_phys = F.relu(torch.expm1(
+                            torch.clamp(Y_pred[:, 0:1] * max_val_t, max=7.0)))
+                        target_phys = F.relu(torch.expm1(
+                            torch.clamp(Y[:, 0:1] * max_val_t, max=7.0)))
+                        ref_phys = F.relu(torch.expm1(
+                            torch.clamp(X[:, 0:1] * max_val_t, max=7.0))) \
+                            if geom_fn.needs_reference else None
                         loss_geom = geom_fn(
-                            pred_phys,
-                            Y_gamma,
+                            Y_pred[:, 0:1], Y[:, 0:1], pred_phys, target_phys,
+                            gamma_target=Y_gamma, reference_phys=ref_phys,
                             anneal_factor=anneal,
                         )
 
@@ -218,9 +221,16 @@ def run_training(config, args, trial=None):
                         lm = mse_fn(Y_pred, Y)
                         lg = torch.tensor(0.0, device=device)
                         if w_max > 0:
-                            ps = torch.clamp(Y_pred[:, 0:1] * max_val_t, max=7.0)
-                            pp = F.relu(torch.expm1(ps))
-                            lg = geom_fn(pp, Y_gamma, anneal_factor=anneal)
+                            pp = F.relu(torch.expm1(
+                                torch.clamp(Y_pred[:, 0:1] * max_val_t, max=7.0)))
+                            tp = F.relu(torch.expm1(
+                                torch.clamp(Y[:, 0:1] * max_val_t, max=7.0)))
+                            rp = F.relu(torch.expm1(
+                                torch.clamp(X[:, 0:1] * max_val_t, max=7.0))) \
+                                if geom_fn.needs_reference else None
+                            lg = geom_fn(Y_pred[:, 0:1], Y[:, 0:1], pp, tp,
+                                         gamma_target=Y_gamma, reference_phys=rp,
+                                         anneal_factor=anneal)
 
                     v_mse += lm.item()
                     v_geom += lg.item()

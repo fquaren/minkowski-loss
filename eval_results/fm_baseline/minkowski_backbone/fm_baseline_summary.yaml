@@ -1,0 +1,33 @@
+fm_checkpoint: runs/sr_flow_matching/Extremes_20260807_111521/fm_best.pth
+backbone: runs/sr_analytical/UNet_Ana_20260731_100128/unet_best.pth
+split: test
+ensemble_size: 16
+ode_steps: 16
+sampler: heun
+n_samples: 25600
+topology_mode: euler
+crps_mean: 0.03800580306123045
+crps_extreme: 0.31470542560594794
+mae_ensemble_mean: 0.056814905256032944
+rmse_ensemble_mean: 0.22610071301460266
+mae_single_member: 0.06709665060043335
+mae_extreme_ensemble_mean: 0.43364256620407104
+extreme_threshold_mmph: 123.63189743041961
+minkowski_distance_member: 0.811186910867691
+isoperimetric_violation_pct_member: 4.418229166666666
+rapsd_logdist_member: 0.7989811897277832
+rapsd_logdist_ensemble_mean: 2.4896092414855957
+SAL_median_member:
+- 0.5297938441915876
+- 0.33768345238650055
+- 0.21838096272646884
+SAL_mean_member:
+- 0.6341491774940967
+- 0.8197771514514244
+- 0.30426377575208746
+dry_tail_ratio_q99_median: 0.9271157383918762
+dry_tail_ratio_q999_median: 0.8805967569351196
+dry_tail_ratio_q99_extreme_median: 0.8549820184707642
+dry_tail_ratio_q999_extreme_median: 0.6836035251617432
+note: structural metrics on a single member; CRPS on the ensemble; dry_tail_ratio<1
+  => generated tail weaker than target (dry-tail bias).

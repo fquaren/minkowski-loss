@@ -146,6 +146,32 @@ def minkowski_reward(geom_fn, fields, target_log_gamma, mode, anneal, w_spread):
     if mode == "per_sample":
         return _integrate_xi(geom_fn, (lg - target_log_gamma.unsqueeze(0)).reshape(M * B, *lg.shape[2:]))
 
+    if mode == "energy":
+        # Energy score (kernel CRPS) on the functional curves, with the Minkowski distance
+        # as the metric. Proper for the distribution of gamma: its minimiser is the true
+        # conditional law, and unlike conditional-mean matching it needs only the single
+        # observed gamma per condition -- which is all the data provides.
+        #
+        #   S = (1/M) sum_m d(g_m, g)  -  1/(2 M (M-1)) sum_{m != m'} d(g_m, g_m')
+        #
+        # The M(M-1) normalisation is the fair estimator; the biased M^2 form rewards
+        # under-dispersion, which is precisely the failure mode being corrected. The
+        # negative sign on the second term rewards spread between members, so no separate
+        # spread penalty is needed and REWARD_SPREAD_WEIGHT is ignored in this mode.
+        term1 = _integrate_xi(
+            geom_fn, (lg - target_log_gamma.unsqueeze(0)).reshape(M * B, *lg.shape[2:])
+        )
+        if M < 2:
+            return term1
+        # pairwise distances between members, per condition
+        a = lg.unsqueeze(1)                      # [M,1,B,3,Q]
+        b_ = lg.unsqueeze(0)                     # [1,M,B,3,Q]
+        pair = (a - b_).reshape(M * M * B, *lg.shape[2:])
+        term2_all = _integrate_xi(geom_fn, pair) * (M * M)   # undo the mean over M*M*B
+        # remove the M zero self-distances, then apply the fair 1/(M(M-1)) normalisation
+        term2 = 0.5 * term2_all / (M * (M - 1))
+        return term1 - term2
+
     if mode == "distributional":
         # conditional mean: E_m[log gamma_hat | c] against this condition's target
         cond_mean = lg.mean(0)                                        # [B,3,Q]
@@ -211,6 +237,7 @@ def run_reward_finetune(config, args):
         M = int(config.get("REWARD_ENSEMBLE", 4))
         w_reward = float(getattr(args, "w_reward", None) or config.get("REWARD_WEIGHT", 1e-3))
         w_prox = float(config.get("REWARD_PROXIMAL_WEIGHT", 1.0))
+        w_retain = float(config.get("REWARD_FM_RETENTION_WEIGHT", 1.0))
         w_spread = float(config.get("REWARD_SPREAD_WEIGHT", 0.5))
         anneal = float(config.get("REWARD_ANNEAL", 0.05))
         n_steps = int(config.get("FM_SAMPLE_STEPS", 16))
@@ -229,6 +256,7 @@ def run_reward_finetune(config, args):
         peak_max = float(_pm) if _pm is not None else None
         use_ckpt = bool(config.get("REWARD_GRAD_CHECKPOINT", True))
         logger.info(f"reward mode={mode} K={K} M={M} w_reward={w_reward:g} w_prox={w_prox:g} "
+                    f"w_retain={w_retain:g} "
                     f"w_spread={w_spread:g} guards: aniso<{aniso_max} peak<{peak_max}")
 
         thresh_b0 = load_persistence_thresholds(config)[0] if topo_mode == "b0" else 0.0
@@ -298,7 +326,7 @@ def run_reward_finetune(config, args):
 
         for epoch in range(epochs):
             fm.train()
-            agg = {"reward": 0.0, "prox": 0.0, "n": 0}
+            agg = {"reward": 0.0, "prox": 0.0, "fm": 0.0, "n": 0}
             pbar = tqdm(train_loader, desc=f"reward {epoch+1}/{epochs}")
             for si, (X, Y, Ygamma) in enumerate(pbar):
                 if max_steps is not None and si >= max_steps:
@@ -326,13 +354,26 @@ def run_reward_finetune(config, args):
                 v_now = fm.velocity(xt, tt, cond)
                 prox = ((v_now - v_ref) ** 2).mean()
 
-                loss = w_reward * reward + w_prox * prox
+                # Retention term. The reward and the proximal anchor between them contain no
+                # pixel-aligned data-fidelity signal: the anchor constrains the velocity
+                # field toward the reference, not where rain falls, and the Minkowski
+                # functionals are rigid-motion invariant by construction. Without this term
+                # nothing in the objective supplies placement, which is what the fractions
+                # skill score measures. Re-adding the flow-matching velocity loss on the
+                # real residual restores that anchor.
+                loss_fm = torch.tensor(0.0, device=device)
+                if w_retain > 0:
+                    r_true = (Y[:, 0:1] - mu[:, 0:1]) / sigma
+                    loss_fm = fm.training_loss(r_true, cond)
+
+                loss = w_reward * reward + w_prox * prox + w_retain * loss_fm
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(fm.parameters(), 1.0)
                 opt.step()
 
-                agg["reward"] += float(reward.detach()); agg["prox"] += float(prox.detach()); agg["n"] += 1
+                agg["reward"] += float(reward.detach()); agg["prox"] += float(prox.detach())
+                agg["fm"] += float(loss_fm.detach()); agg["n"] += 1
                 pbar.set_postfix(reward=f"{float(reward):.4f}", prox=f"{float(prox):.4f}")
 
             # ---- validation with reward-hacking guards ------------------------------
@@ -358,7 +399,8 @@ def run_reward_finetune(config, args):
             v_reward /= max(nv, 1)
             aniso = float(np.nanmean(v_aniso)); peak = float(np.nanmedian(v_peak))
             logger.info(f"Epoch {epoch+1} | train_reward={agg['reward']/max(agg['n'],1):.4f} "
-                        f"prox={agg['prox']/max(agg['n'],1):.4f} val_reward={v_reward:.4f} "
+                        f"prox={agg['prox']/max(agg['n'],1):.4f} fm={agg['fm']/max(agg['n'],1):.4f} "
+                        f"val_reward={v_reward:.4f} "
                         f"| guards: anisotropy={aniso:.3f} peak_ratio={peak:.3f}")
 
             torch.save({"model_state_dict": fm.state_dict(), "epoch": epoch + 1},
