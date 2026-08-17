@@ -7,7 +7,7 @@ set +u
 source "${SCRIPT_DIR}/env.sh"
 set -u
 
-CONFIG="${PROJECT_ROOT}/config.yaml"
+CONFIG="${4:-${PROJECT_ROOT}/config.yaml}"
 PARAMS="${1:-${PROJECT_ROOT}/configs/unet_analytical.yaml}"
 WEIGHT_GEOM="${2:-0.001}"
 DATA_PCT="${3:-100.0}"
