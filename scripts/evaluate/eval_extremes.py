@@ -233,6 +233,7 @@ def main():
         "peak_ratio_extreme_median": float(np.nanmedian(pk[ext])) if ext.any() else float("nan"),
         "SAL_median": [float(np.median(S_i)), float(np.median(A_i)), float(np.median(L_i))],
         "extreme_threshold_mmph": thr,
+        "pot_threshold_mmph": pot_u,
         "note": ("minkowski_distance is the training objective for Minkowski-trained models "
                  "and is not independent evidence there; anisotropy ~1 is isotropic, >1 means "
                  "grid-aligned structure; peak_ratio is predicted/observed patch maximum."),
@@ -250,7 +251,8 @@ def main():
                         S=np.array(S_i), A=np.array(A_i), L=np.array(L_i),
                         rapsd_pred=rapsd_p, rapsd_target=rapsd_o,
                         gpd_pred=np.array([fit_p["xi"], fit_p["sigma"], fit_p["rate"]]),
-                        gpd_obs=np.array([fit_o["xi"], fit_o["sigma"], fit_o["rate"]]))
+                        gpd_obs=np.array([fit_o["xi"], fit_o["sigma"], fit_o["rate"]]),
+                        pot_threshold=np.float32(pot_u))
     print(yaml.safe_dump(summary, sort_keys=False))
 
 

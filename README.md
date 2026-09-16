@@ -14,6 +14,18 @@ Official implementation of the paper:
 >
 > [arXiv:2604.11422](https://arxiv.org/abs/2604.11422)
 
+## Project documentation
+
+This repository also hosts the follow-on work applying the loss to extreme-precipitation
+downscaling. Four documents carry the state of that project; read them in this order:
+
+| File | What it holds |
+|---|---|
+| [`DECISIONS.md`](DECISIONS.md) | Why things are the way they are, and **what is already ruled out** |
+| [`EXPERIMENTS.md`](EXPERIMENTS.md) | Checkpoint paths, current results tables, todo list |
+| [`CLAUDE.md`](CLAUDE.md) | Operational traps and how to read results (also read automatically by Claude Code) |
+| [`MINKOWSKI_DOCS.md`](MINKOWSKI_DOCS.md) | The loss itself: design, conventions, validation |
+
 ## Abstract
 
 The "differentiability gap" presents a primary bottleneck in Earth system deep learning: since models cannot be trained directly on non-differentiable scientific metrics and must rely on smooth proxies (e.g., MSE), they often fail to capture high-frequency details, yielding "blurry" outputs. We develop a framework that bridges this gap using two methods: (1) analytically approximating non-differentiable functions via temperature-controlled sigmoids and continuous logical operators, and (2) learning differentiable surrogates using Lipschitz-regularised convolutional neural networks with hard architectural constraints enforcing geometric principles. We demonstrate this framework by developing the **Minkowski image loss**, a differentiable equivalent for the integral-geometric measures of surface precipitation fields (area, perimeter, Euler characteristic). Validated on the EUMETNET OPERA radar dataset, our constrained neural surrogate achieves high emulation accuracy, completely eliminating the geometric violations observed in unconstrained baselines, which generate physically impossible precipitation fields in up to 7.8% of cases.

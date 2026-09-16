@@ -96,6 +96,7 @@ def main():
     )
 
     mae_i, rmse_i, tmean_i, tmax_i = [], [], [], []
+    gamma_tgt = []
     S_i, A_i, L_i, gamma_hat = [], [], [], []
     mink_sum, n_batches = 0.0, 0
     rapsd_p = rapsd_t = None
@@ -118,6 +119,7 @@ def main():
             n_batches += 1
             a, p, t = geom_fn._functionals(pred_phys, anneal_factor=0.05)
             gamma_hat.append(torch.stack([a, p, t], dim=1).cpu().numpy())  # [B,3,Q]
+            gamma_tgt.append(Ygamma.cpu().numpy())   # log-space target, for the gamma-curve plots
 
             rp = compute_radial_power_spectrum(pred_phys).mean(dim=0)
             rt = compute_radial_power_spectrum(target_phys).mean(dim=0)
@@ -133,6 +135,7 @@ def main():
     mae, rmse = np.concatenate(mae_i), np.concatenate(rmse_i)
     tmean, tmax = np.concatenate(tmean_i), np.concatenate(tmax_i)
     gamma_hat = np.concatenate(gamma_hat)
+    gamma_tgt = np.concatenate(gamma_tgt)
     S, A, L = np.array(S_i), np.array(A_i), np.array(L_i)
     rapsd_p = (rapsd_p / n_batches).cpu().numpy()
     rapsd_t = (rapsd_t / n_batches).cpu().numpy()
@@ -182,6 +185,7 @@ def main():
         os.path.join(args.output_dir, "backbone_arrays.npz"),
         mae=mae, rmse=rmse, tmean=tmean, tmax=tmax, S=S, A=A, L=L,
         rapsd_pred=rapsd_p, rapsd_target=rapsd_t, gamma_hat=gamma_hat,
+        gamma_target=gamma_tgt, thresholds=np.asarray(u_phys, dtype=np.float32),
     )
     print(yaml.safe_dump(summary, sort_keys=False))
 
