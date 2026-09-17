@@ -35,7 +35,11 @@ from src.evaluation import plotting as P
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", action="append", default=[],
-                    help='"label:path/to/eval_dir", repeatable; order sets plot order')
+                    help='"label:path/to/eval_dir", repeatable; order sets plot order. '
+                         "Several directories may be joined with '+' to merge into one "
+                         "row, first-wins, e.g. 'MSE:.../extremes/backbone_vanilla"
+                         "+.../backbone/vanilla' -- the backbone directory is the only "
+                         "source of gamma_hat, which the Minkowski figures need.")
     ap.add_argument("--glob", default=None,
                     help="glob of eval directories; label taken from the directory name")
     ap.add_argument("--out", default="figures", help="output directory for the figures")
@@ -51,22 +55,26 @@ def main():
         if ":" not in entry:
             sys.exit(f"--model expects 'label:path', got {entry!r}")
         label, path = entry.split(":", 1)
-        specs.append((label.strip(), path.strip()))
+        paths = [p for p in (q.strip() for q in path.split("+")) if p]
+        specs.append((label.strip(), paths))
     if args.glob:
         for d in sorted(globmod.glob(args.glob)):
             if os.path.isdir(d):
                 label = os.path.basename(d.rstrip("/")).replace("backbone_", "")
-                specs.append((label, d))
+                specs.append((label, [d]))
 
     models = []
-    for label, path in specs:
-        m = P.load_model(label, path)
+    for label, paths in specs:
+        m = P.load_model(label, paths)
+        shown = " + ".join(paths)
         if m is None:
-            print(f"[skip] {label}: no summary file in {path}")
+            print(f"[skip] {label}: no summary file in {shown}")
             continue
         models.append(m)
         has = "summary" + (" + arrays" if m.arrays is not None else " only")
-        print(f"[load] {label:<20s} {path}  ({has})")
+        if m.arr("gamma_hat") is not None:
+            has += " + gamma"
+        print(f"[load] {label:<20s} {shown}  ({has})")
 
     if models:
         P.make_all(models, args.out, pixel_km=args.pixel_km)

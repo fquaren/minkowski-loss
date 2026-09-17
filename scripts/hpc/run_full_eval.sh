@@ -186,11 +186,18 @@ stage_fm() {
 # ---------------------------------------------------------------------
 # Stage 4: figures
 # ---------------------------------------------------------------------
-_model_args() {  # $@ = tag:label pairs, emits --model "label:dir" for those that exist
+_model_args() {  # $@ = tag:label pairs, emits --model "label:dir[+backbone_dir]" for those that exist
   local args=""
   for pair in "$@"; do
     local tag="${pair%%=*}" label="${pair#*=}"
-    [ -d "${EXT}/${tag}" ] && args="${args} --model \"${label}:${EXT}/${tag}\""
+    [ -d "${EXT}/${tag}" ] || continue
+    local spec="${EXT}/${tag}"
+    # gamma_hat / gamma_target are written only by eval_backbone.py, into ${BB}/<label>.
+    # Merge that directory in where it exists so the Minkowski figures are drawn rather
+    # than skipped; the extremes directory stays first, so it keeps every shared key.
+    local bb="${BB}/${tag#backbone_}"
+    [ -d "$bb" ] && spec="${spec}+${bb}"
+    args="${args} --model \"${label}:${spec}\""
   done
   echo "$args"
 }

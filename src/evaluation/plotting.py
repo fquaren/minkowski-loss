@@ -60,22 +60,45 @@ class Model:
         return self.arrays[key]
 
 
-def load_model(label: str, eval_dir: str, color: Optional[str] = None) -> Optional[Model]:
-    """Load one eval directory. Returns None if no summary is present."""
+def load_model(label: str, eval_dir: str | Sequence[str],
+               color: Optional[str] = None) -> Optional[Model]:
+    """Load one eval directory, or several merged into a single row.
+
+    ``eval_dir`` is one path or a sequence of them. Several are merged first-wins: an
+    earlier directory keeps every summary key and array it provides, and a later one only
+    contributes what is still missing. That is what lets an extremes directory and its
+    matching backbone directory form one model. The tail metrics and the POT-subset arrays
+    come from the extremes run; ``gamma_hat`` / ``gamma_target`` / ``thresholds`` exist only
+    in the backbone arrays, so without the merge the Minkowski figures are always skipped.
+    First-wins matters here: the two runs share key names (``S``, ``A``, ``L``, ``tmax``,
+    ``rapsd_pred``) over different sample sets, and the extremes versions must survive.
+
+    Returns None if no directory holds a summary.
+    """
     import yaml
+    dirs = [eval_dir] if isinstance(eval_dir, str) else list(eval_dir)
     summary, arrays = None, None
-    for name in ("extremes_summary.yaml", "backbone_summary.yaml", "fm_baseline_summary.yaml"):
-        p = os.path.join(eval_dir, name)
-        if os.path.exists(p):
-            summary = yaml.safe_load(open(p))
-            break
+    for d in dirs:
+        one = None
+        for name in ("extremes_summary.yaml", "backbone_summary.yaml",
+                     "fm_baseline_summary.yaml"):
+            p = os.path.join(d, name)
+            if os.path.exists(p):
+                one = yaml.safe_load(open(p)) or {}
+                break
+        if one is None:
+            continue
+        summary = one if summary is None else {**one, **summary}
+        got = None
+        for name in ("extremes_arrays.npz", "backbone_arrays.npz", "fm_baseline_arrays.npz"):
+            p = os.path.join(d, name)
+            if os.path.exists(p):
+                got = dict(np.load(p, allow_pickle=False))
+                break
+        if got is not None:
+            arrays = got if arrays is None else {**got, **arrays}
     if summary is None:
         return None
-    for name in ("extremes_arrays.npz", "backbone_arrays.npz", "fm_baseline_arrays.npz"):
-        p = os.path.join(eval_dir, name)
-        if os.path.exists(p):
-            arrays = dict(np.load(p, allow_pickle=False))
-            break
     return Model(label=label, summary=summary, arrays=arrays, color=color)
 
 
