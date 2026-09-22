@@ -48,6 +48,20 @@ def main():
                     help="npz with 2-D fields (e.g. a training reconstruction dump) "
                          "to render as a qualitative panel")
     ap.add_argument("--drizzle", type=float, default=0.1)
+    ap.add_argument("--field_bundle", default=None,
+                    help="npz from scripts/evaluate/dump_fields.py: renders the "
+                         "DEM / input / target / prediction field figures")
+    ap.add_argument("--field_mode", default="both",
+                    choices=["compare", "detail", "both"],
+                    help="compare = one row per patch across models; detail = the "
+                         "four fields over the Minkowski curves, per model and patch")
+    ap.add_argument("--field_norm", default="power",
+                    choices=["power", "log", "linear"],
+                    help="colour stretch shared by the precipitation panels; the default "
+                         "square-root stretch keeps amplitudes comparable while leaving the "
+                         "drizzle-to-moderate range readable")
+    ap.add_argument("--cloud_points", type=int, default=2000,
+                    help="patches drawn per model in the perception-distortion cloud")
     args = ap.parse_args()
 
     specs = []
@@ -77,9 +91,21 @@ def main():
         print(f"[load] {label:<20s} {shown}  ({has})")
 
     if models:
-        P.make_all(models, args.out, pixel_km=args.pixel_km)
-    elif not args.fields:
+        P.make_all(models, args.out, pixel_km=args.pixel_km,
+                   cloud_points=args.cloud_points)
+    elif not (args.fields or args.field_bundle):
         sys.exit("nothing to plot: no eval directories resolved")
+
+    if args.field_bundle:
+        bundle = P.load_field_bundle(args.field_bundle)
+        n_models, n_patches = bundle["preds"].shape[0], bundle["target"].shape[0]
+        print(f"[fields] {args.field_bundle}: {n_models} models x {n_patches} patches")
+        if args.field_mode in ("compare", "both"):
+            P.field_comparison(bundle, args.out, drizzle=args.drizzle,
+                               norm_mode=args.field_norm)
+        if args.field_mode in ("detail", "both"):
+            P.field_detail(bundle, args.out, drizzle=args.drizzle,
+                           norm_mode=args.field_norm)
 
     if args.fields:
         d = np.load(args.fields, allow_pickle=False)

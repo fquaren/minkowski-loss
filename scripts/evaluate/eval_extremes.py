@@ -164,6 +164,7 @@ def main():
     pot_p, pot_o = POTAccumulator(pot_u), POTAccumulator(pot_u)
     mse_i, tmax_i, S_i, A_i, L_i, aniso_i, pk_i, crps_i = [], [], [], [], [], [], [], []
     mink_sum, nb = 0.0, 0
+    spec_i = []
     rapsd_p = rapsd_o = None
 
     with torch.no_grad():
@@ -196,8 +197,16 @@ def main():
 
             tmax_i.append(target.amax(dim=(1, 2, 3)).cpu().numpy())
             mink_sum += geom_fn(pred, Ygamma, anneal_factor=0.05).item(); nb += 1
-            rp = compute_radial_power_spectrum(pred).mean(0)
-            ro = compute_radial_power_spectrum(target).mean(0)
+            rp_b = compute_radial_power_spectrum(pred)          # [B,K]
+            ro_b = compute_radial_power_spectrum(target)
+            # Per-sample log-spectral distance, kept for the perception-distortion cloud.
+            # For --model fm this is a single ensemble member (as `pred` is), not the
+            # ensemble mean, which is the right perception reference; the distortion axis
+            # `mse` is the ensemble mean. The batch means below are unchanged, so
+            # rapsd_log_distance is untouched.
+            spec_i.append((torch.log(rp_b + 1e-12) - torch.log(ro_b + 1e-12))
+                          .abs().mean(dim=-1).cpu().numpy())
+            rp, ro = rp_b.mean(0), ro_b.mean(0)
             rapsd_p = rp if rapsd_p is None else rapsd_p + rp
             rapsd_o = ro if rapsd_o is None else rapsd_o + ro
 
@@ -214,6 +223,7 @@ def main():
     thr = float(np.percentile(tmax, args.extreme_pct)); ext = tmax >= thr
     rapsd_p = (rapsd_p / nb).cpu().numpy(); rapsd_o = (rapsd_o / nb).cpu().numpy()
     pk = np.concatenate(pk_i)
+    spectral_dist = np.concatenate(spec_i)
 
     fit_p, fit_o = pot_p.fit(), pot_o.fit()
     summary = {
@@ -249,6 +259,7 @@ def main():
     np.savez_compressed(os.path.join(out_dir, "extremes_arrays.npz"),
                         mse=mse, tmax=tmax, peak_ratio=pk,
                         S=np.array(S_i), A=np.array(A_i), L=np.array(L_i),
+                        spectral_dist=spectral_dist,
                         rapsd_pred=rapsd_p, rapsd_target=rapsd_o,
                         gpd_pred=np.array([fit_p["xi"], fit_p["sigma"], fit_p["rate"]]),
                         gpd_obs=np.array([fit_o["xi"], fit_o["sigma"], fit_o["rate"]]),

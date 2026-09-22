@@ -9,8 +9,12 @@
 #   DRY_RUN=1 bash scripts/hpc/run_full_eval.sh       # print the plan, run nothing
 #   STAGE=backbones bash scripts/hpc/run_full_eval.sh # one stage only
 #   STAGE=figures   bash scripts/hpc/run_full_eval.sh # re-plot from existing evals
+#   STAGE=fields    bash scripts/hpc/run_full_eval.sh # re-dump + re-plot the field panels
 #
-# Stages: backbones | bicubic | fm | figures | all (default)
+# Stages: backbones | bicubic | fm | fields | figures | all (default)
+#
+# The field stage is cheap: it runs each model over a handful of patches rather than the
+# split, so it costs seconds. Delete eval_results/fields/*.npz to force a re-dump.
 #
 # WHY THE ARCHIVE STEP: the evaluation scripts were patched to persist `gamma_target` and
 # `pot_threshold`, which the gamma-curve and return-level figures need. Summaries written
@@ -45,6 +49,12 @@ STAGE="${STAGE:-all}"
 FIGDIR="${FIGDIR:-figures/committee}"
 EXT="${PROJECT_ROOT}/eval_results/extremes"
 BB="${PROJECT_ROOT}/eval_results/backbone"
+FIELDS="${PROJECT_ROOT}/eval_results/fields"
+N_EXTREME="${N_EXTREME:-3}"           # heaviest patches shown in the field panels
+N_MID="${N_MID:-1}"                   # plus this many from the middle of the distribution
+FIELD_MODE="${FIELD_MODE:-both}"      # compare | detail | both
+FIELD_NORM="${FIELD_NORM:-power}"     # colour stretch shared by the precipitation panels
+FIELD_INDICES="${FIELD_INDICES:-}"    # explicit dataset indices, overriding the selection
 LOGS="${PROJECT_ROOT}/logs"
 mkdir -p "$LOGS"
 
@@ -102,7 +112,7 @@ stage_archive() {
 # Stage 1: deterministic backbones (full test set)
 # ---------------------------------------------------------------------
 stage_backbones() {
-  say "Stage 1/4 — deterministic backbones (full test set, POT u=${POT})"
+  say "Stage 1/5 — deterministic backbones (full test set, POT u=${POT})"
   for entry in "${BACKBONES[@]}"; do
     local label="${entry%%|*}" run_dir="${entry#*|}"
     local ckpt="runs/sr_analytical/${run_dir}/unet_best.pth"
@@ -135,7 +145,7 @@ stage_backbones() {
 # Stage 2: bicubic reference
 # ---------------------------------------------------------------------
 stage_bicubic() {
-  say "Stage 2/4 — bicubic reference"
+  say "Stage 2/5 — bicubic reference"
   if [ -f "${EXT}/bicubic/extremes_summary.yaml" ]; then
     echo "  [skip] bicubic (done)"; return 0
   fi
@@ -150,7 +160,7 @@ stage_bicubic() {
 # Stage 3: flow-matching models
 # ---------------------------------------------------------------------
 stage_fm() {
-  say "Stage 3/4 — flow matching (M=${ENSEMBLE}, heun-16, ${FM_BATCHES} batches)"
+  say "Stage 3/5 — flow matching (M=${ENSEMBLE}, heun-16, ${FM_BATCHES} batches)"
   for entry in "${FM_MODELS[@]}"; do
     IFS='|' read -r label cfg ckpt bbone <<< "$entry"
     if [ ! -f "$ckpt" ]; then echo "  [skip] ${label}: no checkpoint at ${ckpt}"; continue; fi
@@ -184,7 +194,94 @@ stage_fm() {
 }
 
 # ---------------------------------------------------------------------
-# Stage 4: figures
+# Stage 4: qualitative field panels
+# ---------------------------------------------------------------------
+# One display label per evaluation tag, shared by the field panels and the figure stage so
+# a model is named identically wherever it appears.
+_disp() {
+  case "$1" in
+    vanilla|backbone_vanilla)               echo "MSE" ;;
+    minkowski|backbone_minkowski)           echo "+ Minkowski" ;;
+    spectral_v2|backbone_spectral_v2)       echo "+ spectral" ;;
+    ssim_v2|backbone_ssim_v2)               echo "+ SSIM" ;;
+    wetarea_v2|backbone_wetarea_v2)         echo "+ wet area" ;;
+    opticalflow_v2|backbone_opticalflow_v2) echo "+ optical flow" ;;
+    fm_clean)                               echo "FM clean" ;;
+    fm_energy)                              echo "FM + energy" ;;
+    fm_reward)                              echo "FM + reward" ;;
+    fm_mink_backbone)                       echo "FM on Mink bb" ;;
+    *)                                      echo "$1" ;;
+  esac
+}
+
+# Dump one bundle and render it, unless the bundle is already there.
+_field_bundle() {  # $1 = name, $2 = config, $3 = the --model argument string
+  local name="$1" cfg="$2" models="$3"
+  if [ -z "$models" ]; then
+    echo "  [skip] ${name}: no checkpoints found"; return 0
+  fi
+  if [ -f "${FIELDS}/${name}.npz" ]; then
+    echo "  [skip] ${name} dump (done; delete the npz to force a re-dump)"
+  else
+    echo "  [run ] ${name} dump"
+    local sel="--n_extreme ${N_EXTREME} --n_mid ${N_MID}"
+    if [ -n "$FIELD_INDICES" ]; then
+      sel="--indices ${FIELD_INDICES}"
+    elif [ -f "${BB}/vanilla/backbone_arrays.npz" ]; then
+      # reuse the tmax array the vanilla backbone run already wrote, in dataset order,
+      # instead of rescanning the split just to rank patches by intensity
+      sel="${sel} --rank_from '${BB}/vanilla/backbone_arrays.npz'"
+    fi
+    run "$name" "${CUDA_ENV} '$PYTHON' scripts/evaluate/dump_fields.py '${cfg}' \
+        ${models} ${sel} --split ${SPLIT} --output '${FIELDS}/${name}.npz' \
+        > '${LOGS}/dump_fields_${name}.log' 2>&1" \
+      || { echo "    ! failed, see logs/dump_fields_${name}.log"; return 0; }
+
+    # the residual scale must come from a config, never from residual_stats.json
+    if [ "$DRY_RUN" = "0" ] && [ -f "${LOGS}/dump_fields_${name}.log" ]; then
+      grep -E "residual scale sigma_r|WARNING" "${LOGS}/dump_fields_${name}.log" \
+        | sed "s/^/         /" || true
+    fi
+  fi
+  [ -f "${FIELDS}/${name}.npz" ] || return 0
+  echo "  [run ] ${name} figures"
+  run "$name" "'$PYTHON' scripts/evaluate/make_plots.py \
+      --field_bundle '${FIELDS}/${name}.npz' --out '${FIGDIR}/${name}/fields' \
+      --field_mode ${FIELD_MODE} --field_norm ${FIELD_NORM} \
+      >> '${LOGS}/dump_fields_${name}.log' 2>&1" \
+    || echo "    ! figures failed, see logs/dump_fields_${name}.log"
+}
+
+stage_fields() {
+  say "Stage 4/5 — qualitative fields (${N_EXTREME} extreme + ${N_MID} mid patches)"
+  mkdir -p "$FIELDS"
+
+  # Study 1: bicubic and every deterministic backbone, on one shared colour scale.
+  local s1="--model \"Bicubic|bicubic||\""
+  for entry in "${BACKBONES[@]}"; do
+    local label="${entry%%|*}" run_dir="${entry#*|}"
+    local ckpt="runs/sr_analytical/${run_dir}/unet_best.pth"
+    [ -f "$ckpt" ] || continue
+    s1="${s1} --model \"$(_disp "$label")|backbone|${ckpt}|\""
+  done
+  _field_bundle "study1" "config.yaml" "$s1"
+
+  # Study 2: the two backbones the generative stage sits on, then the flow-matching models.
+  # Each flow-matching entry carries its own config because that is what pins sigma_r.
+  local s2=""
+  [ -f "$VANILLA_BB" ] && s2="${s2} --model \"MSE backbone|backbone|${VANILLA_BB}|\""
+  [ -f "$MINK_BB" ] && s2="${s2} --model \"Minkowski backbone|backbone|${MINK_BB}|\""
+  for entry in "${FM_MODELS[@]}"; do
+    IFS='|' read -r label cfg ckpt bbone <<< "$entry"
+    [ -f "$ckpt" ] && [ -f "$cfg" ] || continue
+    s2="${s2} --model \"$(_disp "$label")|fm|${ckpt}|${bbone}|${cfg}\""
+  done
+  _field_bundle "study2" "config.yaml" "$s2"
+}
+
+
+# ---------------------------------------------------------------------
+# Stage 5: figures
 # ---------------------------------------------------------------------
 _model_args() {  # $@ = tag:label pairs, emits --model "label:dir[+backbone_dir]" for those that exist
   local args=""
@@ -203,7 +300,11 @@ _model_args() {  # $@ = tag:label pairs, emits --model "label:dir[+backbone_dir]
 }
 
 stage_figures() {
-  say "Stage 4/4 — figures"
+  say "Stage 5/5 — figures"
+  # make_plots draws the per-sample perception-distortion clouds alongside the aggregate
+  # plane. The Minkowski cloud needs the gamma arrays, so it covers the backbone rows only;
+  # the spectral cloud needs the per-sample spectral_dist array, which evaluations run
+  # before that was added do not have, and it skips itself with a note until they are re-run.
 
   # Study 1: does a structural loss help the deterministic backbone?
   local s1; s1="$(_model_args \
@@ -237,7 +338,8 @@ stage_figures() {
       "bicubic=Bicubic" "backbone_vanilla=MSE" "backbone_minkowski=+ Minkowski" \
       "backbone_spectral_v2=+ spectral" "backbone_ssim_v2=+ SSIM" \
       "backbone_wetarea_v2=+ wet area" "backbone_opticalflow_v2=+ optical flow" \
-      "fm_clean=FM clean" "fm_energy=FM + energy" "fm_mink_backbone=FM on Mink bb")"
+      "fm_clean=FM clean" "fm_energy=FM + energy" "fm_reward=FM + reward" \
+      "fm_mink_backbone=FM on Mink bb")"
   if [ -n "$all" ]; then
     echo "  [run ] all-model figures"
     run "all" "'$PYTHON' scripts/evaluate/make_plots.py --out '${FIGDIR}/all' ${all}"
@@ -317,15 +419,17 @@ echo "  figures  : ${FIGDIR}"
 [ "$DRY_RUN" != "0" ] && echo "  MODE     : dry run, nothing will be executed"
 
 case "$STAGE" in
-  all)       stage_archive; stage_backbones; stage_bicubic; stage_fm; stage_figures; stage_summary ;;
+  all)       stage_archive; stage_backbones; stage_bicubic; stage_fm; stage_fields; stage_figures; stage_summary ;;
   backbones) stage_archive; stage_backbones; stage_summary ;;
   bicubic)   stage_bicubic ;;
   fm)        stage_fm; stage_summary ;;
+  fields)    stage_fields ;;
   figures)   stage_figures ;;
   summary)   stage_summary ;;
-  *) echo "unknown STAGE=${STAGE}; expected all|backbones|bicubic|fm|figures|summary" >&2; exit 1 ;;
+  *) echo "unknown STAGE=${STAGE}; expected all|backbones|bicubic|fm|fields|figures|summary" >&2; exit 1 ;;
 esac
 
 say "Done."
 echo "  evaluations: eval_results/"
 echo "  figures    : ${FIGDIR}/{study1,study2,all}"
+echo "  fields     : ${FIGDIR}/{study1,study2}/fields  (from ${FIELDS}/*.npz)"

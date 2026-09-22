@@ -99,6 +99,7 @@ def main():
     gamma_tgt = []
     S_i, A_i, L_i, gamma_hat = [], [], [], []
     mink_sum, n_batches = 0.0, 0
+    spec_i = []
     rapsd_p = rapsd_t = None
 
     with torch.no_grad():
@@ -121,8 +122,13 @@ def main():
             gamma_hat.append(torch.stack([a, p, t], dim=1).cpu().numpy())  # [B,3,Q]
             gamma_tgt.append(Ygamma.cpu().numpy())   # log-space target, for the gamma-curve plots
 
-            rp = compute_radial_power_spectrum(pred_phys).mean(dim=0)
-            rt = compute_radial_power_spectrum(target_phys).mean(dim=0)
+            rp_b = compute_radial_power_spectrum(pred_phys)     # [B,K]
+            rt_b = compute_radial_power_spectrum(target_phys)
+            # Per-sample log-spectral distance, kept for the perception-distortion cloud.
+            # The batch means below are unchanged, so rapsd_log_distance is untouched.
+            spec_i.append((torch.log(rp_b + 1e-12) - torch.log(rt_b + 1e-12))
+                          .abs().mean(dim=-1).cpu().numpy())
+            rp, rt = rp_b.mean(dim=0), rt_b.mean(dim=0)
             rapsd_p = rp if rapsd_p is None else rapsd_p + rp
             rapsd_t = rt if rapsd_t is None else rapsd_t + rt
 
@@ -137,6 +143,7 @@ def main():
     gamma_hat = np.concatenate(gamma_hat)
     gamma_tgt = np.concatenate(gamma_tgt)
     S, A, L = np.array(S_i), np.array(A_i), np.array(L_i)
+    spectral_dist = np.concatenate(spec_i)
     rapsd_p = (rapsd_p / n_batches).cpu().numpy()
     rapsd_t = (rapsd_t / n_batches).cpu().numpy()
 
@@ -184,6 +191,7 @@ def main():
     np.savez_compressed(
         os.path.join(args.output_dir, "backbone_arrays.npz"),
         mae=mae, rmse=rmse, tmean=tmean, tmax=tmax, S=S, A=A, L=L,
+        spectral_dist=spectral_dist,
         rapsd_pred=rapsd_p, rapsd_target=rapsd_t, gamma_hat=gamma_hat,
         gamma_target=gamma_tgt, thresholds=np.asarray(u_phys, dtype=np.float32),
     )

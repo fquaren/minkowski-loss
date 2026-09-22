@@ -536,11 +536,370 @@ def field_panel(fields: dict, out_dir: str, drizzle: float = 0.1,
     return _save(fig, out_dir, name)
 
 
-def make_all(models: Sequence[Model], out_dir: str, pixel_km: float = 2.0):
+# ----------------------------------------------------------------------------------
+# per-sample perception-distortion cloud
+# ----------------------------------------------------------------------------------
+
+def per_sample_minkowski(m: Model) -> Optional[np.ndarray]:
+    """Per-sample Minkowski distance, reconstructed from the stored gamma arrays.
+
+    This is the same quantity the loss reduces to a scalar: the absolute difference between
+    the predicted and target curves, integrated over log-intensity xi = log(u), normalised by
+    the xi-range and summed over the three channels. Its mean therefore reproduces the
+    ``minkowski_distance`` in the summary, so the cloud and the headline number agree.
+
+    Returns None unless both gamma arrays and the threshold grid are present, which in
+    practice means a backbone eval directory -- the extremes runs do not store gamma.
+    """
+    g_pred_log = _gamma_pred_log(m)
+    tgt = m.arr("gamma_target")
+    u = m.arr("thresholds")
+    if g_pred_log is None or tgt is None or u is None:
+        return None
+    tgt = np.asarray(tgt, dtype=np.float64)
+    if tgt.shape != g_pred_log.shape:
+        return None
+    xi = np.log(np.asarray(u, dtype=np.float64))
+    xi_range = float(xi[-1] - xi[0]) or 1.0
+    d = np.trapz(np.abs(g_pred_log - tgt), xi, axis=2) / xi_range   # [N,3]
+    return d.sum(axis=1)
+
+
+def _cloud_axes(m: Model, perception: str):
+    """(distortion, perception) per-sample vectors for one model, or None.
+
+    Distortion prefers physical MAE and falls back to RMSE, then to sqrt(MSE), so a model
+    with only an extremes directory still places. The two vectors must come from the same
+    evaluation pass over the same split in the same order; a length mismatch means they do
+    not, and the model is dropped rather than silently mis-paired.
+    """
+    if perception == "minkowski":
+        y = per_sample_minkowski(m)
+        y_label = "perception — per-sample Minkowski distance"
+    else:
+        y = m.arr("spectral_dist")
+        y = None if y is None else np.asarray(y, dtype=np.float64)
+        y_label = "perception — per-sample log-spectral distance"
+    if y is None:
+        return None
+
+    for key, conv, lab in (("mae", lambda a: a, "distortion — MAE [mm h$^{-1}$]"),
+                           ("rmse", lambda a: a, "distortion — RMSE [mm h$^{-1}$]"),
+                           ("mse", np.sqrt, "distortion — RMSE [mm h$^{-1}$]")):
+        x = m.arr(key)
+        if x is not None:
+            x = conv(np.asarray(x, dtype=np.float64))
+            break
+    else:
+        return None
+
+    if x.shape[0] != y.shape[0]:
+        print(f"  [skip] {m.label}: distortion has {x.shape[0]} samples but perception has "
+              f"{y.shape[0]} — different evaluation passes, not comparable per sample")
+        return None
+    return x, y, lab, y_label
+
+
+def _density_contour(ax, x, y, color, xlim, ylim, mass=0.5, bins=110, smooth=2.5):
+    """Outline of the region holding ``mass`` of a model's patches.
+
+    Six overlaid scatter clouds are mush; the contour is what makes each model's bulk
+    readable. The level is chosen by sorting the smoothed 2-D histogram and cutting where
+    the cumulative mass reaches the requested fraction, so the curve encloses that share of
+    the patches rather than an arbitrary density value.
+    """
+    from scipy.ndimage import gaussian_filter
+    h, xe, ye = np.histogram2d(x, y, bins=bins, range=[list(xlim), list(ylim)])
+    h = gaussian_filter(h, smooth)
+    if h.sum() <= 0:
+        return
+    flat = np.sort(h.ravel())[::-1]
+    cum = np.cumsum(flat) / flat.sum()
+    level = flat[np.searchsorted(cum, mass)] if cum[-1] >= mass else flat[-1]
+    if not np.isfinite(level) or level <= 0:
+        return
+    xc = 0.5 * (xe[:-1] + xe[1:])
+    yc = 0.5 * (ye[:-1] + ye[1:])
+    ax.contour(xc, yc, h.T, levels=[level], colors=[color], linewidths=1.6, zorder=4)
+
+
+def perception_distortion_cloud(models: Sequence[Model], out_dir: str,
+                                perception: str = "spectral",
+                                max_points: int = 2000, seed: int = 0,
+                                clip_pct: float = 99.0,
+                                name: Optional[str] = None):
+    """The perception--distortion plane with the per-sample scatter behind each model mean.
+
+    The aggregate ``perception_distortion`` figure reduces each model to one point, which
+    hides how much of the difference between two models is a shift of the whole distribution
+    and how much is a tail of a few patches. Here every model contributes a cloud of
+    individual patches, a solid contour around the half of them that lie densest, a large
+    diamond at its mean, and a marginal histogram on each axis.
+
+    ``perception`` selects the y-axis: ``"spectral"`` uses the per-sample log-spectral
+    distance the evaluation scripts store, which exists for every model class; ``"minkowski"``
+    reconstructs the per-sample Minkowski distance from the gamma arrays, which only the
+    backbone evaluations write. The Minkowski axis is the training objective for
+    Minkowski-trained rows and is not independent evidence for them.
+
+    Both axes are clipped to the pooled ``clip_pct`` percentile. Patch MAE over precipitation
+    is strongly right-skewed -- a handful of storm patches sit an order of magnitude beyond
+    the bulk -- and on unclipped axes every model collapses onto the left edge. The diamonds
+    and the histograms are computed from every sample, so only the view is clipped, never the
+    statistics; the caption records how many patches fall outside.
+
+    ``max_points`` subsamples each cloud uniformly at random under a fixed seed, so the
+    plotted density is an honest picture of the full distribution and the figure stays
+    legible.
+    """
+    if perception not in ("spectral", "minkowski"):
+        raise ValueError(f"perception must be 'spectral' or 'minkowski', got {perception!r}")
+    name = name or f"perception_distortion_cloud_{perception}.png"
+
+    have = []
+    for m in models:
+        got = _cloud_axes(m, perception)
+        if got is None:
+            continue
+        x, y = got[0], got[1]
+        ok = np.isfinite(x) & np.isfinite(y)
+        if not ok.any():
+            continue
+        have.append((m, x[ok], y[ok], got[2], got[3]))
+    if not have:
+        hint = ("re-run the evaluation scripts to populate spectral_dist"
+                if perception == "spectral" else
+                "only backbone eval directories store gamma_hat / gamma_target")
+        print(f"  [skip] perception_distortion_cloud ({perception}): no per-sample data — {hint}")
+        return None
+
+    x_label, y_label = have[0][3], have[0][4]
+    xhi = max(float(np.percentile(x, clip_pct)) for _, x, _, _, _ in have)
+    yhi = max(float(np.percentile(y, clip_pct)) for _, _, y, _, _ in have)
+    xlo = min(float(x.min()) for _, x, _, _, _ in have)
+    ylo = min(float(y.min()) for _, _, y, _, _ in have)
+    xlim = (xlo - 0.02 * (xhi - xlo), xhi)
+    ylim = (ylo - 0.02 * (yhi - ylo), yhi)
+
+    rng = np.random.default_rng(seed)
+    fig = plt.figure(figsize=(9.5, 8.0))
+    gs = fig.add_gridspec(2, 2, width_ratios=[4, 1], height_ratios=[1, 4],
+                          wspace=0.04, hspace=0.04)
+    ax = fig.add_subplot(gs[1, 0])
+    ax_top = fig.add_subplot(gs[0, 0], sharex=ax)
+    ax_right = fig.add_subplot(gs[1, 1], sharey=ax)
+
+    n_out = 0
+    for m, x, y, _, _ in have:
+        n_out += int(((x > xlim[1]) | (y > ylim[1])).sum())
+        sel = (rng.choice(x.size, max_points, replace=False)
+               if x.size > max_points else slice(None))
+        ax.scatter(x[sel], y[sel], s=6, color=m.color, alpha=0.18,
+                   linewidth=0, rasterized=True, zorder=2)
+        _density_contour(ax, x, y, m.color, xlim, ylim)
+        ax.scatter(x.mean(), y.mean(), s=190, marker="D", color=m.color,
+                   edgecolor="k", linewidth=1.1, zorder=6,
+                   label=f"{m.label}  ({x.mean():.3g}, {y.mean():.3g})")
+        ax_top.hist(x, bins=80, range=xlim, color=m.color, alpha=0.40,
+                    density=True, histtype="stepfilled")
+        ax_right.hist(y, bins=80, range=ylim, color=m.color, alpha=0.40,
+                      density=True, orientation="horizontal", histtype="stepfilled")
+
+    ax.set_xlim(*xlim); ax.set_ylim(*ylim)
+    ax.set_xlabel(f"{x_label}  (lower better)")
+    ax.set_ylabel(f"{y_label}  (lower better)")
+    ax.grid(alpha=0.3, linestyle="--")
+    ax.legend(frameon=False, fontsize=8, loc="upper right", markerscale=0.6,
+              title="model  (mean x, mean y)", title_fontsize=8)
+    ax.annotate("sharp and accurate", xy=(0.02, 0.02), xycoords="axes fraction",
+                fontsize=9, ha="left", va="bottom",
+                bbox=dict(facecolor="white", alpha=0.85, edgecolor="green"))
+    for a in (ax_top, ax_right):
+        a.axis("off")
+    total = sum(x.size for _, x, _, _, _ in have)
+    ax_top.set_title(
+        "Perception–distortion plane, per patch\n"
+        f"contour = densest 50% of patches; diamond = mean over all samples; "
+        f"axes clipped at the {clip_pct:g}th percentile "
+        f"({n_out:,} of {total:,} points outside)", fontsize=10)
+    return _save(fig, out_dir, name)
+
+
+# ----------------------------------------------------------------------------------
+# qualitative fields
+# ----------------------------------------------------------------------------------
+
+def load_field_bundle(path: str) -> dict:
+    """Load the npz written by ``scripts/evaluate/dump_fields.py``."""
+    d = np.load(path, allow_pickle=False)
+    b = {k: d[k] for k in d.files}
+    b["labels"] = [str(s) for s in b["labels"]]
+    return b
+
+
+def precip_norm(vmax: float, mode: str = "power"):
+    """Shared colour normalisation for precipitation panels.
+
+    A linear scale over a patch whose maximum is set by a single 150 mm/h pixel renders the
+    entire rain field as near-white, which defeats the purpose of showing the field at all.
+    ``"power"`` (the default) is a square-root stretch: it keeps one scale shared across
+    panels, so amplitudes stay directly comparable, while giving the drizzle-to-moderate
+    range enough of the colour ramp to read. ``"log"`` stretches further and starts at the
+    drizzle threshold; ``"linear"`` is the unstretched scale.
+    """
+    vmax = max(float(vmax), 1e-6)
+    if mode == "linear":
+        return mcolors.Normalize(vmin=0, vmax=vmax)
+    if mode == "log":
+        return mcolors.LogNorm(vmin=max(vmax * 1e-4, 1e-3), vmax=vmax)
+    if mode == "power":
+        return mcolors.PowerNorm(gamma=0.5, vmin=0, vmax=vmax)
+    raise ValueError(f"norm must be 'power', 'log' or 'linear', got {mode!r}")
+
+
+def _dem_panel(fig, ax, dem):
+    """DEM on its own terrain scale, with the colour bar below to keep the row compact."""
+    im = ax.imshow(dem, cmap="terrain", origin="lower")
+    ax.set_title("DEM", fontsize=10)
+    ax.set_xticks([]); ax.set_yticks([])
+    cb = fig.colorbar(im, ax=ax, orientation="horizontal", location="bottom",
+                      fraction=0.046, pad=0.04)
+    cb.set_label("elevation [m]", fontsize=9)
+    cb.ax.tick_params(labelsize=8)
+
+
+def _precip_panel(ax, arr, cmap, norm, drizzle, title):
+    a = np.ma.masked_less(np.asarray(arr, dtype=float), drizzle)
+    im = ax.imshow(a, cmap=cmap, norm=norm, origin="lower")
+    ax.set_title(title, fontsize=10)
+    ax.set_xticks([]); ax.set_yticks([])
+    return im
+
+
+def field_comparison(bundle: dict, out_dir: str, drizzle: float = 0.1,
+                     norm_mode: str = "power", prefix: str = "fields_compare"):
+    """One figure per patch: DEM, input, target, then every model prediction in a row.
+
+    Every precipitation panel shares one colour scale, fixed by the largest value anywhere in
+    the row. Per-panel normalisation would hide exactly the amplitude differences these
+    comparisons are about -- a model that overshoots the peak by 60% looks identical to one
+    that does not once each panel is stretched to its own maximum. Sub-drizzle pixels are
+    masked so the dry background reads as grey rather than as the bottom of the ramp.
+
+    The patch maximum is printed on each panel, so peak overshoot is readable without
+    measuring pixels against the colour bar.
+    """
+    dem, lr, hr = bundle["dem"], bundle["input"], bundle["target"]
+    preds, labels = bundle["preds"], bundle["labels"]
+    idx = bundle.get("indices", np.arange(hr.shape[0]))
+    cmap = precip_cmap()
+    paths = []
+
+    for n in range(hr.shape[0]):
+        fields = [("input (12.5 km)", lr[n]), ("target (2 km)", hr[n])]
+        fields += [(labels[k], preds[k, n]) for k in range(preds.shape[0])]
+        vmax = max(float(np.nanmax(a)) for _, a in fields)
+        norm = precip_norm(vmax, norm_mode)
+
+        ncol = 1 + len(fields)
+        fig, axes = plt.subplots(1, ncol, figsize=(3.3 * ncol, 4.3), squeeze=False)
+        _dem_panel(fig, axes[0, 0], dem[n])
+
+        im = None
+        for ax, (title, arr) in zip(axes[0, 1:], fields):
+            im = _precip_panel(ax, arr, cmap, norm, drizzle,
+                               f"{title}\nmax {np.nanmax(arr):.1f} mm h$^{{-1}}$")
+        fig.colorbar(im, ax=axes[0, 1:].tolist(), fraction=0.02, pad=0.02,
+                     label="precipitation [mm h$^{-1}$]")
+        fig.suptitle(f"patch {int(idx[n])} — target max {float(np.nanmax(hr[n])):.1f} "
+                     f"mm h$^{{-1}}$", y=1.02)
+        paths.append(_save(fig, out_dir, f"{prefix}_{int(idx[n]):06d}.png"))
+    return paths
+
+
+def field_detail(bundle: dict, out_dir: str, drizzle: float = 0.1,
+                 norm_mode: str = "power", prefix: str = "fields_detail"):
+    """One figure per model and patch: the four fields over the three Minkowski curves.
+
+    Row one is DEM, input, prediction and target on one shared precipitation scale. Row two
+    is what the loss actually sees for that same patch -- area, perimeter and topology
+    against threshold, prediction against target. Reading the two rows together is the only
+    direct way to see which visual feature a curve discrepancy corresponds to.
+
+    Patches with no gamma stored fall back to the field row alone.
+    """
+    dem, lr, hr = bundle["dem"], bundle["input"], bundle["target"]
+    preds, labels = bundle["preds"], bundle["labels"]
+    idx = bundle.get("indices", np.arange(hr.shape[0]))
+    g_pred = bundle.get("gamma_pred")
+    g_tgt = bundle.get("gamma_target")
+    u = bundle.get("thresholds")
+    cmap = precip_cmap()
+    paths = []
+
+    for k, label in enumerate(labels):
+        safe = "".join(c if c.isalnum() else "_" for c in label).strip("_").lower()
+        for n in range(hr.shape[0]):
+            has_gamma = g_pred is not None and g_tgt is not None and u is not None
+            fig = plt.figure(figsize=(16, 9.5 if has_gamma else 4.6))
+            if has_gamma:
+                gs = fig.add_gridspec(2, 4, height_ratios=[1, 0.72], hspace=0.3, wspace=0.18)
+            else:
+                gs = fig.add_gridspec(1, 4, wspace=0.18)
+
+            vmax = max(float(np.nanmax(a)) for a in (lr[n], preds[k, n], hr[n]))
+            norm = precip_norm(vmax, norm_mode)
+
+            _dem_panel(fig, fig.add_subplot(gs[0, 0]), dem[n])
+
+            im, precip_axes = None, []
+            for col, (title, arr) in enumerate(
+                    [("input (12.5 km)", lr[n]), (f"prediction — {label}", preds[k, n]),
+                     ("target (2 km)", hr[n])], start=1):
+                axp = fig.add_subplot(gs[0, col])
+                precip_axes.append(axp)
+                im = _precip_panel(axp, arr, cmap, norm, drizzle,
+                                   f"{title}\nmax {np.nanmax(arr):.1f} mm h$^{{-1}}$")
+            fig.colorbar(im, ax=precip_axes, fraction=0.02, pad=0.02,
+                         label="precipitation [mm h$^{-1}$]")
+
+            if has_gamma:
+                gp = np.sign(g_pred[k, n]) * np.log1p(np.abs(g_pred[k, n]))
+                gt = np.asarray(g_tgt[n], dtype=float)
+                sub = gs[1, :].subgridspec(1, 3, wspace=0.28)
+                for c in range(3):
+                    axc = fig.add_subplot(sub[0, c])
+                    axc.plot(u, gt[c], label="target", marker="s", markersize=3.5,
+                             **TARGET_STYLE)
+                    axc.plot(u, gp[c], label="prediction", color=PALETTE[1], marker="o",
+                             markersize=3.5, linewidth=1.8)
+                    axc.set_xscale("log")
+                    axc.set_xlabel("threshold $u$ [mm h$^{-1}$]")
+                    axc.set_ylabel(r"signed $\log(1+\cdot)$")
+                    axc.set_title(CHANNELS[c], fontsize=11)
+                    axc.grid(alpha=0.3, which="both", linestyle="--")
+                    if c == 0:
+                        axc.legend(frameon=False, fontsize=9)
+
+            fig.suptitle(f"{label} — patch {int(idx[n])} "
+                         f"(target max {float(np.nanmax(hr[n])):.1f} mm h$^{{-1}}$)",
+                         y=0.97, fontsize=14)
+            paths.append(_save(fig, out_dir, f"{prefix}_{safe}_{int(idx[n]):06d}.png"))
+    return paths
+
+
+def make_all(models: Sequence[Model], out_dir: str, pixel_km: float = 2.0,
+             cloud_points: int = 2000):
     """Every comparison figure the loaded artefacts support."""
     assign_colors(models)
     print(f"plotting {len(models)} models -> {out_dir}")
     perception_distortion(models, out_dir)
+    # Both cloud variants are attempted; each skips itself when the per-sample arrays it
+    # needs are absent, so older eval directories still plot everything else.
+    perception_distortion_cloud(models, out_dir, perception="spectral",
+                                max_points=cloud_points)
+    perception_distortion_cloud(models, out_dir, perception="minkowski",
+                                max_points=cloud_points)
     rapsd(models, out_dir, pixel_km=pixel_km)
     survival_and_return_levels(models, out_dir)
     tail_summary(models, out_dir)
