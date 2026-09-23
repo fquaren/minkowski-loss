@@ -228,9 +228,13 @@ column.
 
 **Status 2026-09-23: not a fair trial, so "harmful" is not established.** A direct audit
 (EXPERIMENTS §3) found:
-- **Under-weighted.** Spectral, SSIM and optical flow ran at 1–11% of the MSE gradient, i.e.
-  roughly 70×, 10× and 140× below gradient parity. Their trained models score no better
-  on their own loss than vanilla.
+- **Under-weighted and inactive.** Spectral, SSIM and optical flow were trained at about
+  10⁻³, 10⁻⁴ and 4·10⁻⁵ of gradient parity at initialisation. At their own checkpoints they
+  are far from the equilibrium an active term reaches (share 0.02 / 0.16 / 0.007, against
+  1.22 for Minkowski). Their trained models are no better than vanilla on their own loss
+  (+2.5%, +0.1%, −2.6% n.s.). Measured with `tools/gradient_audit.py` over 512 batches; see
+  EXPERIMENTS §3 and `notes/gradient_audit.pdf`. An earlier 6-batch estimate gave
+  "70×/10×/140×" and is superseded.
 - **SSIM is buggy.** A perfect prediction scores 0.465 against 0.499 for an all-zero one.
 - **Unmatched budgets.** All v2 runs trained 25 epochs, against 47 (Minkowski) and 69
   (vanilla). A 34-epoch vanilla run reproduces their loss values.

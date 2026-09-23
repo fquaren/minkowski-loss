@@ -639,6 +639,91 @@ about what the learned $\sigma_k$ can encode?
   essentially only the floor.
 \end{enumerate}
 
+
+%=====================================================================
+\appendix
+\section{Measurements, 23 September 2026}\label{app:results}
+%=====================================================================
+
+\texttt{tools/gradient\_audit.py} with $N=512$ batches of $128$ patches ($65{,}536$ patches,
+drawn with the training sampler), $K=8$ jackknife groups, anneal $0.1$, fp32, GPU~1. Raw
+output: \texttt{eval\_results/gradient\_audit/2026-09-23/}. Weights $\lambda$ are those the
+Study-1 runs were trained with.
+
+\subsection*{A.1 Parity at initialisation (where it is well posed)}
+At initialisation the MSE gradient is almost pure signal (noise fraction $0.01$), so
+$\lambda^*$ is well defined.
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+loss & $\lambda$ used & $\lambda^*$ & $r=\lambda/\lambda^*$ & $\cos\psi$ \\ \midrule
+Minkowski   & $1\times10^{-4}$   & $1.05\times10^{-3}$ & $0.095$              & $+0.78$ \\
+spectral    & $5\times10^{-4}$   & $0.298$             & $1.7\times10^{-3}$   & $+0.96$ \\
+SSIM        & $1.6\times10^{-4}$ & $0.932$             & $1.7\times10^{-4}$   & $-0.77$ \\
+wet area    & $2\times10^{-2}$   & $2.00\times10^{-2}$ & $1.0$                & $+0.85$ \\
+optical flow& $4\times10^{-5}$   & $1.09$              & $3.7\times10^{-5}$   & $+0.79$ \\ \bottomrule
+\end{tabular}
+\end{center}
+At initialisation every aux gradient is strongly aligned with the MSE gradient
+($|\cos\psi|\approx0.8$--$0.96$), so every term starts in the bystander regime
+$r\ll|\cos\psi|$ of eq.~\eqref{eq:dLk}. Even Minkowski starts $10\times$ below parity, and the
+term only takes over later, as the MSE gradient shrinks. Wet area is at parity and clips
+$64\%$ of initial batches.
+
+\subsection*{A.2 The vanilla checkpoint: parity is ill-posed there}
+At the converged vanilla checkpoint the MSE noise fraction is $0.96$: the per-batch norm
+($3.0\times10^{-4}$) is almost all noise around a signal of $6.1\times10^{-5}$. The per-batch
+parity values of the first audit are reproduced (spectral $3.9\times10^{-2}$, v0:
+$3.6\times10^{-2}$). The noise-corrected values are $4$--$5\times$ smaller (spectral
+$9.2\times10^{-3}$). This is Lemma~\ref{lem:noise} in action. The ``$70\times$ below parity''
+of the first audit is $\approx18\times$ after noise correction, and $\approx600\times$ at
+initialisation. The factor depends entirely on where it is measured.
+
+\subsection*{A.3 The equilibrium test at each run's own checkpoint}
+For a term that trained actively, \S\ref{sec:equilibrium} predicts $r\to1$ and $\cos\psi\to-1$.
+\begin{center}
+\begin{tabular}{@{}lrrrl@{}}
+\toprule
+run (own loss) & $r$ & $\cos\psi$ (corr.) & Adam share & verdict \\ \midrule
+Minkowski   & $1.22$   & $-0.986$ & $1.10$   & at equilibrium: active \\
+wet area    & $0.74$   & $-0.967$ & $1.03$   & at equilibrium: active \\
+SSIM        & $0.157$  & $+0.470$ & $0.038$  & far from it: bystander \\
+spectral    & $0.021$  & $+0.915$ & $0.022$  & far from it: bystander \\
+optical flow& $0.0066$ & $-0.474$ & $0.008$  & far from it: inert \\ \bottomrule
+\end{tabular}
+\end{center}
+The two active runs sit almost exactly on the equilibrium line, with Euclidean and Adam
+shares agreeing. The three others have shares $\ll1$ and positive or weakly negative cosines.
+Their own gradient never balanced the MSE, and in two of them it still points the same way.
+
+\subsection*{A.4 The own-loss test}
+Paired over the same $512$ batches, with bootstrap 95\% intervals, relative to vanilla:
+Minkowski $-64.8\%$ $[-65.9,-63.8]$, wet area $-13.9\%$ $[-15.8,-12.1]$, optical flow
+$-2.6\%$ $[-6.4,+1.2]$, spectral $+2.5\%$ $[+0.9,+4.4]$, SSIM $+0.1\%$ $[+0.0,+0.2]$.
+\begin{itemize}[nosep]
+\item Spectral and SSIM are \emph{worse} on their own objective than the vanilla model.
+\item The 34-epoch vanilla model is also worse than the 64-epoch one on spectral
+  ($4.18$ vs $4.10\times10^{-3}$). So the sign is explained by under-training at 25
+  epochs, not by the term.
+\item Both tests agree. Spectral, SSIM and optical flow were bystanders. Minkowski and wet
+  area were active, and wet area's activity is confined to the drizzle band, as its
+  gradient support predicts.
+\end{itemize}
+
+\subsection*{A.5 Consequences for the reruns}
+\begin{itemize}[nosep]
+\item Use the \emph{initialisation} $\lambda^*$ as the unit. By it, the Study-1 weights were
+  $\sim10^{-1}$ (Minkowski), $\sim10^{-3}$ (spectral), $\sim10^{-4}$ (SSIM),
+  $\sim4\times10^{-5}$ (optical flow) and $1$ (wet area) times parity. Minkowski became
+  active only because $\norm{\g_0}$ collapsed during training (A.3). The competing losses
+  would need orders of magnitude more weight to follow the same route.
+\item A bracket expressed in init-parity units cannot be copied from Minkowski's working
+  point. Minkowski was active at $0.1\lambda^*_{\text{init}}$, yet that same fraction leaves
+  the others inert, because their gradients are dense and aligned with the MSE.
+  \textbf{The bracket should instead be placed so that the equilibrium test (A.3) is
+  satisfied at the end of training}, and checked with the own-loss test.
+\end{itemize}
+
 %=====================================================================
 \section*{References}
 %=====================================================================
