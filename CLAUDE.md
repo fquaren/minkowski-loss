@@ -94,8 +94,10 @@ Check in this order:
 
 - The Minkowski loss **helps the deterministic backbone** substantially (FSS@89 0.040 to
   0.159, exceedance ratio 0.118 to 0.244) for +3.8% MAE.
-- It **does not help flow matching** by any route tried: as a reward, or via the backbone.
-  The clean flow-matching model already beats the Minkowski backbone on every tail column.
+- ~~It does not help flow matching.~~ **Reopened 2026-09-23** (DECISIONS §3 status note):
+  after the 09-16 re-eval, the distributional reward beats clean FM on FSS, exceedance
+  ratio and RL bias on the same 4,096 patches. Single seed, leaking split, cause of the
+  shift not yet attributed, so do not cite either version as settled.
 - The coupling is **correctly wired** — the reward drops 59.7% on a fixed-noise single batch,
   5x the noise floor; K=1 agrees with K=2 (cos +0.91). Not a plumbing bug.
 - **The binding limit is pixel mass**: 83% of the structural gradient comes from thresholds
@@ -107,6 +109,18 @@ Check in this order:
 - At w=1e-3 the deterministic model **games the loss** — grid-aligned filaments, +60% peak
   overshoot, every structural metric improving. The useful range is bounded above by hacking,
   not by accuracy cost.
+
+## Data and split caveats (2026-09-23)
+
+- **Splits are random at patch level** (DECISIONS §15). Every test patch has a train patch
+  at the same timestamp and on the same tile within ±1 h. Test scores are interpolation
+  scores. Never make an o.o.d. / unseen-extreme claim on them.
+- **The tail contains radar artefacts, and the declutter step zeroes >150 mm/h** instead of
+  clipping. See EXPERIMENTS §5 and `scripts/data_quality/`. Look at the images before
+  believing anything driven by the top of the distribution.
+- **The competing-loss rows are not a fair trial** (DECISIONS §8 status, §16): three were
+  never active, SSIM is buggy, and the budgets were unmatched.
+- **DDPM is dropped** (DECISIONS §14). Do not add DDPM rows or fix DDPM code unless asked.
 
 ## Conventions
 
