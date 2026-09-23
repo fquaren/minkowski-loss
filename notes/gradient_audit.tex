@@ -1,0 +1,666 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.6cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,bm}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\usepackage{microtype}
+\usepackage{xcolor}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{exercise}{Exercise}
+\theoremstyle{remark}
+\newtheorem*{remark}{Remark}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\ip}[2]{\left\langle #1, #2 \right\rangle}
+\newcommand{\g}{\bm{g}}
+\newcommand{\bmu}{\bm{\mu}}
+\newcommand{\btheta}{\bm{\theta}}
+\newcommand{\tr}{\operatorname{tr}}
+
+\title{Is the auxiliary loss doing anything?\\[4pt]
+\large Gradient geometry of multi-term objectives, with applications to\\
+structural losses for precipitation super-resolution}
+\author{Lecture notes for the \texttt{minkowski-loss} project}
+\date{23 September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+You train a network on $L_0 + \lambda L_k$ and want to know whether $L_k$ took any part in
+shaping the result. This is harder than it looks. Loss \emph{values} carry no information
+about influence. The obvious gradient diagnostic, comparing $\norm{\nabla L_0}$ with
+$\lambda\norm{\nabla L_k}$, is only meaningful far from convergence. Adaptive optimisers
+change the geometry in which ``how much'' is measured. These notes build the question up
+from first principles:
+\begin{itemize}[nosep]
+\item one step of gradient descent;
+\item the equilibrium of the combined objective, via linear-response theory;
+\item stochastic dynamics, where the aux term's drift competes with minibatch noise;
+\item Adam's preconditioned geometry;
+\item statistical estimation from minibatches.
+\end{itemize}
+We then derive what the common weighting schemes (uncertainty weighting, GradNorm, MGDA,
+PCGrad, black-box search) actually optimise. Finally, we apply everything to the five
+structural losses of Study~1 and to the audit tool in \texttt{tools/gradient\_audit.py}.
+We aim at understanding, not recipes. Each section ends with what it implies for the
+measurement.
+\end{abstract}
+
+\tableofcontents
+\bigskip
+
+%=====================================================================
+\section{The question, stated carefully}
+%=====================================================================
+
+Let $\btheta\in\R^D$ be the parameters ($D\approx 3.1\times10^7$ for our U-Net). We train on
+\begin{equation}
+  L(\btheta) = L_0(\btheta) + \lambda\,L_k(\btheta),
+\end{equation}
+where $L_0$ is the pixel MSE in log-normalised space, $L_k$ is one of the structural losses
+(Minkowski, spectral, SSIM, wet area, optical flow), and $\lambda>0$ is fixed after a warm-up.
+We write $\g_0=\nabla L_0$ and $\g_k=\nabla L_k$ for the full-data gradients. A single
+minibatch $B$ gives unbiased noisy estimates $\hat\g_0,\hat\g_k$.
+
+``Is $L_k$ active?'' has three non-equivalent meanings, and it pays to keep them apart:
+
+\begin{enumerate}[label=(\alph*)]
+\item \textbf{Instantaneous.} Does the term change the direction of the update
+  \emph{now}? This is a local statement about $\g_0$ and $\lambda\g_k$ at one point.
+\item \textbf{Cumulative.} Does the term change \emph{where training ends up}? This is a
+  statement about the solution $\btheta_\lambda$ against $\btheta_0$. It depends on
+  curvature and on noise, not just on gradient sizes.
+\item \textbf{Observable.} Does the term change a metric we care about (MAE, exceedance
+  ratio, the value of $L_k$ itself)? This is what the paper reports. It is a function of
+  (b), seen through the metric.
+\end{enumerate}
+
+The audit numbers map onto these as follows:
+\begin{itemize}[nosep]
+\item the \emph{share} $r$ and the cosine address (a);
+\item the ``own-loss'' test and the $\lambda$-scaling predictions of \S\ref{sec:equilibrium}
+  address (b) and (c);
+\item the MAE ``activity check'' addresses (c), but turns out to be a
+  \emph{second-order} and hence weak test (\S\ref{sec:equilibrium}).
+\end{itemize}
+
+%=====================================================================
+\section{Why loss values carry no information}
+%=====================================================================
+
+\begin{proposition}[Gauge freedom of a loss term]
+For any $c>0$ and $a\in\R$, training on $L_0+\lambda L_k$ and on
+$L_0+(\lambda/c)\,(c\,L_k+a)$ produces identical gradients, and therefore identical
+trajectories under any first-order optimiser.
+\end{proposition}
+\begin{proof}
+$\nabla[(\lambda/c)(cL_k+a)] = \lambda\nabla L_k$.
+\end{proof}
+
+The value of $L_k$ is thus defined only up to an affine map, and the value ratio
+$\lambda L_k/L_0$ is not a physical quantity.
+\begin{itemize}[nosep]
+\item Our Minkowski loss takes values $\sim1$ and our spectral loss $\sim4\times10^{-3}$.
+  That tells you nothing about which one steers more.
+\item The additive constant matters more than it seems. SSIM has an \emph{unreachable
+  floor} of $0.465$ on our data (\S\ref{sec:ssim}), so $93\%$ of its value is a constant with
+  zero gradient.
+\end{itemize}
+Any weighting rule built on values inherits this arbitrariness. We will see in
+\S\ref{sec:uw} that uncertainty weighting is exactly such a rule.
+
+The invariant objects are the gradients $\lambda\g_k$, and more precisely their action
+through the optimiser.
+
+%=====================================================================
+\section{One step of gradient descent}
+%=====================================================================
+
+Take one full-batch GD step $\Delta\btheta=-\eta(\g_0+\lambda\g_k)$. Let $\psi$ be the angle
+between $\g_0$ and $\g_k$.
+
+\begin{definition}[Share and parity weight]
+\begin{equation}
+  r \;=\; \frac{\lambda\norm{\g_k}}{\norm{\g_0}}, \qquad
+  \lambda^* \;=\; \frac{\norm{\g_0}}{\norm{\g_k}}, \qquad\text{so}\quad r=\lambda/\lambda^*.
+\end{equation}
+\end{definition}
+
+\paragraph{Direction.}
+The update is deflected away from $-\g_0$ by an angle $\varphi$ with
+\begin{equation}\label{eq:deflect}
+  \tan\varphi = \frac{r\sin\psi}{1+r\cos\psi}.
+\end{equation}
+Two numbers from the first audit, spectral at $r=0.014$ and optical flow at $r=0.007$, give
+$\varphi<0.8^\circ$. The update is, for all practical purposes, the MSE update.
+
+\paragraph{What happens to each loss.}
+To first order in $\eta$,
+\begin{align}
+  \Delta L_0 &= -\eta\left(\norm{\g_0}^2 + \lambda\ip{\g_0}{\g_k}\right)
+             = -\eta\norm{\g_0}^2\,(1 + r\cos\psi), \label{eq:dL0}\\
+  \Delta L_k &= -\eta\left(\lambda\norm{\g_k}^2 + \ip{\g_0}{\g_k}\right)
+             = -\eta\norm{\g_0}\norm{\g_k}\,(r + \cos\psi). \label{eq:dLk}
+\end{align}
+Equation \eqref{eq:dLk} is the heart of the matter. The change in $L_k$ has a \emph{self}
+term $r$ and a \emph{bystander} term $\cos\psi$ (the aux loss moves because the MSE moves).
+The ratio self/bystander is $r/\cos\psi$. Three regimes follow:
+\begin{itemize}[nosep]
+\item $r\ll|\cos\psi|$: $L_k$ is a \emph{bystander}. Whatever it does is inherited from the
+  MSE. A model trained this way should score on $L_k$ like a vanilla model trained for as
+  long.
+\item $r\gg|\cos\psi|$: $L_k$ drives its own descent.
+\item In high dimension, independent directions have $\cos\psi = O(D^{-1/2})$. A small
+  measured $\cos\psi$ (Minkowski: $-0.02$ in the first audit) means that even a modest $r$
+  is enough for the self term to dominate. \emph{Small $r$ is not the same as inactive;
+  what matters is $r$ relative to $|\cos\psi|$.}
+\end{itemize}
+Equation \eqref{eq:dL0} shows the first-order cost to $L_0$: only a \emph{conflicting}
+aux gradient ($\cos\psi<0$) slows the MSE. An orthogonal one costs nothing at first order.
+Its cost appears at second order, which is the subject of the next section.
+
+\begin{remark}
+$\lambda^*$ is a \emph{unit}, not an optimum. It is the weight at which the two terms have
+equal say in the instantaneous direction. Our Minkowski loss works at $r\approx 2$--$5$ and
+games the metrics at $10\times$ its weight. Nothing forces the good $\lambda$ to be near
+$\lambda^*$. Its use is to express every loss's weight in the same dimensionless unit, which
+is what a fair comparison needs.
+\end{remark}
+
+%=====================================================================
+\section{Where training ends up: equilibrium and linear response}\label{sec:equilibrium}
+%=====================================================================
+
+One step tells you about the direction. The solution is determined by a balance of forces.
+Physicists will recognise the structure: the auxiliary loss is an external field, the base
+loss is the potential, and the Hessian is the stiffness.
+
+\subsection{Perturbation theory around the base minimum}
+
+Let $\btheta_0$ be a non-degenerate local minimum of $L_0$, with Hessian
+$H=\nabla^2L_0(\btheta_0)\succ0$. Write $\g_k=\nabla L_k(\btheta_0)$. By the implicit function
+theorem the minimiser of $L_0+\lambda L_k$ satisfies
+\begin{equation}\label{eq:response}
+  \btheta_\lambda = \btheta_0 - \lambda H^{-1}\g_k + O(\lambda^2).
+\end{equation}
+
+\begin{proposition}[Response of the two losses]\label{prop:response}
+Define the \emph{susceptibility} $\chi_k = \g_k^\top H^{-1}\g_k > 0$. Then
+\begin{align}
+  L_k(\btheta_\lambda)-L_k(\btheta_0) &= -\lambda\,\chi_k + O(\lambda^2), \label{eq:lin}\\
+  L_0(\btheta_\lambda)-L_0(\btheta_0) &= \tfrac12\lambda^2\,\chi_k + O(\lambda^3). \label{eq:quad}
+\end{align}
+Eliminating $\lambda$, the local Pareto front is a parabola:
+\begin{equation}\label{eq:pareto}
+  \Delta L_0 \approx \frac{(\Delta L_k)^2}{2\chi_k}.
+\end{equation}
+\end{proposition}
+\begin{proof}
+Taylor-expand both losses around $\btheta_0$ using \eqref{eq:response}. For $L_k$ the linear
+term is $\g_k^\top\Delta\btheta = -\lambda\chi_k$. For $L_0$ the gradient vanishes at
+$\btheta_0$, leaving $\tfrac12\Delta\btheta^\top H\Delta\btheta=\tfrac12\lambda^2\chi_k$.
+\end{proof}
+
+Three consequences shape the whole audit.
+
+\paragraph{1. The MAE activity check is a second-order test.}
+The cost to the base loss grows like $\lambda^2$, and the gain on the aux loss like
+$\lambda$. So at small $\lambda$ a genuinely active term can improve its own objective
+noticeably while moving MSE or MAE imperceptibly. ``$\Delta\mathrm{MAE}<1\%$ means
+inactive'' is therefore a sufficient signal only when combined with ``and its own loss did
+not improve either''. The \textbf{own-loss test} (the trained model evaluated on its own
+$L_k$, against vanilla) is first order and strictly more sensitive. It is the primary
+evidence in the audit.
+
+\paragraph{2. The right norm is $H^{-1}$, not Euclidean.}
+$\chi_k$ weights the aux gradient by the \emph{inverse} stiffness of the base loss.
+\begin{itemize}[nosep]
+\item Directions in which the MSE is flat (small curvature) respond enormously to a small
+  push. Directions in which it is stiff barely move.
+\item The Euclidean share $r$ ignores this completely, so it is a proxy for (b) at best.
+\item This is also where reward hacking lives. The grid-aligned filaments of the
+  $w=10^{-3}$ Minkowski run (\texttt{DECISIONS.md} \S2) are, almost by definition, a
+  direction the MSE does not resist much and the Minkowski loss rewards.
+\end{itemize}
+
+\paragraph{3. At equilibrium the full gradients balance exactly.}
+At a stationary point of $L_0+\lambda L_k$ one has $\g_0 = -\lambda\g_k$. So
+\begin{equation}
+  r = 1, \qquad \cos\psi = -1 \qquad\text{(full batch, at the combined optimum).}
+\end{equation}
+This gives a clean diagnostic for a model trained \emph{with} $L_k$: at its own checkpoint
+the noise-corrected share should approach $1$ and the cosine $-1$. The size of the deviation
+measures how far from equilibrium training stopped.
+\begin{itemize}[nosep]
+\item Conversely, at the \emph{vanilla} checkpoint $\g_0\approx0$ (it is a minimum of $L_0$).
+  So $\lambda^*=\norm{\g_0}/\norm{\g_k}\to0$ and $r\to\infty$ for \emph{every} aux loss.
+\item The parity weight evaluated at the ERM solution is therefore not a well-posed
+  quantity, contrary to the prescription in \texttt{DECISIONS.md} \S9 and in Chang \& Sapsis.
+  What one measures there, with minibatches, is mostly the noise scale of $\hat\g_0$
+  (\S\ref{sec:noise}).
+\item The well-posed places to measure parity are the \textbf{initialisation}, or early
+  training, where both gradients are signal-dominated. There the ratio governs the
+  transient that decides which basin you enter.
+\end{itemize}
+
+\subsection{The overparameterised caveat}
+With $D\gg$ (effective number of constraints), $H$ is singular. The minimisers of $L_0$
+form a manifold $\mathcal M$, and \eqref{eq:response} holds only in the directions transverse
+to $\mathcal M$.
+\begin{itemize}[nosep]
+\item \emph{Along} $\mathcal M$, $L_0$ exerts no restoring force. An arbitrarily small
+  $\lambda$ then drives the solution, given enough time, to $\arg\min_{\mathcal M}L_k$: the
+  aux loss acts as a tie-breaker at zero cost to $L_0$.
+\item In that regime $\chi_k=\infty$ in the flat directions. MAE-based checks see nothing,
+  while $L_k$ can move by $O(1)$.
+\item Our U-Net does not interpolate the data (validation MSE is far from zero, and the
+  targets are noisy), and training is finite. So we are in an intermediate regime: some
+  flat directions, many stiff ones. It is one more reason to trust the own-loss test over
+  the MAE check.
+\end{itemize}
+
+%=====================================================================
+\section{Noise: drift against diffusion}\label{sec:noise}
+%=====================================================================
+
+Minibatch gradients are $\hat\g=\bmu+\bm\xi$ with $\E\bm\xi=0$ and $\operatorname{Cov}\bm\xi=\Sigma/B$
+(approximately, for batch size $B$). The aux term contributes a \emph{drift}
+$\lambda\bmu_k$. The base loss contributes a restoring force plus diffusion. Whether the drift
+matters is a signal-to-noise question.
+
+\subsection{A one-dimensional model}
+Project the dynamics onto the unit vector $\bm e=\bmu_k/\norm{\bmu_k}$. Near a minimum of $L_0$
+with curvature $h=\bm e^\top H\bm e$ along $\bm e$, SGD with learning rate $\eta$ is a discretised
+Ornstein--Uhlenbeck process:
+\begin{equation}
+  x_{t+1} = x_t - \eta\,(h\,x_t + \lambda\norm{\bmu_k}) + \eta\,\sigma_e\,\zeta_t,
+  \qquad \sigma_e^2=\bm e^\top\Sigma\,\bm e/B,\quad \zeta_t\sim\mathcal N(0,1).
+\end{equation}
+For small $\eta h$ the stationary distribution has
+\begin{equation}
+  \text{mean shift}\;\; m=-\frac{\lambda\norm{\bmu_k}}{h},\qquad
+  \text{spread}\;\; s=\sigma_e\sqrt{\frac{\eta}{2h}},\qquad
+  \frac{|m|}{s}=\frac{\lambda\norm{\bmu_k}}{\sigma_e}\sqrt{\frac{2}{\eta h}}.
+\end{equation}
+The relaxation time is $1/(\eta h)$ steps. Three lessons:
+\begin{itemize}[nosep]
+\item An aux term can shift the \emph{mean} solution while being invisible in any single
+  step, because $\lambda\norm{\bmu_k}\ll\sigma_e$. A consistent drift accumulates; noise
+  does not.
+\item Without restoring force ($h\to0$, a flat direction) the drift wins after
+  $T^*\approx\big(\sigma_e/(\lambda\norm{\bmu_k})\big)^2$ steps.
+\item Learning-rate decay ($\eta\downarrow$, as \texttt{ReduceLROnPlateau} does) \emph{raises}
+  $|m|/s$. Late training is where small, consistent aux terms leave their mark.
+\end{itemize}
+
+\subsection{What a per-batch norm measures}
+\begin{lemma}\label{lem:noise}
+$\E\norm{\hat\g}^2=\norm{\bmu}^2+\tr\Sigma/B$.
+\end{lemma}
+Near a minimum of $L_0$, $\norm{\bmu_0}\to0$ while $\tr\Sigma_0/B$ does not. A per-batch
+$\norm{\hat\g_0}$ is then a measure of \emph{noise}, and a parity ratio built from per-batch
+norms compares the aux signal with the MSE noise. That is a meaningful comparison (it is
+$\lambda\norm{\bmu_k}/\sigma$ above, up to the $\sqrt{\eta h}$ factor), but it is not the
+parity of \S3.
+
+The first audit (\texttt{tools/gradient\_audit\_v0}) used per-batch norms at the vanilla
+checkpoint. Its ``$\lambda^*$'' values are therefore noise-referenced. The qualitative
+ordering is still informative, but the ``$70\times$'' and ``$140\times$'' factors should be
+read in that light.
+
+\subsection{Unbiased estimation}
+With $N$ minibatch gradients $\hat\g^{(i)}$, mean $\bar\g$ and mean squared norm
+$S=\frac1N\sum_i\norm{\hat\g^{(i)}}^2$:
+\begin{equation}\label{eq:unbiased}
+  \widehat{\norm{\bmu}^2} = \frac{N\norm{\bar\g}^2-S}{N-1},\qquad
+  \widehat{\ip{\bmu_0}{\bmu_k}} = \frac{N\ip{\bar\g_0}{\bar\g_k}-\frac1N\sum_i\ip{\hat\g_0^{(i)}}{\hat\g_k^{(i)}}}{N-1}.
+\end{equation}
+Both follow from Lemma~\ref{lem:noise} and its bilinear analogue. The second one matters
+because $\hat\g_0$ and $\hat\g_k$ are computed on the \emph{same} batch, so their noises are
+correlated. The naive inner product of mean gradients is biased by that cross-covariance,
+by $\tr\Sigma_{0k}/(NB)$. So even for orthogonal signals the naive cosine is not centred on
+zero when $N$ is small.
+
+The tool reports:
+\begin{itemize}[nosep]
+\item the noise-corrected norms and cosine;
+\item the \emph{noise fraction} $1-\widehat{\norm{\bmu}^2}/\text{median}\norm{\hat\g}^2$;
+\item jackknife standard errors over $K$ groups of batches.
+\end{itemize}
+When $\widehat{\norm{\bmu_0}^2}\le0$, the MSE signal is statistically indistinguishable from
+zero, and the tool says so instead of printing a meaningless ratio.
+
+%=====================================================================
+\section{Adam changes the geometry}\label{sec:adam}
+%=====================================================================
+
+We train with AdamW. Its update is
+\begin{equation}
+  \btheta \leftarrow \btheta(1-\eta w) - \eta\,\frac{\hat{\bm m}}{\sqrt{\hat{\bm v}}+\epsilon},
+\end{equation}
+with $\hat{\bm m}\approx\E\hat\g$ and $\hat{\bm v}\approx\E\hat\g^{\odot2}$ (coordinate-wise), and
+decoupled weight decay $w$.
+
+\paragraph{Preconditioned share.}
+Holding $\hat{\bm v}$ fixed, adding $\lambda\g_k$ changes the update by
+$-\eta\lambda P\g_k$ with $P=\operatorname{diag}\big(1/(\sqrt{\hat{\bm v}}+\epsilon)\big)$. The relevant
+share is therefore
+\begin{equation}
+  r_P = \frac{\lambda\norm{P\g_k}}{\norm{P\g_0}}.
+\end{equation}
+The tool computes it with $\hat{\bm v}$ taken from each checkpoint's saved optimizer state.
+\begin{itemize}[nosep]
+\item Near convergence $\hat{\bm v}$ is dominated by noise, so $P\approx\operatorname{diag}(1/\sigma_i)$.
+  Adam then measures each coordinate's gradient \emph{in units of its own noise}, and $r_P$
+  is a signal-to-noise-weighted share.
+\item A loss whose gradient concentrates in coordinates where the MSE is quiet gets
+  amplified. One spread over noisy coordinates gets suppressed.
+\item In the smoke test (4 batches, not to be quoted) the preconditioner cut SSIM's share
+  by almost an order of magnitude and wet area's by seven. Euclidean and preconditioned
+  shares can tell different stories.
+\end{itemize}
+
+\paragraph{Invariances.}
+Adam is invariant to a global rescaling of the \emph{total} loss (up to $\epsilon$). It is
+\emph{not} invariant to $\lambda$, since that changes the relative composition of $\hat{\bm m}$
+and $\hat{\bm v}$. So ``Adam normalises the gradients, so weights don't matter'' is wrong.
+They matter through the direction.
+
+\paragraph{The AdamW fixed point is preconditioner-dependent.}
+Stationarity requires $P\nabla L=-w\btheta$, not $\nabla L=0$. The linear response
+\eqref{eq:response} becomes
+\begin{equation}
+  \btheta_\lambda-\btheta_0 \approx -\lambda\,(PH+wI)^{-1}P\,\g_k \quad(\text{$P$ held fixed}),
+\end{equation}
+which reduces to $-\lambda H^{-1}\g_k$ as $w\to0$. The equilibrium itself therefore depends
+on the optimiser's statistics. This is one more reason the Euclidean parity rule is only a
+first approximation.
+
+\paragraph{Clipping and mixed precision.}
+\begin{itemize}[nosep]
+\item \emph{Clipping.} Global-norm clipping at $c=1$ rescales the total update. It changes
+  the step size, not the share, and only when $\norm{\hat\g}>1$. The tool reports how often
+  that happens.
+\item \emph{fp16 underflow.} Training runs in fp16 autocast with a \texttt{GradScaler}. The
+  scaled backward pass multiplies gradients by $S\sim2^{16}$ before unscaling. A very small
+  $\lambda$ times small per-element aux gradients can nevertheless underflow in fp16
+  intermediates (the smallest subnormal is $\approx6\times10^{-8}$).
+  \textbf{This is a hypothesis, not a finding.} But for $\lambda=4\times10^{-5}$ (optical
+  flow) it is worth checking, because it would make a small weight even smaller in
+  practice. The audit runs in fp32 and cannot see it. A direct test compares one fp16 and
+  one fp32 backward on the same batch.
+\end{itemize}
+
+%=====================================================================
+\section{What the standard weighting schemes optimise}
+%=====================================================================
+
+\subsection{Uncertainty (homoscedastic) weighting}\label{sec:uw}
+Kendall, Gal \& Cipolla (2018) minimise
+\begin{equation}
+  \mathcal L(\btheta,\bm\sigma)=\sum_k\frac{1}{2\sigma_k^2}L_k(\btheta)+\log\sigma_k.
+\end{equation}
+\begin{proposition}
+At the optimum over $\sigma_k$ one has $\sigma_k^2=L_k$. The effective weight is then
+$1/(2L_k)$, and the $\btheta$-gradient becomes
+\begin{equation}
+  \nabla_{\btheta}\mathcal L=\sum_k\frac{\nabla L_k}{2L_k}=\tfrac12\nabla\sum_k\log L_k.
+\end{equation}
+\end{proposition}
+\begin{proof}
+$\partial_{\sigma_k}\mathcal L=-L_k/\sigma_k^3+1/\sigma_k=0$.
+\end{proof}
+So uncertainty weighting equalises \emph{relative} (logarithmic) progress across terms.
+\begin{itemize}[nosep]
+\item It is invariant to rescaling $L_k\to cL_k$, which is good.
+\item It is \emph{not} invariant to offsets. With an unreachable floor $L_k=f+\ell_k$, the
+  weight is $1/(2(f+\ell_k))$. For SSIM, $f=0.465$ dominates, so the floor sets the weight.
+\item It is a Gaussian-likelihood argument. None of our structural losses is a Gaussian
+  negative log-likelihood, so the $\sigma_k$ have no probabilistic meaning here.
+\item The weight is \emph{learned} per loss. In a comparison of losses, that means each
+  loss gets an uncontrolled, loss-specific $\lambda$, which is exactly what a fair comparison
+  must avoid.
+\end{itemize}
+It is well suited to balancing the three Minkowski channels (area, perimeter, $\chi$)
+against each other, since they are commensurable; that is where the project already uses it.
+
+\subsection{GradNorm}
+Chen et al.\ (2018) adapt $\lambda_k(t)$ so that the weighted gradient norms (on the last
+shared layer) track a common target, modulated by each task's relative training rate. It is
+\emph{dynamic parity}: it drives $r\to\text{target}$ throughout training. It solves the
+units problem. But it fixes the operating point at parity, whereas our experience (the
+Minkowski loss works at $r\approx2$--$5$ and hacks at $\approx10\times$ that weight) says the
+right point is loss-specific.
+
+\subsection{MGDA and PCGrad}
+\begin{itemize}[nosep]
+\item \emph{MGDA} (Sener \& Koltun 2018) picks the min-norm point of the convex hull of
+  $\{\g_k\}$, which gives a common descent direction and converges to Pareto stationarity.
+  It encodes no preference between objectives, and here we have a strong one: the MSE is
+  primary.
+\item \emph{PCGrad} (Yu et al.\ 2020) projects out conflicting components when
+  $\cos\psi<0$. With $\cos\psi\approx0$, as measured for Minkowski, it does essentially
+  nothing.
+\end{itemize}
+
+\subsection{Black-box search (Optuna, Bayesian optimisation)}
+Treat $\lambda$ as a hyperparameter and maximise a validation score. This is principled,
+with two caveats:
+\begin{itemize}[nosep]
+\item \emph{The result is the chosen metric.} Choosing it is the actual scientific decision,
+  and it must not be any loss's own objective.
+\item \emph{The search is one-dimensional per loss and expensive.} A handful of bracketed
+  runs covers it. Search pays off for joint spaces ($\lambda\times$ anneal $\times$ tail
+  sampling), ideally on short proxy runs with pruning and an equal budget per loss.
+\end{itemize}
+
+\subsection{What a fair comparison needs}
+Put every loss in the same dimensionless unit, then probe the response.
+\begin{enumerate}[nosep]
+\item Measure the parity unit $\lambda^*$ where it is well posed: at initialisation or
+  early training (\S\ref{sec:equilibrium}), Euclidean and Adam-preconditioned.
+\item Train a fixed log-bracket around it, reaching above parity.
+\item Evaluate at a fixed budget, on the last checkpoint.
+\item Check the \emph{signatures} of Proposition~\ref{prop:response}:
+  \begin{itemize}[nosep]
+  \item own-loss gain $\propto\lambda$;
+  \item base-loss cost $\propto\lambda^2$;
+  \item at the trained checkpoint, share $\to1$ and cosine $\to-1$.
+  \end{itemize}
+  A loss that shows no linear own-loss gain across the bracket is genuinely inert, not
+  merely under-weighted.
+\end{enumerate}
+This is the protocol in \texttt{DECISIONS.md} \S16, with the correction that parity is
+measured at initialisation rather than at the ERM solution.
+
+%=====================================================================
+\section{Case studies: where each structural loss puts its gradient}
+%=====================================================================
+
+The gradient of a loss is a field over pixels, $\partial L_k/\partial\hat y_p$, pulled back
+through the network. Its \emph{support} (which pixels receive signal) explains most of the
+audit.
+
+\subsection{Minkowski: threshold-localised gradients and the pixel-mass bottleneck}
+The analytical loss replaces the indicator $\mathbb 1[\hat y_p\ge u]$ by
+$s_p(u)=\sigma\!\big((\hat y_p-u)/\tau_u\big)$, with $\tau_u=\max(0.1\,u,\tau_{\min})$.
+Area, perimeter and Euler characteristic are smooth functionals of $\{s_p(u)\}$. Since
+$\sigma'(z)=\sigma(z)(1-\sigma(z))$ decays like $e^{-|z|}$, pixel $p$ receives gradient from
+threshold $u$ only if $|\hat y_p-u|\lesssim$ a few $\tau_u$. The number of pixels in that
+band is
+\begin{equation}
+  N_u\;\approx\;|D|\int_{u-c\tau_u}^{u+c\tau_u} f(y)\,dy\;\approx\;2c\,|D|\,\tau_u f(u)\;\propto\; u\,f(u),
+\end{equation}
+where $f$ is the pixel-intensity density.
+\begin{itemize}[nosep]
+\item For a heavy tail $f(u)\propto u^{-\alpha}$ with $\alpha>1$, $N_u\propto u^{1-\alpha}$
+  decreases with $u$. The thresholds at $31$--$150$\,mm/h see almost no pixels in their band.
+\item That is the measured result that 83\% of the gradient comes from $u\le0.28$\,mm/h and
+  $\approx0$ from $u\ge31$ (\texttt{DECISIONS.md} \S5), derived rather than observed.
+\item Widening $\tau$ (annealing) raises every band proportionally, so the \emph{share}
+  cannot change. That is the anneal-sweep result.
+\item The remedies that change $N_u$ itself are tail-sample selection and threshold
+  reweighting.
+\end{itemize}
+
+\subsection{SSIM: an unreachable floor}\label{sec:ssim}
+Per window, $\mathrm{SSIM}=\dfrac{(2\mu_x\mu_y+c_1)(2\sigma_{xy}+c_2)}{(\mu_x^2+\mu_y^2+c_1)(\sigma_x^2+\sigma_y^2+c_2)+\varepsilon}$,
+with $c_{1,2}=(k_{1,2}R)^2$, where $R$ is the per-sample data range. The implementation also
+adds $\varepsilon=10^{-6}$ to the denominator.
+
+In an exactly dry window of both prediction and target, $\mu=\sigma=0$, so
+$\mathrm{SSIM}=c_1c_2/(c_1c_2+\varepsilon)$. With $k_1=0.01$, $k_2=0.03$ and $R\le1$ in
+normalised units, $c_1c_2\le9\times10^{-8}R^4\ll\varepsilon$. Hence $\mathrm{SSIM}\approx0$
+and the per-window loss $(1-\mathrm{SSIM})/2\approx\tfrac12$, \emph{even for a perfect
+prediction}. The dataset-level floor is
+\begin{equation}
+  L_{\text{SSIM}}^{\min}\approx\tfrac12\times(\text{fraction of dry windows})
+  = 0.465 \;\Rightarrow\; \approx93\%\text{ of windows dry}.
+\end{equation}
+The gradient lives in the remaining $\approx7\%$, over a dynamic range of $0.465\to0.5$. Two
+fixes:
+\begin{itemize}[nosep]
+\item a fixed data range ($R=1$ in normalised space) with $\varepsilon\ll c_1c_2$, which
+  makes dry-on-dry windows score $1$;
+\item or restricting the mean to windows that are wet in either field.
+\end{itemize}
+
+\subsection{Spectral, wet area, optical flow}
+\begin{itemize}[nosep]
+\item \textbf{Spectral} (FFT-magnitude energy score) is translation-invariant, so its
+  gradient is orthogonal to every translation of the prediction. It cannot penalise
+  displacement. Its value is an $L^1$ over all rfft bins, dominated by high-wavenumber bins
+  of nearly dry fields, which explains its tiny scale.
+\item \textbf{Wet area} is the single-threshold ($u=0.1$\,mm/h, $\tau=0.05$) special case of
+  the Minkowski area channel. Its gradient support is the drizzle band only, so it is blind
+  to intensity. It can be ``active'' ($r\gg1$) and still useless for extremes.
+\item \textbf{Optical flow} uses the coarse input as its teacher. That teacher is smooth
+  with suppressed peaks, so the gradient points toward resembling the input.
+\end{itemize}
+
+%=====================================================================
+\section{Reading the audit}
+%=====================================================================
+
+\texttt{tools/gradient\_audit.py} reports, per checkpoint and loss:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Column & Definition & Answers \\ \midrule
+parity $\lambda^*$ & $\widehat{\norm{\bmu_0}}/\widehat{\norm{\bmu_k}}$, eq.~\eqref{eq:unbiased} & the unit of weight \\
+share $r$ & $\lambda/\lambda^*$ & instantaneous influence (a) \\
+per-batch $\lambda^*$ & median of $\norm{\hat\g_0}/\norm{\hat\g_k}$ & noise-referenced (the v0 number) \\
+cos, cos corr. & naive and noise-corrected & bystander vs self, eq.~\eqref{eq:dLk} \\
+Adam share & $\lambda\norm{P\bar\g_k}/\norm{P\bar\g_0}$ & influence on the real update \\
+noise fraction & $1-\widehat{\norm{\bmu}^2}/\mathrm{med}\norm{\hat\g}^2$ & is this norm signal? \\
+clip engaged & share of batches with $\norm{\hat\g_0+\lambda\hat\g_k}>1$ & does clipping act? \\
+own vs vanilla & paired, bootstrap CI & first-order effect (b,c) \\ \bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Checklist:
+\begin{enumerate}[nosep]
+\item \textbf{Initialisation:} is $r$ (Euclidean) small, and is it small relative to
+  $|\cos\psi|$? That tells you whether the term could have shaped the early trajectory.
+\item \textbf{Vanilla checkpoint:} expect $\widehat{\norm{\bmu_0}}\approx0$ and a
+  noise fraction near $1$ for the MSE. Parity is undefined there.
+\item \textbf{Own checkpoint of a run trained with $L_k$:} does the share approach $1$ and
+  the cosine $-1$? If not, the run was stopped far from the combined equilibrium, or the term
+  never mattered.
+\item \textbf{Own-loss test:} does the trained model beat vanilla on its own $L_k$, with
+  a CI that excludes 0? This is the decisive first-order evidence.
+\item \textbf{Across a bracket} (after the M4 reruns): is the own-loss gain linear in
+  $\lambda$ and the MSE cost quadratic? That confirms the linear-response regime and locates
+  where it breaks down (hacking).
+\end{enumerate}
+
+%=====================================================================
+\section{Exercises}
+%=====================================================================
+
+\begin{exercise}
+Show that $\tan\varphi=r\sin\psi/(1+r\cos\psi)$ in \eqref{eq:deflect}. For fixed
+$\psi>\pi/2$, how does $\varphi$ behave as $r$ grows, and at which $r$ does the update stop
+decreasing $L_0$? What happens when $\cos\psi=-1$?
+\end{exercise}
+
+\begin{exercise}
+Prove Lemma~\ref{lem:noise} and derive the unbiased estimators in \eqref{eq:unbiased}.
+Why does the naive cosine of two mean gradients computed on the same batches not tend to
+$0$ for independent signals when $N$ is small?
+\end{exercise}
+
+\begin{exercise}
+Using Proposition~\ref{prop:response}, show that if a run at $\lambda$ improves its own loss
+by $\delta$ at an MSE cost $\epsilon$, then a run at $\lambda/3$ should improve by
+$\approx\delta/3$ at a cost of $\approx\epsilon/9$. How would you use this to tell
+``inert'' from ``under-weighted'' with three runs?
+\end{exercise}
+
+\begin{exercise}
+In the OU model of \S\ref{sec:noise}, compute the number of steps after which the mean
+shift reaches $1-e^{-1}$ of its stationary value. With $\eta=5\times10^{-5}$, how large
+must $h$ be for a 25-epoch run (about $4.5\times10^5$ steps at batch 128 on 2.3\,M patches)
+to equilibrate?
+\end{exercise}
+
+\begin{exercise}
+Show that uncertainty weighting applied to $L_k=f+\ell_k$ with a constant floor $f>0$ gives
+effective weight $1/(2(f+\ell_k))$. For SSIM ($f=0.465$, $\ell_k\in[0,0.035]$), how much does
+the effective weight change over the whole achievable range of $\ell_k$? What does this say
+about what the learned $\sigma_k$ can encode?
+\end{exercise}
+
+\subsection*{Brief solutions}
+\begin{enumerate}[label=\arabic*.,nosep]
+\item Decompose $\lambda\g_k$ into components parallel and perpendicular to $\g_0$. For
+  $\psi>\pi/2$, $\varphi$ increases monotonically from $0$ towards $\psi$ as $r\to\infty$. It
+  passes $90^\circ$ at $r=-1/\cos\psi$, where the update has no component along $-\g_0$ and
+  $L_0$ stops decreasing (eq.~\eqref{eq:dL0}). At $\cos\psi=-1$ and $r=1$ the two gradients
+  cancel exactly: that is the equilibrium of \S\ref{sec:equilibrium}.
+\item Expand $\E\norm{\bar\g}^2=\norm{\bmu}^2+\tr\Sigma/(NB)$ and eliminate $\tr\Sigma$
+  using $\E S$. Same-batch noise is correlated with covariance $\Sigma_{0k}$, which biases
+  $\ip{\bar\g_0}{\bar\g_k}$ by $\tr\Sigma_{0k}/(NB)$.
+\item Linear gain and quadratic cost. Three bracketed runs with no linear own-loss trend
+  mean $\chi_k\approx0$ (inert). A linear trend that is merely small means under-weighted.
+\item $t\approx1/(\eta h)$. Equilibration within $4.5\times10^5$ steps needs
+  $h\gtrsim 1/(\eta\cdot4.5\times10^5)\approx 0.044$ along $\bm e$. Flatter directions
+  do not equilibrate within the run.
+\item The weight varies by $<8\%$ over the achievable range, so $\sigma_k$ encodes
+  essentially only the floor.
+\end{enumerate}
+
+%=====================================================================
+\section*{References}
+%=====================================================================
+\begin{itemize}[leftmargin=*,nosep]
+\item Z.~Chen, V.~Badrinarayanan, C.-Y.~Lee, A.~Rabinovich. GradNorm: gradient
+  normalization for adaptive loss balancing in deep multitask networks. \emph{ICML} 2018.
+\item A.~Kendall, Y.~Gal, R.~Cipolla. Multi-task learning using uncertainty to weigh losses
+  for scene geometry and semantics. \emph{CVPR} 2018.
+\item O.~Sener, V.~Koltun. Multi-task learning as multi-objective optimization.
+  \emph{NeurIPS} 2018.
+\item T.~Yu, S.~Kumar, A.~Gupta, S.~Levine, K.~Hausman, C.~Finn. Gradient surgery for
+  multi-task learning. \emph{NeurIPS} 2020.
+\item D.~P.~Kingma, J.~Ba. Adam: a method for stochastic optimization. \emph{ICLR} 2015.
+\item I.~Loshchilov, F.~Hutter. Decoupled weight decay regularization. \emph{ICLR} 2019.
+\item S.~Mandt, M.~D.~Hoffman, D.~M.~Blei. Stochastic gradient descent as approximate
+  Bayesian inference. \emph{JMLR} 18, 2017.
+\item Z.~Wang, A.~C.~Bovik, H.~R.~Sheikh, E.~P.~Simoncelli. Image quality assessment: from
+  error visibility to structural similarity. \emph{IEEE Trans.\ Image Process.} 13, 2004.
+\item Chang \& Sapsis (2026). Extreme Event Aware Learning. doi:10.1038/s41467-026-76811-x.
+\end{itemize}
+\medskip
+\noindent\small Author lists and venues of the machine-learning references are from memory.
+Check them before citing in the paper.
+
+\end{document}
