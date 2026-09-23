@@ -94,6 +94,12 @@ REWARD_GUARD_BATCHES: 8
 REWARD_ANISO_MAX: null
 REWARD_PEAK_RATIO_MAX: null
 STRUCTURAL_LOSS: opticalflow
+STRUCTURAL_LOSS_WEIGHTS:   # per-loss w_max (2026-09-23, Adam-share matched to Minkowski 1e-4;
+  minkowski: 1.0e-4         # see src/losses/competing.py DEFAULT_STRUCTURAL_WEIGHTS)
+  spectral: 1.0e-1
+  ssim: 2.0e-2
+  wetarea: 2.0e-2
+  opticalflow: 2.5e-2
 SPECTRAL_ALPHA: 1.0
 SSIM_WINDOW: 11
 WETAREA_TEMPERATURE: 0.05

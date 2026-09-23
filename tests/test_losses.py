@@ -146,3 +146,39 @@ class TestAnalyticalMinkowskiLoss:
         loss = criterion(pred_phys, target)
         assert torch.isfinite(loss)
         assert loss.item() >= 0.0
+
+
+class TestStructuralWeights:
+    """resolve_structural_weight: per-loss weights, never another loss's weight."""
+
+    def test_table_wins_over_minkowski_weight(self):
+        from src.losses.competing import resolve_structural_weight
+        cfg = {"STRUCTURAL_LOSS": "spectral", "MINKOWSKI_TARGET_WEIGHT": 1e-4,
+               "STRUCTURAL_LOSS_WEIGHTS": {"spectral": 0.1}}
+        assert resolve_structural_weight(cfg) == (0.1, "STRUCTURAL_LOSS_WEIGHTS")
+
+    def test_cli_overrides(self):
+        from src.losses.competing import resolve_structural_weight
+        cfg = {"STRUCTURAL_LOSS": "ssim", "STRUCTURAL_LOSS_WEIGHTS": {"ssim": 2e-2}}
+        assert resolve_structural_weight(cfg, 5e-3) == (5e-3, "command line")
+
+    def test_minkowski_weight_never_leaks(self):
+        from src.losses.competing import (resolve_structural_weight,
+                                          DEFAULT_STRUCTURAL_WEIGHTS)
+        cfg = {"STRUCTURAL_LOSS": "opticalflow", "MINKOWSKI_TARGET_WEIGHT": 1e-4}
+        w, src = resolve_structural_weight(cfg)
+        assert w == DEFAULT_STRUCTURAL_WEIGHTS["opticalflow"] and src != "MINKOWSKI_TARGET_WEIGHT"
+
+    def test_legacy_minkowski_config(self):
+        from src.losses.competing import resolve_structural_weight
+        assert resolve_structural_weight({"MINKOWSKI_TARGET_WEIGHT": 0.0})[0] == 0.0
+
+    def test_repo_configs(self):
+        import yaml
+        from src.losses.competing import resolve_structural_weight
+        want = {"config.yaml": 1e-4, "configs/loss_spectral.yaml": 0.1,
+                "configs/loss_ssim.yaml": 2e-2, "configs/loss_wetarea.yaml": 2e-2,
+                "configs/loss_opticalflow.yaml": 2.5e-2}
+        for path, w in want.items():
+            cfg = yaml.safe_load(open(path))
+            assert resolve_structural_weight(cfg)[0] == pytest.approx(w), path

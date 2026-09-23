@@ -473,6 +473,9 @@ Make the Study-1 comparison fair: every loss gets a demonstrably active weight u
 budget, and the losses are implemented as rewards for FM. The protocol is in
 RESEARCH_NOTES §5.
 - Fix SSIM. Remove the silent `teacher=target` fallback in optical flow, or log it.
+- Starting weights are set (2026-09-23, DECISIONS §16): minkowski 1e-4, spectral 1e-1,
+  ssim 2e-2, wetarea 2e-2, opticalflow 2.5e-2, in `config.yaml` `STRUCTURAL_LOSS_WEIGHTS`.
+  Run `bash scripts/hpc/losses_wrapper.sh` to train all five at these weights.
 - Choose λ per loss by the gradient-norm rule plus a small bracket, with one fixed epoch
   budget, the last checkpoint evaluated (no λ-dependent "best" selection), and 3 seeds
   (DECISIONS §16).

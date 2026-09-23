@@ -453,3 +453,27 @@ trial budget per loss.
 For FM, the same losses enter as rewards through `reward_finetune.py`, with the same bracket
 logic on `REWARD_WEIGHT`.
 
+**Chosen centres (2026-09-23).** These are now the defaults in `config.yaml`
+`STRUCTURAL_LOSS_WEIGHTS` and `src/losses/competing.py`. Rule: give each term the same share
+of the actual **AdamW update** that Minkowski has at its validated 1e-4, measured at the
+vanilla checkpoint with that checkpoint's Adam second moments (`tools/gradient_audit.py`,
+512 batches). Minkowski at 1e-4 is the one weight known to be active, at equilibrium and
+free of hacking. Matching its update share treats every loss identically, without assuming
+that parity is optimal.
+
+| loss | old (v2) | new | Adam-matched value | init share at new λ |
+|---|---|---|---|---|
+| minkowski | 1e-4 | **1e-4** | (reference) | 0.095 |
+| spectral | 5e-4 | **1e-1** | 0.116 | 0.39 |
+| ssim | 1.6e-4 | **2e-2** | 0.0196 | 0.02 |
+| wetarea | 2e-2 | **2e-2** | 0.0198 | 0.99 |
+| opticalflow | 4e-5 | **2.5e-2** | 0.0239 | 0.02 |
+
+These are bracket *centres*, not tuned optima. Minkowski's value is validated, and the other
+four are principled starting points that the M4 bracket must test (×1/3 … ×3), judged by the
+equilibrium and own-loss tests at the end of training. SSIM's weight belongs to the current,
+floor-dominated implementation, so re-measure it after the data-range/eps fix.
+**Resolution order** in the trainer: `--weight_geom` > `STRUCTURAL_LOSS_WEIGHTS[loss]` >
+`MINKOWSKI_TARGET_WEIGHT` (Minkowski only) > built-in defaults. The launcher default is
+now `config`; it was `0.001`, the hacking weight.
+

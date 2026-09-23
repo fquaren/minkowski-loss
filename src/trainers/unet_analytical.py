@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss  # noqa: F401 (kept for compatibility)
-from src.losses.competing import build_structural_loss
+from src.losses.competing import build_structural_loss, resolve_structural_weight
 from src.models.unet import LogSpaceResidualUNet
 from src.trainers.base import (
     EarlyStopping,
@@ -74,11 +74,8 @@ def run_training(config, args, trial=None):
         else config.get("NUM_EPOCHS", 25)
     )
     patience = config.get("PATIENCE", 7)
-    w_max = (
-        args.weight_geom
-        if args.weight_geom is not None
-        else config.get("MINKOWSKI_TARGET_WEIGHT", 1.0)
-    )
+    # Per-loss weight: command line, else the config's STRUCTURAL_LOSS_WEIGHTS table.
+    w_max, w_source = resolve_structural_weight(config, args.weight_geom)
     warmup = config.get("MINKOWSKI_WARMUP_EPOCHS", 5)
 
     ts = time.strftime("%Y%m%d_%H%M%S")
@@ -138,6 +135,7 @@ def run_training(config, args, trial=None):
         structural_name = config.get("STRUCTURAL_LOSS", "minkowski")
         geom_fn = build_structural_loss(structural_name, config, device)
         logger.info(f"auxiliary structural loss: {geom_fn.name} (space={geom_fn.space})")
+        logger.info(f"structural weight w_max={w_max:g} (from {w_source})")
 
         optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
         sched = optim.lr_scheduler.ReduceLROnPlateau(

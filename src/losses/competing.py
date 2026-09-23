@@ -350,3 +350,40 @@ def build_structural_loss(name: str, config: dict, device) -> StructuralLoss:
         f"unknown STRUCTURAL_LOSS {name!r}; expected one of: "
         "minkowski, spectral, ssim, wetarea, opticalflow"
     )
+
+
+# Study-1 training weights (lambda, the maximum after warm-up), chosen 2026-09-23. Each gives
+# the auxiliary term the same share of the AdamW update as Minkowski has at its validated
+# 1e-4 (active, at equilibrium, not hacking; DECISIONS §2), measured at the vanilla
+# checkpoint with the checkpoint's own Adam second moments (tools/gradient_audit.py,
+# eval_results/gradient_audit/2026-09-23; notes/gradient_audit.pdf appendix). They are the
+# centres of the M4 bracket, not validated optima. SSIM must be recalibrated after its
+# data-range/eps fix, which changes its gradient scale.
+DEFAULT_STRUCTURAL_WEIGHTS = {
+    "minkowski": 1e-4,     # validated working point; 1e-3 reward-hacks
+    "spectral": 1e-1,      # Adam-matched 0.116 (was 5e-4: a bystander)
+    "ssim": 2e-2,          # Adam-matched 0.0196 (was 1.6e-4: a bystander)
+    "wetarea": 2e-2,       # Adam-matched 0.0198: already at the matched share
+    "opticalflow": 2.5e-2,  # Adam-matched 0.0239 (was 4e-5: inert)
+}
+
+
+def resolve_structural_weight(config: dict, cli_weight=None) -> tuple:
+    """The training weight for the configured STRUCTURAL_LOSS, and where it came from.
+
+    Order: command line > config STRUCTURAL_LOSS_WEIGHTS[name] > (Minkowski only)
+    MINKOWSKI_TARGET_WEIGHT > DEFAULT_STRUCTURAL_WEIGHTS[name]. MINKOWSKI_TARGET_WEIGHT is
+    never applied to another loss: weights differ by orders of magnitude between losses.
+    """
+    name = (config.get("STRUCTURAL_LOSS") or "minkowski").lower()
+    if cli_weight is not None:
+        return float(cli_weight), "command line"
+    table = config.get("STRUCTURAL_LOSS_WEIGHTS") or {}
+    if name in table:
+        return float(table[name]), "STRUCTURAL_LOSS_WEIGHTS"
+    if name == "minkowski" and "MINKOWSKI_TARGET_WEIGHT" in config:
+        return float(config["MINKOWSKI_TARGET_WEIGHT"]), "MINKOWSKI_TARGET_WEIGHT"
+    if name in DEFAULT_STRUCTURAL_WEIGHTS:
+        return DEFAULT_STRUCTURAL_WEIGHTS[name], "DEFAULT_STRUCTURAL_WEIGHTS"
+    raise KeyError(f"no training weight known for structural loss {name!r}")
+

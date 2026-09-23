@@ -9,7 +9,11 @@ set -u
 
 CONFIG="${4:-${PROJECT_ROOT}/config.yaml}"
 PARAMS="${1:-${PROJECT_ROOT}/configs/unet_analytical.yaml}"
-WEIGHT_GEOM="${2:-0.001}"
+# "config" (default) = the per-loss weight in STRUCTURAL_LOSS_WEIGHTS; a number overrides it.
+# (The old default, 0.001, is the Minkowski weight that reward-hacks: DECISIONS §2.)
+WEIGHT_GEOM="${2:-config}"
+WEIGHT_ARGS=()
+[[ "$WEIGHT_GEOM" == "config" ]] || WEIGHT_ARGS=(--weight_geom "$WEIGHT_GEOM")
 DATA_PCT="${3:-100.0}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="${PROJECT_ROOT}/logs/unet_ana_${TIMESTAMP}.log"
@@ -20,7 +24,7 @@ echo "Training UNet+analytical (w_geom=${WEIGHT_GEOM}) — log: $LOG_FILE"
 micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 python "${PROJECT_ROOT}/scripts/train/train_unet_analytical.py" \
     "$CONFIG" \
     --params_path "$PARAMS" \
-    --weight_geom "$WEIGHT_GEOM" \
+    ${WEIGHT_ARGS[@]+"${WEIGHT_ARGS[@]}"} \
     --data_percentage "$DATA_PCT" \
     > "$LOG_FILE" 2>&1
 
