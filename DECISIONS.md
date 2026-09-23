@@ -228,9 +228,13 @@ column.
 
 **Status 2026-09-23: not a fair trial, so "harmful" is not established.** A direct audit
 (EXPERIMENTS §3) found:
-- **Under-weighted.** Spectral, SSIM and optical flow ran at 1–11% of the MSE gradient, i.e.
-  roughly 70×, 10× and 140× below gradient parity. Their trained models score no better
-  on their own loss than vanilla.
+- **Under-weighted and inactive.** Spectral, SSIM and optical flow were trained at about
+  10⁻³, 10⁻⁴ and 4·10⁻⁵ of gradient parity at initialisation. At their own checkpoints they
+  are far from the equilibrium an active term reaches (share 0.02 / 0.16 / 0.007, against
+  1.22 for Minkowski). Their trained models are no better than vanilla on their own loss
+  (+2.5%, +0.1%, −2.6% n.s.). Measured with `tools/gradient_audit.py` over 512 batches; see
+  EXPERIMENTS §3 and `notes/gradient_audit.pdf`. An earlier 6-batch estimate gave
+  "70×/10×/140×" and is superseded.
 - **SSIM is buggy.** A perfect prediction scores 0.465 against 0.499 for an all-zero one.
 - **Unmatched budgets.** All v2 runs trained 25 epochs, against 47 (Minkowski) and 69
   (vanilla). A 34-epoch vanilla run reproduces their loss values.
@@ -252,6 +256,14 @@ and spectral gradients are dense over every pixel. Equal value ≠ equal influen
 Use λ = ‖∇L_ERM‖₂ / ‖∇L_aux‖₂, computed after ERM pre-training (Chang & Sapsis 2026). It
 matches the quantity that actually drives the update. Treat it as the *centre* of a sweep,
 then move down — gradient parity would likely put Minkowski into the hacking regime of §2.
+
+**Correction (2026-09-23).** Measured *at the ERM solution*, the rule is ill-posed. There
+‖∇L_ERM‖ ≈ 0 by definition, and a per-batch norm measures minibatch noise, not signal
+(`notes/gradient_audit.pdf` §4–5; a 6-batch check at the vanilla checkpoint found the MSE
+signal indistinguishable from zero). Measure parity at **initialisation or early training**,
+Euclidean and Adam-preconditioned, with `tools/gradient_audit.py`. At a trained
+checkpoint, use the equilibrium test instead: share → 1 and cos → −1 for a run trained
+with the term.
 
 ---
 
@@ -424,8 +436,9 @@ sample fraction). Even then it should run on short proxy runs with pruning, with
 trial budget per loss.
 
 **Decision (proposed; to be confirmed when M4 starts).** For each loss:
-1. Measure parity λ* = ‖∇L_MSE‖/‖∇L_aux‖ at the ERM checkpoint (§9; values in
-   EXPERIMENTS §3).
+1. Measure parity λ* = ‖∇L_MSE‖/‖∇L_aux‖ at initialisation or early training, not at
+   the ERM checkpoint (§9 correction; `tools/gradient_audit.py`). The EXPERIMENTS §3 values
+   are noise-referenced first estimates.
 2. Train a fixed log bracket {λ*/3, λ*, 3λ*, 10λ*}. Minkowski at its working point is ~5λ*,
    so the bracket must reach above parity.
 3. Use one fixed epoch budget for every run, vanilla included, and evaluate the **last**

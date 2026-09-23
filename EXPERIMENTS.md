@@ -187,24 +187,33 @@ compare it with the rows above.
 **Activity check:** an auxiliary loss that costs < ~1% MAE against vanilla has not entered
 the objective, so its structural columns say nothing. All four competing losses fail it.
 
-**Activity audit (2026-09-23, measured, not inferred from MAE).** Gradient norms at the
-vanilla checkpoint, fp32, 6 train batches of 128, ‖∇MSE‖ = 2.95e-4:
+**Activity audit (2026-09-23)**, from `tools/gradient_audit.py`: 512 × 128 patches, fp32,
+GPU 1, noise-corrected full-gradient norms, jackknife errors. Raw output is in
+`eval_results/gradient_audit/2026-09-23/`; the math is in `notes/gradient_audit.pdf` (the
+appendix has these numbers). It replaces a first 6-batch estimate (`tools/gradient_audit_v0/`),
+whose parity values were dominated by minibatch noise: at the converged vanilla checkpoint the
+MSE gradient is 96% noise, so parity is ill-posed there.
 
-| Loss | λ used | parity λ = ‖∇MSE‖/‖∇aux‖ | λ‖∇aux‖ / ‖∇MSE‖ | cos(∇MSE, ∇aux) | own loss, trained vs vanilla |
-|---|---|---|---|---|---|
-| Minkowski | 1e-4 | 2.2e-5 | **4.6** | −0.02 | 0.48 vs 1.41 (−66%) |
-| wetarea | 2e-2 | 1.6e-3 | **12.8** | +0.16 | −14% |
-| ssim | 1.6e-4 | 1.5e-3 | 0.11 | −0.10 | 0.4834 vs 0.4831 (no change) |
-| spectral | 5e-4 | 3.6e-2 | 0.014 | +0.16 | 4.12e-3 vs 4.01e-3 (no change) |
-| opticalflow | 4e-5 | 5.6e-3 | 0.007 | +0.13 | 8.98e-3 vs 9.25e-3 (no change) |
+| Loss | λ used | r at init (λ/λ*) | r at own ckpt | cos at own ckpt | own loss vs vanilla (95% CI) | verdict |
+|---|---|---|---|---|---|---|
+| Minkowski | 1e-4 | 0.095 | **1.22** | **−0.986** | **−64.8%** [−65.9, −63.8] | active, at equilibrium |
+| wetarea | 2e-2 | 1.0 | **0.74** | **−0.967** | **−13.9%** [−15.8, −12.1] | active (drizzle band only) |
+| ssim | 1.6e-4 | 1.7e-4 | 0.157 | +0.47 | +0.1% [+0.0, +0.2] | bystander |
+| spectral | 5e-4 | 1.7e-3 | 0.021 | +0.92 | +2.5% [+0.9, +4.4] | bystander |
+| opticalflow | 4e-5 | 3.7e-5 | 0.0066 | −0.47 | −2.6% [−6.4, +1.2] (n.s.) | inert |
 
-- **Minkowski is genuinely active.** Its weighted gradient is 4.6× the MSE gradient at the
-  start and 1.7× at its own checkpoint. It is nearly orthogonal to MSE, and its loss falls
-  66%. The working weight is about 5× gradient parity.
-- **Spectral, SSIM and optical flow never entered the objective.** Their weighted gradients
-  are 1–11% of MSE's, and the trained models score no better on their own loss than
-  vanilla does.
-- **Wet area is active and degenerate**, as DECISIONS §8 describes.
+- **How to read it.** A term that trained actively ends at the equilibrium of the combined
+  objective: share → 1 and cos → −1 (notes §4). Minkowski and wet area sit on it. The other
+  three are far off, with their gradients still aligned with the MSE.
+- **The own-loss test agrees with the equilibrium test.** Spectral and SSIM are slightly
+  *worse* than vanilla on their own loss. The 34-epoch vanilla model is also worse than the
+  64-epoch one, so this is under-training at 25 epochs.
+- **At initialisation every aux gradient is aligned with the MSE** (|cos| 0.77–0.96), so
+  all terms start as bystanders. Minkowski too starts 10× below parity, and it takes over
+  only as ‖∇MSE‖ collapses during training.
+- **Weights in parity units at init:** Minkowski ~10⁻¹, spectral ~10⁻³, SSIM ~10⁻⁴, optical
+  flow ~4·10⁻⁵, wet area 1. The first audit's "70× / 140× too little" factors came from the
+  noisy vanilla checkpoint and are superseded.
 - **SSIM is buggy** (`src/losses/competing.py:101-110`). The per-sample `data_range`
   collapses on dry patches, and eps=1e-6 swamps `c1·c2`. As a result `SSIM(target, target)`
   scores 0.465 and an all-zero prediction 0.499: about 93% of the loss range is an
