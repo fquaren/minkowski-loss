@@ -126,6 +126,118 @@ isoperimetric scatter.
 - [ ] State the POT-level choice as estimability, not physics.
 - [ ] Write up the w=1e-3 hacking episode as a positive result on necessary-not-sufficient.
 
+### Data — quality and size
+- [ ] **Artefact screening.** The patch pool contains a substantial number of patches that
+      are not precipitation but bad radar observations. They concentrate at the top of the
+      intensity distribution, so *any* selection that ranks on patch max draws them
+      preferentially — the first field-panel selection picked three artefacts out of three.
+      This contaminates the tail the whole project is about: the POT fits, the exceedance
+      ratio and the `--n_extreme` figure patches all read from that same top slice.
+      Needed: a quality score per patch (candidates — speckle / isolated-pixel fraction,
+      implausible spatial gradients, the ring and spoke geometry typical of radar artefacts,
+      disagreement with neighbouring time steps) and a screened patch list. Until then, look
+      at the images before believing anything driven by the extreme top of the distribution.
+
+      First measurements on the test split (285,383 patches, from `backbone/vanilla` arrays):
+
+      | statistic | u=31 | u=53 | u=89 |
+      |---|---|---|---|
+      | patches above u | 25,591 (8.97%) | 13,949 (4.89%) | 6,349 (2.23%) |
+      | share with `tmean/tmax` < 1e-3 | 25.9% | 27.8% | 29.3% |
+      | share with `tmean/tmax` < 1e-2 | 85.8% | 90.1% | 92.6% |
+      | median patch mean | 0.183 mm/h | 0.231 mm/h | 0.294 mm/h |
+
+      `tmean/tmax` is a cheap concentration proxy — near zero means the whole patch mass sits
+      in a few pixels. The share of such patches **rises** with the threshold, which is
+      backwards: a stronger convective cell wets *more* area, not less. Spot checks agree —
+      the p97 patch has target max 74.9 mm/h with an input max of 0.4 mm/h over a sea-level
+      DEM (sea clutter), and the p95 patch is a single 52 mm/h speck in an otherwise dry
+      field. So the contamination is not confined to the extreme top; it reaches well down
+      into the POT range at u=31.
+
+- [ ] **Everything above 150 mm/h is set to zero, not clipped.** Located:
+      `config.yaml: DECLUTTER_THRESHOLD: 150.0` feeding
+      `src/data/preprocessing.py::filter_precip_bounds`, whose mask is
+      `(arr < drizzle) | (arr > declutter)` followed by `arr[mask] = 0.0`. So a genuine
+      200 mm/h cell is not reduced to 150 — it is turned into a **dry pixel**, and the
+      surrounding storm keeps its structure with a hole punched in the middle. The observed
+      maximum of exactly 150.000 mm/h (15 patches, none above) is the signature of that
+      boundary, not of a physical limit: the downloaded OPERA composite records rates
+      continuously with no such ceiling, so the truncation is entirely ours.
+
+      This is not a cosmetic issue for a project about extremes. The GPD is fitted on
+      exceedances drawn from a tail that has been both censored and holed, so `gpd_xi_obs`
+      and every return level derived from it are biased by an unknown amount, and the
+      "binding limit is pixel mass" finding was measured on data with its heaviest pixels
+      deleted. Decide deliberately whether to clip, to drop the affected patches, or to
+      screen on the quality index instead (which is what the threshold was reaching for),
+      and re-derive the tail numbers afterwards.
+      (Separately, 66,992 patches — 23.5% — are completely dry, `tmax` exactly 0.)
+- [ ] **Enlarge the dataset**, especially for o.o.d. extremes (tab:ood is still deferred
+      below, and the current pool is too small to hold out a genuine o.o.d. tail after
+      artefact screening removes part of it). The full OPERA archive (2012–) is now openly
+      available: the EUMETNET Open Radar Data API is fully operational on MeteoGate and IP
+      whitelisting is no longer required. Anonymous access works without credentials at a
+      low rate limit; an API key from https://devportal.meteogate.eu/ raises it. Endpoint
+      `https://api.meteogate.eu/eu-eumetnet-weather-radar`, OGC EDR format, composites under
+      location id `0-20010-0-OPERA`; bulk files sit on S3 at `s3.waw3-1.cloudferro.com`.
+      Note the old endpoints stop working after 30 June.
+
+      **Access verified — one file downloaded and inspected end to end.** Two separate
+      services, and the useful one needs no credentials at all:
+
+      - *EDR API*, `https://api.meteogate.eu/eu-eumetnet-weather-radar`. Needs the API key
+        (`-H "apikey: ..."`), which raises the limit from 200/h anonymous to 2000/h. It only
+        covers a **24-hour rolling window** and returns metadata plus S3 links, not data.
+        Use it for discovery only.
+      - *S3, anonymous, no key and no signing* — this is the bulk path:
+        - `openradar-24h`  — rolling 24 h
+        - `openradar-archive` — **2012 through 2026, complete**, anonymously listable
+        - layout `<bucket>/YYYY/MM/DD/OPERA/COMP/OPERA@YYYYMMDDTHHMM@0@<PRODUCT>.h5`
+          (also `.tiff`). Archive products are named `QIND_RATE`, `DBZH_QIND`, `ACRR_QIND`;
+          the live bucket uses plain `RATE`.
+
+      `scripts/data/fetch_opera_archive.py` implements this: `--list` reports what the
+      archive holds over a date range without downloading, and the default mode downloads
+      RATE + QIND, reprojects onto the grid taken from an existing raw zarr day, and writes
+      one per-day zarr store in the layout preprocessing already reads. It needs `h5py`,
+      which is **not** in `dl-stable` (`micromamba install -n dl-stable -c conda-forge
+      h5py`); listing works without it.
+
+      A downloaded composite is ODIM HDF5, grid 2200x1900, projection
+      `+proj=laea +lat_0=55 +lon_0=10 +x_0=1950000 +y_0=-2100000 +ellps=WGS84` — the same
+      LAEA grid as `europe_dem_laea.tif`, so it drops into the existing preprocessing.
+      ~1 MB per 15-minute composite, so roughly 34 GB/year and ~513 GB for the whole
+      RATE archive; `/work` has 21 TB free, so volume is not the constraint.
+
+- [ ] **What the raw source actually contains** (measured on the fetched 2018-06-15, 96
+      composites). The archive is far dirtier than the patch set suggests, because the
+      declutter step hides it: per-timestep maxima exceed 500 mm/h in **52 of 96** steps and
+      peak at **13,072 mm/h**, while the worst step has only 14 pixels above 150 mm/h and 1
+      above 2000. So the offenders are isolated pixels, i.e. clutter, and `DECLUTTER_THRESHOLD`
+      is doing real work — the objection is to *how*, since zeroing them punches holes in
+      otherwise good fields instead of rejecting the pixel or the patch. Any rebuild needs an
+      explicit outlier policy; there is no threshold-free version of this dataset.
+
+- [ ] **Use the OPERA quality index for artefact screening — it is already in the files,
+      but it is not sufficient on its own.**
+      Each composite carries a companion quality field (`pl.imgw.quality.qi_total`, values in
+      [0,1]; a separate `QIND` dataset in the archive products). On the test composite it
+      separates the way the artefact hypothesis predicts on the 2026 live composite: 21.0% of
+      all valid pixels have QI < 0.8, but **41.7%** of pixels at or above 31 mm/h do — extreme
+      pixels twice as likely to be flagged. It costs nothing extra to fetch and our current
+      patches discard it, having been built from the rate field alone.
+
+      The separation is not uniform, though. On 2018-06-15T16:30 the pixels above 500 mm/h
+      had mean QI 0.267 against a field mean of 0.282 — essentially no signal. So treat QI as
+      one feature among several rather than the screen itself, and validate it per period
+      before relying on it; the quality algorithms behind it have changed over the archive.
+
+- [ ] **The 150 mm/h cap is ours, not OPERA's.** The downloaded composite has no such
+      ceiling (its own max was 81.6 mm/h with values recorded continuously). So the exact
+      150.000 cap seen in the patch dataset is imposed somewhere in our preprocessing, which
+      means it is ours to remove when the dataset is rebuilt.
+
 ### Data hygiene
 - [ ] Rerun bicubic and `FM + Minkowski reward` at u=31 to fill their dashed tail columns.
 - [ ] Delete duplicate eval dirs (`backbone_mse` = `backbone_vanilla`,
