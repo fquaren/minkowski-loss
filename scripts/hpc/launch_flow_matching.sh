@@ -16,6 +16,7 @@ mkdir -p "$(dirname "$LOG_FILE")"
 
 echo "Training Flow Matching (w_geom=${WEIGHT_GEOM}) — log: $LOG_FILE"
 
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export CUDA_VISIBLE_DEVICES=1
 micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/train/train_flow_matching.py" \
     "$CONFIG" \

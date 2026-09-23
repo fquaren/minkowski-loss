@@ -38,6 +38,8 @@ FM_CKPT="${FM_CKPT:-${PROJECT_ROOT}/runs/sr_flow_matching/flow_matching_20260716
 OUT_DIR="${OUT_DIR:-${PROJECT_ROOT}/sweeps/sampler_check_$(date +%Y%m%d_%H%M%S)}"
 RESULTS_CSV="${OUT_DIR}/results.csv"
 GPU="${GPU:-1}"
+# Shared node: GPU 1 only (EXPERIMENTS.md "Compute node"). Refuse anything else.
+[[ "$GPU" == "1" ]] || { echo "GPU=$GPU is not allowed on this node: GPU 1 only." >&2; exit 1; }
 M="${M:-16}"
 BATCHES="${BATCHES:-32}"
 POT_THRESHOLD="${POT_THRESHOLD:-31}"

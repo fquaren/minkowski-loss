@@ -37,9 +37,21 @@ python scripts/evaluate/diagnose_coupling.py config.yaml \
 
 ## Operational traps — these have all cost days at least once
 
+**Shared node: GPU 1 only, at most 8 of 12 cores** (EXPERIMENTS.md §0). GPU 0 belongs to
+someone else and must never be used. At least 4 cores must always stay free. Both limits are
+enforced in two places:
+- `src/node_limits.py`, run on `import src`: pins the process to cores 4–11, refuses any
+  `CUDA_VISIBLE_DEVICES` other than 1 or GPU 1's UUID, and checks the UUID if CUDA is
+  already up.
+- `scripts/hpc/env.sh`: pins the launcher shell to cores 4–11 and exports GPU 1.
+
+Don't work around either. Size worker pools so that everything running at once (training,
+DataLoader workers, the fetcher, audits) fits in 8 cores; they all share cores 4–11.
+
 **GPU selection.** `CUDA_VISIBLE_DEVICES=1` alone is not enough: CUDA's default device order
-is not `nvidia-smi`'s. Always set both, and put them *inside* any `micromamba run` wrapper,
-because environment activation overwrites them:
+is not `nvidia-smi`'s, and the two cards are identical, so the logs would not show a wrong
+pick. Always set both variables. Setting them inside the `micromamba run` wrapper is the
+safe habit (as of 2026-09-23, `micromamba run` passes them through unchanged):
 
 ```bash
 micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 python ...
@@ -94,8 +106,10 @@ Check in this order:
 
 - The Minkowski loss **helps the deterministic backbone** substantially (FSS@89 0.040 to
   0.159, exceedance ratio 0.118 to 0.244) for +3.8% MAE.
-- It **does not help flow matching** by any route tried: as a reward, or via the backbone.
-  The clean flow-matching model already beats the Minkowski backbone on every tail column.
+- ~~It does not help flow matching.~~ **Reopened 2026-09-23** (DECISIONS §3 status note):
+  after the 09-16 re-eval, the distributional reward beats clean FM on FSS, exceedance
+  ratio and RL bias on the same 4,096 patches. Single seed, leaking split, cause of the
+  shift not yet attributed, so do not cite either version as settled.
 - The coupling is **correctly wired** — the reward drops 59.7% on a fixed-noise single batch,
   5x the noise floor; K=1 agrees with K=2 (cos +0.91). Not a plumbing bug.
 - **The binding limit is pixel mass**: 83% of the structural gradient comes from thresholds
@@ -107,6 +121,18 @@ Check in this order:
 - At w=1e-3 the deterministic model **games the loss** — grid-aligned filaments, +60% peak
   overshoot, every structural metric improving. The useful range is bounded above by hacking,
   not by accuracy cost.
+
+## Data and split caveats (2026-09-23)
+
+- **Splits are random at patch level** (DECISIONS §15). Every test patch has a train patch
+  at the same timestamp and on the same tile within ±1 h. Test scores are interpolation
+  scores. Never make an o.o.d. / unseen-extreme claim on them.
+- **The tail contains radar artefacts, and the declutter step zeroes >150 mm/h** instead of
+  clipping. See EXPERIMENTS §5 and `scripts/data_quality/`. Look at the images before
+  believing anything driven by the top of the distribution.
+- **The competing-loss rows are not a fair trial** (DECISIONS §8 status, §16): three were
+  never active, SSIM is buggy, and the budgets were unmatched.
+- **DDPM is dropped** (DECISIONS §14). Do not add DDPM rows or fix DDPM code unless asked.
 
 ## Conventions
 

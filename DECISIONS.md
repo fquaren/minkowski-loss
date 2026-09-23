@@ -89,6 +89,19 @@ on two experiments rather than many.
 **What would change it.** A much larger tail-sample budget (see §6), or a positional term
 added to the reward.
 
+**Status 2026-09-23: reopened for the generative half.** The 09-16 re-evaluation
+(EXPERIMENTS §2) moved the FM rows. On the same 4,096 patches:
+- The distributional reward (`Extremes_20260804_170256`) now *beats* clean FM on FSS@89
+  (0.321 vs 0.315), exceedance ratio (0.534 vs 0.475) and RL bias (0.114 vs 0.165).
+- The energy coupling improves exceedance ratio and RL bias at an FSS cost (0.269).
+- FM on the Minkowski backbone is no longer a tail regression (RL bias 0.141 vs 0.165), but
+  still loses FSS (0.273).
+
+The "via the backbone" evidence above (+43% RL bias, FSS halved) was measured before the
+σ_r guard, so the cause of the change needs attributing before either version is quoted.
+The deterministic half is unaffected. Until then, treat "does not help flow matching" as
+**unsettled**, and weigh it against the single seed and the leaking split (§15).
+
 ---
 
 ## 4. The coupling is correctly implemented — do not go looking for a bug
@@ -175,6 +188,10 @@ ratio (0.523), and a *uniform* return-level under-prediction (−24%/−18%/−1
 the earlier sign-crossing bias. Tail class right, scale ~15% short. Still does not beat the
 clean flow-matching model on FSS.
 
+*Superseded numbers (2026-09-23):* after the 09-16 re-evaluation, the energy row's ξ error
+is 0.067, not the table's best, and its RL bias is 0.126. It does still hold the best
+exceedance ratio (0.538) and RAPSD (0.55) in the FM block. See §3.
+
 **Also added because of this.** `REWARD_FM_RETENTION_WEIGHT` — the fine-tuning objective
 previously contained **no pixel-aligned term at all** (a rigid-motion-invariant reward plus a
 velocity-space anchor), so nothing supplied placement. That is a plausible cause of the FSS
@@ -208,6 +225,21 @@ bias 0.69–0.75 against 0.643, anisotropy 2.1–2.6 against 1.87. None improves
 **Open.** Whether a genuinely active weight exists for any of them. Use the gradient-norm
 rule (§9), not value parity, and require the MAE check to pass before reading any structural
 column.
+
+**Status 2026-09-23: not a fair trial, so "harmful" is not established.** A direct audit
+(EXPERIMENTS §3) found:
+- **Under-weighted.** Spectral, SSIM and optical flow ran at 1–11% of the MSE gradient, i.e.
+  roughly 70×, 10× and 140× below gradient parity. Their trained models score no better
+  on their own loss than vanilla.
+- **SSIM is buggy.** A perfect prediction scores 0.465 against 0.499 for an all-zero one.
+- **Unmatched budgets.** All v2 runs trained 25 epochs, against 47 (Minkowski) and 69
+  (vanilla). A 34-epoch vanilla run reproduces their loss values.
+
+So their worse-than-MSE tails are under-training plus an inert term. The mechanisms listed
+above (wet area intensity-blind, optical-flow teacher smooth, spectral
+translation-invariant) remain valid *a priori* arguments, but they are not yet backed by an
+active run. Wet area is the only one that is active; it runs at 12.8× the MSE gradient and is
+degenerate. The protocol for the rerun is §16.
 
 ---
 
@@ -318,3 +350,93 @@ doi:10.1038/s41467-026-76811-x. Closely related and worth citing carefully:
 **Important caution on tail-sample selection.** If adopted, apply the tilted sampling to the
 **structural term only**. Keep MSE / the flow-matching velocity loss on uniformly drawn
 batches — otherwise μ is no longer E[y|c] and the residual decomposition breaks.
+
+---
+
+## 14. DDPM is dropped; the emulator loss is lowest priority
+
+**Decision (2026-09-23).** Flow matching replaces the DDPM as the generative model. It is
+the Study-2 model everywhere, and the DDPM is no longer trained, compared or reported. The
+code and `runs/sr_ddpm/` are kept, not deleted.
+
+The learned (emulator-based) Minkowski loss stays in the codebase but is the lowest
+priority. It is worth resuming eventually as the learned counterpart to the analytical loss,
+after the data rebuild and the Study-1 rerun.
+
+---
+
+## 15. The current splits are random at patch level, so test is not independent of train
+
+**What we found** (`scripts/data_quality/audit_splits.py`, 2026-09-23). `split_metadata.py`
+shuffles individual patches over the whole period, so train, val and test all span
+2023-08-01 → 2024-10-30 on the same 79 tile locations. For **100%** of test patches, the tail
+included:
+- a train patch exists at the same timestamp;
+- a train patch exists on the same tile within ±1 h.
+
+For 98–99%, a train patch exists on an adjacent tile at the same timestamp. So the test set
+holds the neighbouring 15-minute frames and neighbouring tiles of storms the model trained
+on.
+
+**Consequence.** Every current score measures *interpolation within seen events*. That is
+legitimate for an in-distribution table, if stated. But it cannot support a
+generalisation claim, and it gives no information about unseen extremes, which is the
+project's central claim. It also flatters every model roughly equally, so the relative
+ranking in Study 1 is not obviously wrong. Absolute numbers and the size of the gaps may be.
+
+**Decision.** The rebuilt dataset gets splits **blocked in time by event** (whole days or
+storm episodes, with a gap of at least a few hours between splits). The o.o.d. split (tab:ood)
+is built on top of that. The existing patch-level splits stay only for reproducing the
+current tables.
+
+Confidence: high. It is a direct count.
+
+---
+
+## 16. A fair trial for auxiliary losses: gradient-norm bracket, matched budget, seeds
+
+**Question.** How should λ be set so that Study 1 compares losses rather than weights? The
+candidates were homoscedastic (Kendall) uncertainty weighting, an Optuna search, and a
+calibrated grid.
+
+**Why not homoscedastic weighting.**
+- *It balances loss values.* It learns 1/σ² weights from each term's residual scale, which
+  §9 already rejects as the wrong target: the Minkowski gradient is threshold-localised
+  while SSIM and spectral are dense.
+- *Its Gaussian likelihood does not fit these losses.* It is a likelihood argument for
+  Gaussian residuals, and none of these losses is a Gaussian NLL. Several have non-zero
+  floors (SSIM's is 0.465), so a learned σ can simply absorb the floor.
+- *It turns the comparison into a comparison of learned weights.* A different, uncontrolled
+  weight per loss is exactly what the comparison has to avoid.
+
+It is useful for balancing the three Minkowski *channels* (already used that way in the
+emulator), not MSE against an auxiliary term.
+
+**Why not Optuna as the primary tool.**
+- *λ is one dimension per loss*, and the useful range is bounded above by hacking (§2), so
+  a bracket of 3–4 values covers it.
+- *Each trial is a full training run.*
+- *The selection metric decides the outcome.* Whatever Optuna maximises (exceedance ratio,
+  FSS, MAE-constrained) becomes the result, and it must not be any loss's own objective.
+
+Optuna earns its place only for multi-dimensional searches (λ together with anneal or tail-
+sample fraction). Even then it should run on short proxy runs with pruning, with an equal
+trial budget per loss.
+
+**Decision (proposed; to be confirmed when M4 starts).** For each loss:
+1. Measure parity λ* = ‖∇L_MSE‖/‖∇L_aux‖ at the ERM checkpoint (§9; values in
+   EXPERIMENTS §3).
+2. Train a fixed log bracket {λ*/3, λ*, 3λ*, 10λ*}. Minkowski at its working point is ~5λ*,
+   so the bracket must reach above parity.
+3. Use one fixed epoch budget for every run, vanilla included, and evaluate the **last**
+   checkpoint, with no early stopping and no "best" selection. The current `val_monitor`
+   adds λ·val_aux (`unet_analytical.py:244`), so it selects on the auxiliary objective. The
+   alternative, `val_mse`, saturates by epoch 2 (§12).
+4. Pick each loss's point by one pre-registered rule: the best exceedance ratio subject to
+   ΔMAE ≤ +5% and anisotropy ≤ 1.2× vanilla. Then run 3 seeds at that point.
+5. Report the whole bracket, not only the chosen point, so "cannot be made active without
+   hacking" becomes a visible result instead of an assertion.
+
+For FM, the same losses enter as rewards through `reward_finetune.py`, with the same bracket
+logic on `REWARD_WEIGHT`.
+

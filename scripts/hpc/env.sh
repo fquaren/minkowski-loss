@@ -2,7 +2,19 @@
 # Shared environment for all HPC launch scripts.
 # Source this from each launcher: source "${SCRIPT_DIR}/env.sh"
 
-export CUDA_VISIBLE_DEVICES=0
+# Shared node (node34): GPU 1 ONLY, never GPU 0, and at most 8 of 12 cores (0-3 stay free
+# for other users). PCI_BUS_ID makes index 1 mean the card at 83:00.0, as in nvidia-smi;
+# CUDA's default order can differ. Launchers may pass GPU=1 explicitly; nothing may use 0.
+# src/node_limits.py enforces the same limits again inside Python.
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+export CUDA_VISIBLE_DEVICES=1
+export NODE_CPUS="4-11"
+export NODE_MAX_CORES=8
+if [[ "$(hostname)" == node34* ]]; then
+    # Pin the launching shell; every child (micromamba run, python, DataLoader workers)
+    # inherits the affinity, so a job can never spread beyond these 8 cores.
+    taskset -cp "${NODE_CPUS}" $$ > /dev/null
+fi
 export PYTHONUNBUFFERED=1
 
 # Prevent thread thrashing in multiprocessing workers
