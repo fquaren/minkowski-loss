@@ -50,7 +50,11 @@ FIGDIR="${FIGDIR:-figures/committee}"
 EXT="${PROJECT_ROOT}/eval_results/extremes"
 BB="${PROJECT_ROOT}/eval_results/backbone"
 FIELDS="${PROJECT_ROOT}/eval_results/fields"
-N_EXTREME="${N_EXTREME:-3}"           # heaviest patches shown in the field panels
+# One field-panel patch per percentile of the target maximum. Spread rather than top-N:
+# the patch pool contains bad radar observations, and they concentrate at the very top of
+# the intensity distribution, so a top-N selection renders artefacts almost exclusively.
+FIELD_PCT="${FIELD_PCT:-99.99 99.9 99.5 99 97 95 90 75 50 25}"
+N_EXTREME="${N_EXTREME:-3}"           # only used when FIELD_PCT is set empty
 N_MID="${N_MID:-1}"                   # plus this many from the middle of the distribution
 FIELD_MODE="${FIELD_MODE:-both}"      # compare | detail | both
 FIELD_NORM="${FIELD_NORM:-power}"     # colour stretch shared by the precipitation panels
@@ -225,6 +229,7 @@ _field_bundle() {  # $1 = name, $2 = config, $3 = the --model argument string
   else
     echo "  [run ] ${name} dump"
     local sel="--n_extreme ${N_EXTREME} --n_mid ${N_MID}"
+    [ -n "$FIELD_PCT" ] && sel="--pct ${FIELD_PCT}"
     if [ -n "$FIELD_INDICES" ]; then
       sel="--indices ${FIELD_INDICES}"
     elif [ -f "${BB}/vanilla/backbone_arrays.npz" ]; then
@@ -253,7 +258,13 @@ _field_bundle() {  # $1 = name, $2 = config, $3 = the --model argument string
 }
 
 stage_fields() {
-  say "Stage 4/5 — qualitative fields (${N_EXTREME} extreme + ${N_MID} mid patches)"
+  if [ -n "$FIELD_INDICES" ]; then
+    say "Stage 4/5 — qualitative fields (patches ${FIELD_INDICES})"
+  elif [ -n "$FIELD_PCT" ]; then
+    say "Stage 4/5 — qualitative fields (one patch per percentile: ${FIELD_PCT})"
+  else
+    say "Stage 4/5 — qualitative fields (${N_EXTREME} extreme + ${N_MID} mid patches)"
+  fi
   mkdir -p "$FIELDS"
 
   # Study 1: bicubic and every deterministic backbone, on one shared colour scale.

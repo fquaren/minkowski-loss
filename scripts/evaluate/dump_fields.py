@@ -13,13 +13,20 @@ run, so it costs seconds rather than the hours a full evaluation pass takes.
 Patch selection, in order of precedence:
 
   --indices 12 3400 ...   explicit dataset indices
-  --rank_from <npz>       take the N largest target maxima from a previous run's ``tmax``
-                          array, which is written in dataset order by both eval scripts
-  (default)               scan the split for target maxima and take the N largest
+  --pct 99.9 99 95 ...    one patch per percentile of the target-maximum distribution
+  --n_extreme / --n_mid   the N largest target maxima, plus N from the middle
 
-``--n_mid`` adds patches from the middle of the intensity distribution, because a comparison
-made only on the most extreme patches says nothing about the ordinary case that dominates
-the mean scores.
+The ranking statistic is read from a previous run's ``tmax`` array via ``--rank_from``, which
+both eval scripts write in dataset order; without it the split is scanned, which is slower and
+gives the same answer.
+
+Prefer ``--pct`` over ``--n_extreme``. The patch pool contains bad radar observations as well
+as precipitation, and artefacts concentrate at the very top of the intensity distribution
+because a corrupted return is usually more extreme than real rain -- the first selection made
+here took the three largest maxima in the test split and all three were artefacts. Spreading
+the selection over percentiles keeps the heaviest patches in view while also showing ordinary
+ones, so an artefact reads as the outlier it is instead of standing in for the whole tail.
+Look at the images before drawing conclusions from the extreme end either way.
 
 Model specs reuse the pipe-separated shape of ``scripts/hpc/run_full_eval.sh``:
 
@@ -100,7 +107,7 @@ def _parse_spec(entry):
 
 
 def _select_indices(args, ds, decode_max):
-    """Dataset indices to render, highest target maximum first then the mid-intensity ones."""
+    """Dataset indices to render, by explicit list, by percentile spread, or by rank."""
     if args.indices:
         return np.asarray(args.indices, dtype=int)
 
@@ -123,6 +130,23 @@ def _select_indices(args, ds, decode_max):
         tmax = np.concatenate(chunks)
 
     order = np.argsort(tmax)[::-1]
+
+    if args.pct:
+        # One patch per requested percentile of the target maximum. Percentiles are taken
+        # descending so the heaviest patch is rendered first, and duplicates are dropped
+        # (close percentiles can land on the same patch in a small split).
+        picked, seen = [], set()
+        for q in sorted(args.pct, reverse=True):
+            rank = int(round((1.0 - q / 100.0) * (len(order) - 1)))
+            rank = min(max(rank, 0), len(order) - 1)
+            idx = int(order[rank])
+            if idx in seen:
+                continue
+            seen.add(idx)
+            picked.append(idx)
+            print(f"[dump]   p{q:<6g} -> patch {idx:>7d}  target max {tmax[idx]:7.1f} mm/h")
+        return np.asarray(picked, dtype=int)
+
     picked = list(order[:args.n_extreme])
     if args.n_mid > 0:
         mid = order[len(order) // 2: len(order) // 2 + args.n_mid]
@@ -143,6 +167,10 @@ def main():
     ap.add_argument("--rank_from", default=None,
                     help="an *_arrays.npz from a previous run on this split; its tmax array "
                          "is reused to rank patches instead of rescanning the data")
+    ap.add_argument("--pct", type=float, nargs="+", default=None,
+                    help="percentiles of the target-maximum distribution, one patch each "
+                         "(e.g. 99.9 99 95 90 75 50). Preferred over --n_extreme: the very "
+                         "top of the distribution is artefact-dominated")
     ap.add_argument("--n_extreme", type=int, default=4)
     ap.add_argument("--n_mid", type=int, default=2)
     ap.add_argument("--ensemble", type=int, default=1,
