@@ -10,7 +10,7 @@ splits, and they cover the whole archive rather than only what survived preproce
 Output: `<out_dir>/features/YYYYMMDD.csv.gz`. Restartable with `--skip_existing`.
 
     python scripts/data_quality/compute_tile_features.py config.yaml \
-        --out_dir /home/fquareng/work/data/extremes/OPERA/quality --workers 16
+        --out_dir /home/fquareng/work/data/extremes/OPERA/quality --workers 6
 
     # quick look: five days, every other time step
     python scripts/data_quality/compute_tile_features.py config.yaml \
@@ -168,7 +168,8 @@ def main():
     ap.add_argument("--every", type=int, default=1, help="use every n-th time step")
     ap.add_argument("--climatology", default=None, help="npz from clutter_climatology.py")
     ap.add_argument("--no_dem", action="store_true")
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=6,
+                    help="<= 6 alongside the 2-core fetcher: 8-core budget on node34")
     ap.add_argument("--skip_existing", action="store_true")
     args = ap.parse_args()
 

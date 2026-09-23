@@ -40,7 +40,7 @@ Then the loop that decides the screen:
    Tune the thresholds in `rules.py`, then repeat.
 
 Cost: about 1 s per time step per core for the features, so the ~560 current days take about
-1 h on 16 cores. The climatology is I/O-bound and takes about 30 min. Both scanners skip day
+2.5 h on the default 6 workers (the node allows 8 cores in total, and the fetcher holds 2). The climatology is I/O-bound and takes about 30 min. Both scanners skip day
 stores without `.zmetadata`, so they are safe to run while the fetcher is writing.
 
 ## What a first look already shows

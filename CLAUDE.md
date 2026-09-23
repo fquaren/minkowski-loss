@@ -37,9 +37,21 @@ python scripts/evaluate/diagnose_coupling.py config.yaml \
 
 ## Operational traps — these have all cost days at least once
 
+**Shared node: GPU 1 only, at most 8 of 12 cores** (EXPERIMENTS.md §0). GPU 0 belongs to
+someone else and must never be used. At least 4 cores must always stay free. Both limits are
+enforced in two places:
+- `src/node_limits.py`, run on `import src`: pins the process to cores 4–11, refuses any
+  `CUDA_VISIBLE_DEVICES` other than 1 or GPU 1's UUID, and checks the UUID if CUDA is
+  already up.
+- `scripts/hpc/env.sh`: pins the launcher shell to cores 4–11 and exports GPU 1.
+
+Don't work around either. Size worker pools so that everything running at once (training,
+DataLoader workers, the fetcher, audits) fits in 8 cores; they all share cores 4–11.
+
 **GPU selection.** `CUDA_VISIBLE_DEVICES=1` alone is not enough: CUDA's default device order
-is not `nvidia-smi`'s. Always set both, and put them *inside* any `micromamba run` wrapper,
-because environment activation overwrites them:
+is not `nvidia-smi`'s, and the two cards are identical, so the logs would not show a wrong
+pick. Always set both variables. Setting them inside the `micromamba run` wrapper is the
+safe habit (as of 2026-09-23, `micromamba run` passes them through unchanged):
 
 ```bash
 micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 python ...

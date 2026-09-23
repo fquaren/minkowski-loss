@@ -5,8 +5,8 @@
 #
 # Stages: climatology -> tile features (with clim_*) -> split audit -> summary -> galleries.
 # Restartable: features use --skip_existing. Safe to run while the fetcher writes (both
-# scanners skip day stores without .zmetadata). Keep WORKERS below the free cores: the
-# fetcher is pinned to 2.
+# scanners skip day stores without .zmetadata). The job is pinned to cores 4-11 by env.sh;
+# default 6 workers leaves the fetcher's 2 inside the 8-core budget.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -15,7 +15,9 @@ set -euo pipefail
 
 CONFIG="${PROJECT_ROOT}/config.yaml"
 OUT="${1:-/home/fquareng/work/data/extremes/OPERA/quality}"
-WORKERS="${2:-16}"
+WORKERS="${2:-6}"
+# 8-core budget on node34 (env.sh pins to cores 4-11); the fetcher takes 2 of them.
+(( WORKERS <= NODE_MAX_CORES )) || { echo "WORKERS=$WORKERS exceeds the ${NODE_MAX_CORES}-core budget" >&2; exit 1; }
 PY="${PYTHON}"
 DQ="${PROJECT_ROOT}/scripts/data_quality"
 LOG_FILE="${PROJECT_ROOT}/logs/data_quality_$(date +%Y%m%d_%H%M%S).log"

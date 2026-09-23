@@ -3,7 +3,7 @@
 Last updated: 2026-09-23
 
 **Read first:** `DECISIONS.md` (why things are the way they are, and what is already ruled
-out), then `CLAUDE.md` (operational traps), then this file (what exists and what's next).
+out), then `CLAUDE.md` (operational traps), then this file (the compute node in §0, what exists and what's next).
 `MINKOWSKI_DOCS.md` documents the loss itself; `RESEARCH_NOTES.md` holds the theory
 framework, the definition-of-extreme question and the regime-aware design notes.
 
@@ -18,6 +18,55 @@ Conventions: paths relative to repo root. Deterministic evals on the full test s
   was trained on, not generalisation.
 - **The tail is contaminated by radar artefacts and holed by the declutter step.** Tail
   columns are measured on data that has not been screened yet.
+
+---
+
+## 0. Compute node
+
+All runs are on **node34**, which is **shared with other users**.
+
+| | |
+|---|---|
+| CPU | 12 cores: 2 × Intel Xeon E5-2620 v3 (6 cores each, no SMT). NUMA node 0 = cores 0–5, node 1 = cores 6–11 |
+| GPU 0 | RTX PRO 6000 Blackwell Max-Q (97.9 GB), PCI 02:00.0, UUID `GPU-a62d786a-…`. **Not ours: never use** |
+| GPU 1 | RTX PRO 6000 Blackwell Max-Q (97.9 GB), PCI 83:00.0, UUID `GPU-9e0aab27-00b0-8d7e-df63-922075bf41b4`, NUMA-local to cores 6–11. **The only GPU we use** |
+| Environment | micromamba env `dl-stable` (torch 2.10.0+cu128) |
+
+**Limits: GPU 1 only, and at most 8 cores at any time**, so that at least 4 stay free for
+others.
+
+- **CPU:** all of our jobs are pinned to **cores 4–11**. That set is GPU 1's NUMA node
+  (6–11) plus 4–5, and it leaves 0–3 free on GPU 0's socket. Affinity is inherited, so
+  DataLoader workers and process pools stay inside the same 8 cores. *Everything running
+  at once shares them*, so size worker pools against the total. Example: fetcher (2) +
+  audit (6) = 8.
+- **GPU:** `CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1`. The two cards are
+  identical, so a wrong pick would not show in any log. Only the PCI order or the UUID
+  tells them apart.
+
+**How it is enforced** (added 2026-09-23):
+- `src/node_limits.py` runs on `import src`, i.e. in every training, eval and data script.
+  - *CPU:* it pins the process to cores 4–11 and caps torch threads at 8.
+  - *GPU:* if nothing is set, it sets GPU 1 in PCI order. It raises `NodeLimitError` for any
+    other `CUDA_VISIBLE_DEVICES` (including `0`, `0,1`, or GPU 0's UUID). If CUDA is already
+    initialised, it checks the visible device's UUID.
+  - It is a no-op on other hosts. Tests: `tests/test_node_limits.py`.
+- `scripts/hpc/env.sh` exports GPU 1 in PCI order (it previously exported
+  `CUDA_VISIBLE_DEVICES=0`), and pins the launching shell to cores 4–11.
+- The launchers with a `GPU` override (`run_full_eval`, `eval_losses`, `launch_eval_losses`,
+  `sweep_reward`, `check_sampler`) refuse anything but `GPU=1`. `run_diagnosis.sh` used
+  GPU 0 and now uses 1.
+- `launch_data_quality.sh` defaults to 6 workers and refuses more than 8.
+- **Verified live:** `import src` gives affinity 4–11, torch at 8 threads, one visible device
+  with GPU 1's UUID (PCI bus 0x83), and DataLoader workers on 4–11. `CUDA_VISIBLE_DEVICES=0`
+  raises.
+
+**Per-job budgets that fit.** A job's DataLoader and pool sizes are set in `config.yaml`
+(`NUM_WORKERS: 4`, `MAX_WORKERS: 4`) and in script flags.
+- 1 training run: main + 4 workers = 5.
+- The fetcher: 2 (currently on cores 4–5).
+- A data-quality audit: 6.
+- Do not start a second CPU-heavy job alongside a full audit plus the fetcher.
 
 ---
 

@@ -46,6 +46,8 @@ SWEEP_NAME="${SWEEP_NAME:-reward_$(date +%Y%m%d_%H%M%S)}"
 SWEEP_DIR="${SWEEP_ROOT}/${SWEEP_NAME}"
 RESULTS_CSV="${SWEEP_DIR}/results.csv"
 GPU="${GPU:-1}"
+# Shared node: GPU 1 only (EXPERIMENTS.md "Compute node"). Refuse anything else.
+[[ "$GPU" == "1" ]] || { echo "GPU=$GPU is not allowed on this node: GPU 1 only." >&2; exit 1; }
 SEED="${SEED:-42}"
 EVAL_CKPT="${EVAL_CKPT:-latest}"        # latest | best | both
 DRY_RUN="${DRY_RUN:-0}"

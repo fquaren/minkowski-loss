@@ -40,6 +40,8 @@ PYTHON="${PYTHON:-$(command -v python3 || command -v python)}"
 [ -z "$PYTHON" ] && { echo "no python interpreter; set PYTHON=..." >&2; exit 1; }
 
 GPU="${GPU:-1}"
+# Shared node: GPU 1 only (EXPERIMENTS.md "Compute node"). Refuse anything else.
+[[ "$GPU" == "1" ]] || { echo "GPU=$GPU is not allowed on this node: GPU 1 only." >&2; exit 1; }
 POT="${POT:-31}"                      # one level for every row
 SPLIT="${SPLIT:-test}"
 ENSEMBLE="${ENSEMBLE:-16}"

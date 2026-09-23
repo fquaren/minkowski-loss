@@ -18,7 +18,7 @@ and one PNG map per threshold under `<out_dir>/figures/`. `freq_ge*` feeds the `
 features of `compute_tile_features.py --climatology`.
 
     python scripts/data_quality/clutter_climatology.py config.yaml \
-        --out_dir /home/fquareng/work/data/extremes/OPERA/quality --workers 16
+        --out_dir /home/fquareng/work/data/extremes/OPERA/quality --workers 6
 """
 
 import argparse
@@ -116,7 +116,8 @@ def main():
     ap.add_argument("--raw_dir", default=None)
     ap.add_argument("--start", default=None)
     ap.add_argument("--end", default=None)
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=6,
+                    help="<= 6 alongside the 2-core fetcher: 8-core budget on node34")
     ap.add_argument("--top", type=int, default=50, help="hot-spot pixels to list")
     args = ap.parse_args()
     cfg = load_config(args.config)

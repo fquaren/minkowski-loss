@@ -36,6 +36,8 @@ cd "$PROJECT_ROOT"
 PYTHON="${PYTHON:-$(command -v python3 || command -v python)}"
 CONFIG="${CONFIG:-${PROJECT_ROOT}/config.yaml}"
 GPU="${GPU:-1}"
+# Shared node: GPU 1 only (EXPERIMENTS.md "Compute node"). Refuse anything else.
+[[ "$GPU" == "1" ]] || { echo "GPU=$GPU is not allowed on this node: GPU 1 only." >&2; exit 1; }
 POT_THRESHOLD="${POT_THRESHOLD:-31}"     # ONE level for every row in the table
 SPLIT="${SPLIT:-test}"
 DRY_RUN="${DRY_RUN:-0}"
