@@ -16,9 +16,16 @@ drizzle/declutter step. Tile rows are keyed `timestamp,row,col` exactly as in
 | `compute_tile_features.py` | Per tile: speckle, spikes, gradients, concentration, sea/DEM context, spokes, flicker against t±15 min, declutter impact, QIND, static clutter at the peak | `features/YYYYMMDD.csv.gz` |
 | `audit_splits.py` | How independent are train / val / test? | `split_audit.md` |
 | `summarize_features.py` | Where do artefact signatures sit: by intensity, year, month, hour, tile, split? How much do the rules overlap? How good are they against labels? | `summary.md`, CSVs, figures |
-| `patch_gallery.py` | What do the tiles look like? (t−15 / t / t+15 raw, filtered target, coarse input, DEM, QIND) | image pages + `labels.csv` to fill in |
+| `patch_gallery.py` | What do the tiles look like? (t−15 / t / t+15 raw, filtered target, coarse input, DEM with lat/lon ticks, QIND, locator map; row label = tile centre + nearest radar) | image pages + `labels.csv` |
+| `radar_attribution.py` | Which radars are consistently bad? Hot pixels, > 500 mm/h pixels and flagged tail tiles attributed to the nearest active OPERA radar, per year | `radars/radar_summary.{md,csv}`, `radar_by_year.csv`, `radar_map.png` |
 
 Feature definitions are in `src/data/quality.py` (unit tests in `tests/test_quality.py`).
+Grid geography (orientation, lat/lon, the DEM in the precipitation orientation, OPERA radar
+sites) is in `src/data/geo.py`. **Orientation:** the precipitation stores are south-first,
+while the DEM GeoTIFF is north-first. Feature files written before 2026-09-28 used the
+mirrored DEM, so their `sea_frac`, `dem_mean`, `argmax_over_sea` and `wet_over_sea_frac`
+columns (and the `sea_clutter` rule) are wrong until they are recomputed. The radar database
+(`OPERA_RADARS_DB.json` and the archive `OPERA_RADARS_ARH_DB.json`) is in `OPERA/meta/`.
 The candidate rules are in `rules.py`. **Their thresholds are first guesses.** Treat a
 rule's rate as the prevalence of a signature until it has been checked against labels.
 
@@ -32,12 +39,20 @@ rule's rate as the prevalence of a signature until it has been checked against l
 4. `summarize_features.py`.
 5. Galleries: `top_max`, `random` in the tail, `unflagged` in the tail (misses), one per rule.
 
-Then the loop that decides the screen:
+Then the loop that decides the screen. **No labelled set** (DECISIONS §17, 2026-09-28):
+the policy is to reject *clear errors only* and keep imperfections, so the rules are tuned by
+eye and by their rejection profile, not by precision/recall against labels.
 
-6. Label about 200–300 tail tiles in the gallery sheets. Use a random draw, not only
-   flagged ones, or precision cannot be separated from base rate.
-7. Rerun `summarize_features.py --labels <sheet>` to get precision and recall per rule.
-   Tune the thresholds in `rules.py`, then repeat.
+6. For each rule, look at its gallery of rejections and at the unflagged tail gallery. This
+   is a quick sanity check by eye. It asks whether the rule fires on something
+   non-meteorological by construction, not a labelling pass.
+7. Check each rule's rejection rate by intensity bin, region and year in `summary.md`. A rate
+   that climbs steeply with intensity is the warning sign that the rule is removing real
+   extremes. Tighten it, or restrict it to geometry / persistence / impossibility signatures.
+8. Tune the thresholds in `rules.py` and repeat.
+
+The label sheet and `summarize_features.py --labels` still work, if a small labelled check
+is ever wanted.
 
 Cost: about 1 s per time step per core for the features, so the ~560 current days take about
 2.5 h on the default 6 workers (the node allows 8 cores in total, and the fetcher holds 2). The climatology is I/O-bound and takes about 30 min. Both scanners skip day

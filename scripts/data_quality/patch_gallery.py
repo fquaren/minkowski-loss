@@ -3,7 +3,12 @@
 
 One row per tile, columns:
 
-    t-15 raw | t raw | t+15 raw | target as the model sees it | coarse input | DEM | QIND
+    t-15 raw | t raw | t+15 raw | target as the model sees it | coarse input | DEM | QIND | where
+
+The DEM panel carries lat/lon ticks, and the row label gives the tile centre and the nearest
+OPERA radar. "where" is a locator map of the domain with the tile marked. The DEM is taken
+from `src.data.geo.load_dem_on_radar_grid`, i.e. in the precipitation orientation (row 0 =
+south). Before 2026-09-28 this panel showed the N-S-mirrored DEM (see `src/data/geo.py`).
 
 "raw" is the stored field before any filtering; "target as the model sees it" applies the
 current drizzle/declutter step (`pipeline_filter`), so declutter holes show up as white
@@ -37,6 +42,7 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "..")))
 sys.path.insert(0, HERE)
+from src.data import geo  # noqa: E402
 from src.data.quality import adaptive_block_means, pipeline_filter  # noqa: E402
 from src.utils import load_config  # noqa: E402
 from rules import RULES, apply_rules  # noqa: E402
@@ -97,7 +103,24 @@ def select(df, flags, how, n, lo, hi, seed):
     return pick.head(n)
 
 
-def render(rows, flags, raw_dir, var, dem, patch, factor, page_path, title):
+def _latlon_ticks(ax, row, col, patch, n=3):
+    """Lon ticks along the bottom edge and lat ticks along the left edge of a tile.
+
+    The LAEA grid is not aligned with meridians, so these are the coordinates *at the edge
+    pixels*, which is what one needs to place the tile.
+    """
+    pos = np.linspace(0, patch - 1, n)
+    lon_b, _ = geo.rowcol_to_lonlat(np.full(n, row), col + pos)
+    _, lat_l = geo.rowcol_to_lonlat(row + pos, np.full(n, col))
+    ax.set_xticks(pos)
+    ax.set_xticklabels([f"{v:.1f}°" for v in np.atleast_1d(lon_b)], fontsize=5)
+    ax.set_yticks(pos)
+    ax.set_yticklabels([f"{v:.1f}°" for v in np.atleast_1d(lat_l)], fontsize=5)
+    ax.tick_params(length=2, pad=1)
+
+
+def render(rows, flags, raw_dir, var, dem, patch, factor, page_path, title, sites=None,
+           overview=None):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -105,7 +128,8 @@ def render(rows, flags, raw_dir, var, dem, patch, factor, page_path, title):
     cmap = plt.get_cmap("turbo").copy()
     cmap.set_bad("white")
     norm = LogNorm(vmin=0.1, vmax=200)
-    cols = ["t-15 raw", "t raw", "t+15 raw", "target (filtered)", "coarse input", "DEM", "QIND"]
+    cols = ["t-15 raw", "t raw", "t+15 raw", "target (filtered)", "coarse input", "DEM", "QIND",
+            "where"]
     fig, axes = plt.subplots(len(rows), len(cols), figsize=(2.1 * len(cols), 2.3 * len(rows)),
                              squeeze=False)
     im = None
@@ -129,6 +153,17 @@ def render(rows, flags, raw_dir, var, dem, patch, factor, page_path, title):
         sl = (slice(int(r["row"]), int(r["row"]) + patch),
               slice(int(r["col"]), int(r["col"]) + patch))
         axes[i, 5].imshow(dem[sl], origin="lower", cmap="terrain", vmin=-100, vmax=2500)
+        # locator: the whole domain, coarsened, with this tile boxed
+        axw = axes[i, 7]
+        if overview is not None:
+            ov, step = overview
+            axw.imshow(ov, origin="lower", cmap="Greys", vmin=0, vmax=1)
+            if sites is not None:
+                axw.plot(sites["col"] / step, sites["row"] / step, ".", ms=1.2, color="tab:blue")
+            from matplotlib.patches import Rectangle
+            axw.add_patch(Rectangle((int(r["col"]) / step, int(r["row"]) / step),
+                                    patch / step, patch / step, fill=False, ec="red", lw=1.2))
+        loc = geo.describe_location(int(r["row"]), int(r["col"]), patch, sites)
         if q is not None:
             axes[i, 6].imshow(q, origin="lower", cmap="RdYlGn", vmin=0, vmax=1)
         else:
@@ -137,17 +172,20 @@ def render(rows, flags, raw_dir, var, dem, patch, factor, page_path, title):
         fired = [k for k in RULES if flags.at[r.name, k] > 0]
         axes[i, 0].set_ylabel(f"#{i}  {r['timestamp']}\n({int(r['row'])},{int(r['col'])})",
                               fontsize=7)
+        axes[i, 5].set_xlabel(loc.replace(" · ", "\n"), fontsize=5, labelpad=1)
         axes[i, 0].text(0.0, 1.03, f"max {r['max']:.1f} mm/h   " + ", ".join(fired),
                         transform=axes[i, 0].transAxes, fontsize=7, va="bottom")
     for j, c in enumerate(cols):
         axes[0, j].set_title(c, fontsize=8, pad=14)
     for ax in axes.ravel():
         ax.set_xticks([]); ax.set_yticks([])
+    for i, (_, r) in enumerate(rows.iterrows()):
+        _latlon_ticks(axes[i, 5], int(r["row"]), int(r["col"]), patch)
     fig.subplots_adjust(right=0.9, hspace=0.35, wspace=0.08, top=0.95)
     if im is not None:
         cax = fig.add_axes([0.92, 0.3, 0.012, 0.4])
         fig.colorbar(im, cax=cax, label="mm/h")
-    fig.suptitle(title, fontsize=10, y=0.99)
+    fig.suptitle(title, fontsize=10, y=1.02)
     fig.savefig(page_path, dpi=110, bbox_inches="tight")
     plt.close(fig)
 
@@ -164,6 +202,8 @@ def main():
     ap.add_argument("--n", type=int, default=48)
     ap.add_argument("--per_page", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--radar_db", default=None,
+                    help="OPERA_RADARS_DB.json (default: src.data.geo.DEFAULT_RADAR_DB)")
     args = ap.parse_args()
     cfg = load_config(args.config)
     raw_dir = args.raw_dir or cfg["RAW_OPERA_DATA_DIR"]
@@ -184,19 +224,27 @@ def main():
     os.makedirs(out, exist_ok=True)
     print(f"{len(rows)} tiles -> {out}", flush=True)
 
-    import xarray as xr
-    with xr.open_dataset(cfg["STATIC_DEM_PATH"], engine="rasterio") as ds:
-        dem = ds["band_data"].isel(band=0).values
+    # the DEM in the precipitation orientation (row 0 = south); see src/data/geo.py
+    dem = geo.load_dem_on_radar_grid(cfg["STATIC_DEM_PATH"], verbose=True)
+    step = 10
+    land = (np.nan_to_num(dem[::step, ::step]) > 0).astype(float) * 0.35
+    try:
+        sites = geo.load_radar_sites(args.radar_db)
+    except Exception as e:
+        print(f"[warn] radar sites unavailable ({e}); locations without nearest radar")
+        sites = None
 
     sheet = []
     for p, start in enumerate(range(0, len(rows), args.per_page)):
         chunk = rows.iloc[start:start + args.per_page]
         path = os.path.join(out, f"page_{p:03d}.png")
         render(chunk, flags, raw_dir, cfg["PRECIP_VAR_NAME"], dem, patch, factor, path,
-               f"{name} — page {p}")
+               f"{name} — page {p}", sites=sites, overview=(land, step))
         for slot, (i, r) in enumerate(chunk.iterrows()):
+            loc = geo.tile_location(int(r["row"]), int(r["col"]), patch)
             sheet.append({"timestamp": r["timestamp"], "row": int(r["row"]),
-                          "col": int(r["col"]), "max": round(float(r["max"]), 2),
+                          "col": int(r["col"]), "lat": round(loc["lat"], 3),
+                          "lon": round(loc["lon"], 3), "max": round(float(r["max"]), 2),
                           "page": p, "slot": slot,
                           "rules": ";".join(k for k in RULES if flags.at[i, k] > 0),
                           "label": "", "notes": ""})

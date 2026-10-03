@@ -46,6 +46,8 @@ def _flicker(d):
 
 
 def _sea_clutter(d):
+    # Depends on `argmax_over_sea` from the DEM. Feature files written before 2026-09-28
+    # used the N-S-mirrored DEM (src/data/geo.py), so this rule is meaningless on them.
     s = _col(d, "argmax_over_sea")
     return _flag((d["max"] >= 10) & (s == 1) & (d["peak_block_mean"] < 0.5), s)
 

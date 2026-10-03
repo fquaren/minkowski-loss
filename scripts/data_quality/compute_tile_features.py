@@ -40,9 +40,15 @@ _CLIM = None
 
 
 def _load_dem(path, shape):
-    import xarray as xr
-    with xr.open_dataset(path, engine="rasterio") as ds:
-        dem = ds["band_data"].isel(band=0).values.astype(np.float32)
+    """The DEM in the precipitation orientation (row 0 = south).
+
+    The GeoTIFF is north-first while the radar stores are south-first, so reading it raw and
+    slicing by the tile index gives the DEM of the N-S-mirrored place. Features computed
+    before 2026-09-28 (`sea_frac`, `dem_mean`, `argmax_over_sea`, `wet_over_sea_frac`, and so
+    the `sea_clutter` rule) used that mirrored DEM and are wrong; recompute them.
+    """
+    from src.data.geo import load_dem_on_radar_grid
+    dem = load_dem_on_radar_grid(path)
     if dem.shape != shape:
         raise ValueError(f"DEM shape {dem.shape} != radar grid {shape}")
     return dem
