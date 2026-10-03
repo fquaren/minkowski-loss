@@ -83,7 +83,7 @@ def main():
     ap.add_argument("--sampler", default=None)
     ap.add_argument("--extreme_pct", type=float, default=99.0)
     ap.add_argument("--pot_threshold", type=float, default=None,
-                    help="POT threshold in mm/h; default = the second-highest PHYSICAL_THRESHOLD")
+                    help="POT threshold in mm/h; default = the third-highest PHYSICAL_THRESHOLD (31 on the current grid)")
     ap.add_argument("--fss_thresholds", type=float, nargs="+", default=None,
                     help="mm/h; default = the top three PHYSICAL_THRESHOLDS")
     ap.add_argument("--fss_windows", type=int, nargs="+", default=[1, 5, 11, 21])

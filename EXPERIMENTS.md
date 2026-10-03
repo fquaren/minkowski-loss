@@ -1,6 +1,6 @@
 # Experiment tracker
 
-Last updated: 2026-09-23
+Last updated: 2026-10-03
 
 **Read first:** `DECISIONS.md` (why things are the way they are, and what is already ruled
 out), then `CLAUDE.md` (operational traps), then this file (the compute node in §0, what exists and what's next).
@@ -255,7 +255,49 @@ isoperimetric scatter.
 ## 5. TODO
 
 ### Highest value
-- [ ] **Data quality first** (roadmap M1). Every tail number below depends on it.
+- [ ] **The DEM channel of every patch is from the wrong place (bug, found 2026-09-28).** The
+      DEM GeoTIFF is north-first (row 0 = north) and the precipitation stores are
+      south-first (row 0 = south; checked against radar-site geography, IoU 0.878 vs 0.554
+      flipped). `src/data/preprocessing.py` slices both with the same `(y_start, x_start)`, so
+      each patch gets the DEM of the N-S-mirrored place: 20/20 test patches match the
+      mirrored slice and 0/20 the true one, e.g. correlation −0.32 on test patch 0 (southern
+      Finland). **Every trained model has had a geographically wrong DEM input.** Relative
+      comparisons stand (all rows share it), but nothing about orography can be claimed, and
+      absolute numbers will move once it is fixed. `dem_stats.json` was computed on the
+      mirrored patches too.
+      **Code fixed 2026-09-28:** `src/data/preprocessing.py::process_batch` now takes the DEM
+      from `src.data.geo.load_dem_on_radar_grid`, loaded once per worker. Checked on 5 test
+      patches: DEM = true ground in 5/5, precipitation bit-identical to the old store.
+      Regression test: `tests/test_geo.py`.
+      **Existing store regenerated 2026-09-28**, without a rebuild. Only the DEM was wrong:
+      the fixed preprocessing yields bit-identical precipitation, and the gamma targets depend
+      on precipitation only.
+      - *DEM lookup instead of storage.* The store held just 79 distinct DEM tiles repeated
+        2.85M times (89 GB). `DeterministicSRDataset` and `DiffusionSRDataset` now look the
+        DEM up under each patch's `(y, x)` from the oriented full DEM (`src.data.geo.
+        dem_patch`, new kwarg `dem_path`). The per-patch `<split>/dem` arrays were deleted,
+        freeing ~89 GB. An in-place rewrite would have *grown* the store by +34.7 GB, since
+        the true terrain compresses worse. Preprocessing no longer writes `dem`.
+      - *Checks before deleting:*
+        - precipitation, target and gamma identical to the old dataset code in 40/40 patches
+          per class and split;
+        - DEM channel = true ground in every sampled patch, RAM mode included.
+      - *`dem_stats.json` recomputed exactly* from tile counts: mean 286.16, std 393.53
+        (was 188.31 / 351.65, backed up as `dem_stats_mirrored_pre20260928.json`). The same
+        method on the mirrored DEM reproduces the old file to 6 decimals.
+      - *Consequences:*
+        - every existing checkpoint was trained with the mirrored DEM and the old stats, so
+          retrain before comparing anything;
+        - `residual_stats*.json` (σ_r) are backbone-specific and must be recomputed after
+          retraining;
+        - `Mink-DDPM` (inactive since April) reads the deleted `dem` arrays and now fails
+          with a KeyError. This was accepted.
+      - *Not changed:* the declutter zeroing above 150 mm/h, the patch-level splits (they
+        still leak, §5 above), the stale `patches/dem/dem_patch_*.npy` cache (unused), and
+        `cosine_warmup_weight` vs its failing test (pre-existing).
+- [ ] **Data quality first** (roadmap M1). Every tail number below depends on it. Policy:
+      reject clear errors only, keep imperfections, no labelled set (DECISIONS §17).
+      Background and agency practice: RESEARCH_NOTES §7.
 - [ ] **Tail-sample selection.** Score a large patch pool by patch max, and draw the
       *structural* loss batches from the top few %. This targets the pixel-mass bottleneck
       directly (DECISIONS §5, §13). Keep the MSE / velocity loss on uniform batches.
@@ -272,8 +314,275 @@ isoperimetric scatter.
 - [ ] State the POT-level choice as estimability, not physics.
 - [ ] Write up the w=1e-3 hacking episode as a positive result on necessary-not-sufficient.
 - [ ] Theory framework (roadmap M5, `RESEARCH_NOTES.md`).
+- [ ] **Dataset limitation: coverage rule and coastal bias** (unless fixed first). Only fully
+      covered patches are used, which under-represents coastal and network-edge extremes
+      (Mediterranean) and drops the Emilia-Romagna events; HyMeX IOP16 is not in the
+      archive. Draft text and the three possible improvements (event windows, blind-spot
+      repair, masked partial patches) in `notes/events.md` §6.
 
 ### Data — quality and size
+- [ ] **Re-derive the POT threshold on v2 instead of inheriting u = 31.** 31 is a point of the
+      loss grid used "for estimability" (DECISIONS §10), never tested:
+      - ξ_obs flips sign between 31 and 53, and the fitted data were capped and artefact-laden;
+      - on v2 (uncapped, cleaned, ODYSSEY only): mean-residual-life plot and ξ / modified-σ
+        stability over u ≈ 10–150 mm/h, with bootstrap intervals;
+      - runs declustering of exceedances in space and time, pixel-level vs event-maxima fits;
+      - per region and season (E3), since one fixed level may not suit all of Europe;
+      - then fix one level for every table, or justify keeping 31.
+
+      Questions for Daniele Nerini and Lionel Moret are in RESEARCH_NOTES §7.4. Every tail
+      column changes if u changes, so settle this before the v2 re-evaluation.
+- [ ] **ODYSSEY vs NIMBUS gap analysis** (`scripts/data_quality/era_gap.py`; outputs in
+      `OPERA/quality_v2/era_gap/`).
+      - *Why:* OPERA switched production chain on **2024-07-05**. The grid, 2 km resolution,
+        projection and 15-min cadence are unchanged, so nothing is resampled. What changed is
+        how a frame is made:
+        - ODYSSEY: a quality-weighted composite of the scans in a 15-min window (e.g.
+          11:50–12:05);
+        - NIMBUS: the lowest-elevation PPI at the nominal time;
+        - plus a somewhat different radar set.
+      - *Paired* (the 101 days 2024-07-05..10-30 that exist in both products, originals kept
+        in `raw/OPERA_orig_postswitch/`): frequencies, quantiles, co-located correlation,
+        Minkowski curves, spectra, +15 min persistence. First day (2024-08-01):
+        - NIMBUS has 40% fewer pixels ≥ 0.1 mm/h but equal ≥ 10 mm/h;
+        - its p90 is 3.25 vs 2.45 mm/h;
+        - its +15 min correlation is 0.19 vs 0.35, the time-support difference.
+      - *Paired result, all 101 days* (2,407 frames, 97,682 wet tiles; ODYSSEY copies capped at
+        150 mm/h, so nothing above 89 mm/h is compared). NIMBUS / ODYSSEY:
+        - rain area ≥ 0.1 mm/h 0.71, ≥ 1 mm/h 0.99;
+        - exceedance ≥ 10 / 31 / 89 mm/h 1.36 / 1.44 / 2.4;
+        - wet-pixel p50 / p90 / p99 ≈ 1.4;
+        - perimeter at 10–31 mm/h ≈ 1.8, Euler characteristic ≈ 2.4×;
+        - spectral power at 128 / 32 / 8 / 4 km 1.25 / 1.42 / 3.1 / 6.2;
+        - +15 min correlation 0.41 → 0.26; co-located log-correlation 0.80.
+
+        So NIMBUS fields are more intense and much rougher and more fragmented at small scales:
+        a single instantaneous low-elevation scan against a blended 15-min composite.
+        **For NIMBUS evaluation this is not a neutral test set.** An ODYSSEY-trained model will
+        under-produce NIMBUS small-scale variance by construction, so spectral, perimeter/χ and
+        tail metrics carry a product penalty unrelated to extremeness. Report NIMBUS scores
+        against a reference that shares the product (e.g. a NIMBUS-trained or NIMBUS-fine-tuned
+        model, or the NIMBUS persistence/bicubic baselines), not in absolute terms.
+      - *Month-matched:* NIMBUS months as z-scores against the ODYSSEY interannual spread of
+        the same calendar month. This runs inside `rebuild_v2.sh`, after the rescan.
+      - *Decision (DECISIONS §18):* train/val/test are ODYSSEY only; NIMBUS is a separate
+        product-shift test split. Evaluating on NIMBUS later is planned. Mind that temporal
+        statistics such as persistence and advection differ between eras by construction.
+- [ ] **v2 dataset family: building (launched 2026-09-28).** Pipeline in `scripts/dataset_v2/`,
+      tests `tests/test_cleaning.py`. All of 2012 + 2014 → 2025-10 on disk (4,345 days; 2013
+      to be re-downloaded and added).
+      1. `run_scan.sh`: per-year clutter climatology over every day, then `scan_tiles.py`.
+         Every frame is cleaned by `src/data/cleaning.py` (drizzle floor; static-clutter and
+         spike *repair*; no zeroing above 150 mm/h), and every fully covered tile is
+         described.
+      2. `run_build.sh` (waits for 1):
+         - `make_splits.py`:
+           - leak-free splits by whole ISO weeks, drawn per calendar month, with 1-day
+             buffers, so train is ≥ 2 days from val/test;
+           - the 26 catalogued events (`configs/prominent_events.yaml`, sourced from ECMWF,
+             MeteoSwiss, DWD, ESSL, AEMET and Météo-France studies) are forced into test;
+           - rejects tiles that are `unphysical` (> 500 mm/h after repair) or a `ray` (an
+             RLAN ray pointing at a radar);
+           - stratified sampling to 3M patches, with per-row inclusion weights.
+         - `build_store.py`: store, verify, aux.
+         - `config_v2.yaml`.
+         - gamma targets.
+         - `check_datasets.py`.
+      - *Outputs:* `OPERA/v2/` (metadata) and `OPERA/patches_v2/` (store).
+        - `full_{train,val,test}`;
+        - `light_*`: 25%, same strata shares;
+        - `extremes_*`: cleaned max ≥ 31 mm/h;
+        - `events_test`: every tile of every event, never subsampled.
+        Subset files carry a 5th column (store row), which the datasets now accept.
+      - *Checked on a 12-day sample before launch:*
+        - rejection concentrated in raw > 500 mm/h (80% rejected, the rest repaired);
+        - ray rule < 1% in every intensity bin;
+        - stored tile max = metadata max (after fixing a 4-significant-digit CSV rounding
+          bug);
+        - subsets return exactly their store rows;
+        - DEM correct;
+        - leak checks pass.
+      - *Consequence:* the scaler moves from `log1p` 5.02 to ~6.19, because rates are no
+        longer zeroed above 150 mm/h.
+      - *After it finishes:* review `OPERA/v2/report.md` (rejection by intensity, per-event
+        coverage), then verify and delete the old store. Legacy `.npz` dumps in
+        `patches/precip/{train,validation,test}/` hold 480 GB and are unused by this repo.
+      - *Known limits:*
+        - tiles need 100% radar coverage, so a single nodata pixel excludes a tile;
+          Emilia-Romagna may get no event tiles because of this;
+        - radar rates underestimate intense rain (Valencia: 28.6 mm/h radar pixel vs
+          184.6 mm/h gauge-hour at Turís);
+        - ring artefacts are not detected yet.
+      - *Built 2026-10-01/02* (`logs/dataset_v2_build3.log`, `logs/finish_nimbus_gamma.log`):
+        train 1,977,908 / val 251,667 / test 282,684 / nimbus 487,743 patches; 3,168 / 404 /
+        463 / 801 days; min gap 2 days. The first gamma run skipped the `nimbus` group
+        (`compute_gamma_targets.py` listed only train/validation/test; fixed), so the checks
+        were rerun after it: **ALL CHECKS PASSED** (2026-10-02 13:30; every subset of all four splits, DataLoader, no shared days, min gap 2 d). The legacy `.npz` dumps were deleted on 2026-10-01; the old store `patches/precip/preprocessed_dataset.zarr` can go now (approved after verification).
+- [ ] **Complete the screen and validate it against independent data — gate before any v2
+      training** (started 2026-10-02; RESEARCH_NOTES §7.4b steps 4, 6, 8, 9, 10). Every new
+      check is an *audit flag* first; nothing is removed until the gauges say the rule
+      separates artefacts from rain. Then one rebuild, together with the event-set fix below.
+      - *Temporal support* (`cleaning.temporal_support`): a cell >= 10 mm/h with no echo
+        >= 1 mm/h within 30 km at t +- 15 min. Undecidable when a neighbour frame is missing
+        or not covered. Threshold choices to revisit with the gauge result: NIMBUS is less
+        persistent frame to frame than ODYSSEY (+15 min corr 0.26 vs 0.41).
+      - *Range rings*: not thin arcs in single frames (`cleaning.ring_flag` found none in
+        7,005 tiles), but circles in the per-year >= 31 mm/h frequency
+        (`scripts/data_quality/ring_climatology.py` -> `quality_v2/ring_mask.npz`,
+        `ring_list.csv`). Found: Stevns and Sindal (DK) at ~234 km, every year 2013-2017;
+        Ikaalinen (178 km) and Vimpeli (49 km), FI, 2012; none after 2017 (the 2017-09-29
+        compositing change). The radar database's years are incomplete (Stevns is listed
+        from 2017), so rings are searched about every site, current and archive.
+      - *Bad radars* (`scripts/data_quality/radar_quality_v2.py`, whole archive, signals
+        relative to the 5 nearest radars): from the climatology alone, 8 consistently bad:
+        Bollène (FR, clutter, 15/15 years), Teolo (IT, > 500 mm/h), Fljotsdalsheidi (IS),
+        Monte Lauro (IT), Andravida (GR), Debeljak (HR), Hudiksvall and Vara (SE).
+        **With the flag signals (2026-10-03, `logs/radar_quality_v2_20261003.log`,
+        `quality_v2/radars/`): 14 consistently bad.** The 8 above, plus Ängelholm (SE,
+        unsupported maxima, 15 years), Stevns and Sindal (DK, unsupported, 10), Karlskrona
+        and Hemse (SE, unsupported), and Berlin (DE, ring 2013-15).
+        - The first run with flags (2026-10-03 02:43, in `logs/validation.log`) listed 204
+          of 246 radars, which is wrong. Three bugs, fixed in the script; the old outputs are
+          in `quality_v2/radars_pre20261003_buggy/`:
+          - `ring_share` is zero in 73% of radar-years, so its 95th percentile was 0 and
+            `>=` flagged 75.5% of them. An outlier must now also be > 0; ring_share
+            flags 2.1%.
+          - 9 sites have both a current and an archive entry in the radar database with
+            overlapping years (Flechtdorf, Essen, Rostock, Neuhaus, Eisberg, Ängelholm,
+            Leksand, Maly Javornik, Kojsovska hola). Both counted as active: they split
+            the site's pixels, appeared twice per year (Flechtdorf "28 years"), and were
+            each other's nearest neighbour in the relative scores. Radars are now keyed by
+            ODIM code, with duplicates merged.
+          - 16 sites with no ODIM code (e.g. Monte Lauro, Gelemenovo) were dropped by the
+            `groupby`. Their flag stats were also lost, because the scan writes `""` both for
+            them and for "no radar within 250 km". They are now keyed by location, and flag
+            tiles are re-attributed from the argmax with the same ownership map.
+        - *Attribution caveat:* the database lists Stevns and Sindal only from 2017, so their
+          2013-16 rings (`ring_list.csv`) fall on the nearest radar active then. Ängelholm's
+          ring_share is non-zero only 2013-17, so it is probably carrying Stevns's ring.
+          Ringed sites need archive years before a per-radar rule can use ring_share.
+      - *QIND*: kept as a covariate. Its scale changes with the product: tail-tile mean QIND
+        ~0.2-0.28 under ODYSSEY vs 0.80-0.87 under NIMBUS, so any weight must be normalised
+        per product. The gauge validation measures whether it separates real from false
+        tail pixels (AUC per era).
+      - *Flag scan* (`scripts/dataset_v2/scan_flags.py`, `run_flags.sh` ->
+        `quality_v2/flags/`): per covered tile with max >= 1 mm/h: argmax position, nearest
+        radar, QIND there, unsupported / undecidable cell maxima, frame-level ring,
+        climatological ring. ~57 s/day/worker, ~12 h on 6 workers. Launched 2026-10-02.
+      - *Independent truth*: 10-min gauges, open: DWD (~1,000 stations) and MeteoSwiss
+        SwissMetNet (`rre150z0`) -> `scripts/validation/fetch_gauges.py` ->
+        `OPERA/validation/gauges/`. CombiPrecip and POH/MESHS are open for the last 14 days
+        only: the 2012-2026 record has to come from MCH (asked). Lightning: no open
+        pan-European source. EURADCLIM needs a KNMI API key.
+      - *Gauge sanity check* (`scripts/validation/gauge_qc.py` -> `gauges/gauge_qc.csv`,
+        gauges only, never the radar): > 50 mm / 10 min (5 values, incl. 99.9 and 149.6
+        mm fault codes), stuck runs of >= 6 identical values >= 1 mm (200), and bursts
+        >= 10 mm with exactly 0 before and after AND no rain at any complete gauge within
+        30 km over +- 30 min (25 of 78 temporally isolated bursts). 230 of 84.7M wet
+        values, 0.2% of values >= 10 mm. `validate_tail.py` masks them.
+      - *Validation* (`scripts/validation/gauge_vs_radar.py` -> `validation/pairs/`, then
+        `validate_tail.py` -> `validation/validation_summary.md`): radar raw / cleaned /
+        flags at every gauge, gauge intervals around t (alignment picked from the lag
+        correlation), corroboration rate (gauge >= 1 mm/h) per intensity bin for untouched
+        pixels and for each rule's flagged pixels, rain wrongly removed, underestimation,
+        QIND AUC per era, untouched-tail corroboration per year.
+      - *Validation results (2026-10-03, `logs/validation.log`, `validation/
+        validation_summary.md`).* Data: 12.1M station-frames, 1,735 gauges (1,454 DWD,
+        281 SMN), 4,968 days. The radar frame matches the gauge intervals 10-20 min later
+        in all four network × era cells (log-rate correlation 0.29-0.47). "Corroborated"
+        means a gauge >= 1 mm/h: it shows it was raining, not that the rate is right.
+        Corroboration by raw intensity bin (n):
+
+        | class | [10,31) | [31,89) | [89,150) | [150,500) | ≥500 |
+        |---|---|---|---|---|---|
+        | untouched | 0.91 (244k) | 0.92 (34k) | 0.91 (2,176) | 0.89 (540) | 0.00 (34) |
+        | no temporal support | 0.01 (565) | 0.01 (141) | 0.00 (22) | 0.00 (391) | 0.01 (578) |
+        | on range ring | 0.82 (606) | 0.50 (90) | 0.00 (19) | 0.00 (783) | 0.00 (980) |
+        | spike repaired | 0.13 (1,664) | 0.24 (538) | 0.24 (88) | 0.26 (53) | 0.00 (14) |
+        | hot repaired | 0.95 (19) | 1.0 (2) | – | 0.00 (16) | 0.22 (19,193) |
+        | tile rejected: unphysical | 0.81 (3,491) | 0.74 (744) | 0.55 (108) | 0.10 (344) | 0.05 (1,589) |
+        | tile rejected: ray | 0.73 (298) | 0.57 (35) | 0.25 (8) | 0.00 (21) | 0.06 (33) |
+
+        - *Temporal support* is the cleanest rule: about 1% corroborated in every bin.
+        - *Ring*: real rain under the ring below 31 mm/h, none at 89 mm/h and above. This
+          supports repairing the pixel over rejecting the tile.
+        - *Tile rejection* discards real rain: the non-max pixels of rejected tiles are
+          74% corroborated at 31-89 mm/h.
+        - *Untouched 150-500 mm/h*: ODYSSEY 0.66 (n=134), NIMBUS 0.96 (n=406). The
+          pre-2024-07 upper tail is dirtier. Untouched tail ≥ 31 by year: 0.77-0.87 for
+          2013-19, 0.92-0.95 from 2020 (2012: 0.36, n=14).
+        - *Cleaning removes little rain*: of 19,904 pixels lowered by > 50% from ≥ 31 mm/h,
+          the gauge saw ≥ 10 mm/h at 155 (0.8%).
+        - *Underestimation*: at gauge ≥ 30 mm/h (117k station-frames), the cleaned 3×3
+          radar max is ≥ 10 mm/h in 71.1% of cases, median radar/gauge 0.45.
+        - *QIND (raw ≥ 31)*: ODYSSEY AUC 0.26, which is inverted (median QIND 0.20 for
+          corroborated vs 0.90 for not); NIMBUS 0.53 (both medians 1.00). It does not
+          discriminate, and the ODYSSEY inversion is unexplained. Possibly clutter near a
+          radar gets high quality: check before using it even as a covariate.
+      - *Then decide*, per rule: reject the tile, repair the pixel, weight, or drop the rule;
+        and whether the 150-500 mm/h range is kept.
+- [ ] **Fix the event set before training on v2** (`notes/events.md` §4–5, 2026-10-02).
+      - The May–June 2013 Central European floods and the 27–28 July 2013 "Andreas"
+        hailstorms are **training days in v2**: they were never added to
+        `configs/prominent_events.yaml` after the 2013 download. Add them, rerun splits →
+        store → gamma (~16 h).
+      - Three events have no tiles: HyMeX IOP16 is absent from the archive
+        (2012-10-10 → 11-08); both Emilia-Romagna episodes have static nodata holes
+        (18 and 272 pixels) in their two grid tiles. Recover Emilia-Romagna with shifted
+        windows for the event subsets only (option A).
+      - Tag events `rate` / `accumulation` and report them separately; check the ten event
+        maxima at 450–493 mm/h in the gallery.
+      - Next store version: repair static holes (option B), then consider masked partial
+        tiles (option C; ≤ 1% NaN adds 15% more ≥ 31 mm/h tiles, ≤ 5% adds 29%).
+- [ ] **Talk to Daniele Nerini and Lionel Moret (MCH) about best practices at MeteoSwiss**
+      before fixing the screen. Questions prepared in RESEARCH_NOTES §7.4: which
+      composite-level filters MCH trusts for OPERA data and with what thresholds, whether MCH
+      uses the OPERA QI, how to tell small intense cores from clutter spikes without volume
+      data, a defensible plausibility bound for a 15-min 2 km rate, a Swiss reference
+      (CombiPrecip) for validating the screened tail, and ML-dataset practice in the
+      pysteps / nowcasting community. Added 2026-10-02: how to test o.o.d. capability (options
+      O1–O7 and questions, RESEARCH_NOTES §7.4), and whether MCH would validate or co-own a
+      released benchmark (§7.4c).
+- [ ] **Consistently bad radars** (`scripts/data_quality/radar_attribution.py`, 2026-09-28,
+      on the 745 audited days; outputs in `OPERA/quality/radars/`). Pixels and tail peaks are
+      attributed to the nearest active OPERA radar (radar database now in `OPERA/meta/`).
+      "Consistently bad" = in the worst 10% on the same signal in ≥ 3 of the 4 well-sampled
+      years (2012, 2013, 2023, 2024; 2016 and 2020 have only 5–6 audited days). 7 of 260:
+      - *static hot clutter* (≥ 31 mm/h in > 1% of steps, ~100× climatology): Bollène (FR,
+        S-band) and Montclar (FR), both 4/4 years, plus Abbeville and Cherves (FR);
+      - *dirty tail*: Ängelholm (SE; 132 tail tiles > 500 mm/h), Gelemenovo (BG, S-band; 564
+        pixels ever > 500 mm/h), Røst (NO).
+
+      Just below the threshold (2 of 4 years), but with the most unphysical tiles: Emden and
+      Rostock (DE), De Bilt (NL), Virring and Bornholm (DK), Vara and Karlskrona (SE). So the
+      southern Baltic / Øresund / North Sea coast is a hot spot for > 500 mm/h spikes.
+
+      The map also shows, independently of any radar ranking:
+      - RLAN rays around Iceland, Iberia, southern France and the Balkans;
+      - range rings over southern Scandinavia;
+      - a heavily contaminated region over Romania/Bulgaria;
+      - a single tile at Weissfluhgipfel (CH) that supplies the three largest maxima of all
+        745 days (110,000–123,000 mm/h).
+
+      Caveats: nearest-radar attribution is approximate in dense networks, the ranking is
+      relative, and only 745 of ~4,700 days on disk were audited.
+- [ ] **Recompute the DEM-dependent tile features** (`sea_frac`, `dem_mean`,
+      `argmax_over_sea`, `wet_over_sea_frac`). They were computed on the mirrored DEM, so the
+      `sea_clutter` rule is meaningless on the current feature files; `radar_attribution.py`
+      excludes it. Do this as part of extending the audit to the full archive, which needs
+      quota headroom (`/work` writes of ~20 MB currently fail).
+- [ ] **Read EURADCLIM first** (Overeem et al. 2023, ESSD 15, 1441). KNMI cleaned the *same*
+      OPERA 15-min 2 km rain-rate composite (2013–2020) with a Gabella texture filter, a
+      static-clutter filter on annual totals (`wradlib.clutter.histo_cut`) and a CLAAS-2
+      satellite cloud-type mask (7×7 neighbourhood). It is the closest precedent for our
+      screen, and its authors warn that the remaining outliers limit use "especially for use
+      in extreme value modeling". Details: RESEARCH_NOTES §7.2.
+- [ ] **Check the archive for product breaks.** Independently of the weather, the composite
+      changes at: late 2015 (beam-blockage correction and satellite cloud mask introduced),
+      **2017-09-29 08:52 UTC** (compositing switches from log (dBZ) to linear (Z) averaging),
+      and **2024-07-05** (ODYSSEY → NIMBUS: archive product `QIND_RATE` → `RATE`; confirmed from the archive file names). Radar count also grows
+      over time. Compare tail statistics, wet fraction and flag rates across each break
+      before pooling years. Restricting to after 2017-09-29 still leaves ~8 years.
 - [ ] **Artefact screening.** The patch pool contains a substantial number of patches that
       are not precipitation but bad radar observations. They concentrate at the top of the
       intensity distribution, so *any* selection that ranks on patch max draws them
@@ -302,6 +611,13 @@ isoperimetric scatter.
       field. So the contamination is not confined to the extreme top; it reaches well down
       into the POT range at u=31.
 
+- [ ] **Revisit the > 150 mm/h policy of the v2 datasets** (decided 2026-09-28, provisional).
+      The v2 rebuild no longer zeroes anything. Values up to 500 mm/h (~67 dBZ with
+      Marshall–Palmer, i.e. hail-contaminated cores) are kept as measured, isolated
+      unsupported spikes are corrected at pixel level, and tiles still above 500 mm/h after
+      that are rejected as artefacts. Settle the bound with MCH (RESEARCH_NOTES §7.4), and
+      check how it moves the scaler (`log1p(max)`), the top physical threshold (150) and the
+      tail metrics.
 - [ ] **Everything above 150 mm/h is set to zero, not clipped.** Located:
       `config.yaml: DECLUTTER_THRESHOLD: 150.0` feeding
       `src/data/preprocessing.py::filter_precip_bounds`, whose mask is
@@ -354,8 +670,76 @@ isoperimetric scatter.
       A downloaded composite is ODIM HDF5, grid 2200x1900, projection
       `+proj=laea +lat_0=55 +lon_0=10 +x_0=1950000 +y_0=-2100000 +ellps=WGS84` — the same
       LAEA grid as `europe_dem_laea.tif`, so it drops into the existing preprocessing.
-      ~1 MB per 15-minute composite, so roughly 34 GB/year and ~513 GB for the whole
-      RATE archive; `/work` has 21 TB free, so volume is not the constraint.
+      ~1 MB per 15-minute composite to download. On disk the per-day stores are larger than
+      that (float64, two fields): ~236 MB/day measured on 2012, so ~85 GB/year. `/work` has
+      ~19 TB free, but **the per-user quota is the binding limit**, not the filesystem — see
+      the fetch status entry below.
+
+- [ ] **Finish the archive fetch: 2025-10-23 .. 2026-09-22 still to download.**
+      Status as of 2026-09-28, stopped on the user quota (`OSError: [Errno 122] Disk quota
+      exceeded`, first on 2026-09-25 21:33 and again on a relaunch on 09-28).
+
+      | | days | size |
+      |---|---|---|
+      | fetched, 2012-09-04 .. 2025-10-22 | 4,248 | ~1.1 TB |
+      | original stores (2023-08-01 .. 2024-10-30, no QIND) | 435 | ~114 GB |
+      | **total complete in `raw/OPERA/`** | **4,683** | **1.2 TB** |
+      | **left: 2025-10-23 .. 2026-09-22** | **334** | **~46 GB download, ~60-80 GB on disk** |
+
+      Coverage up to 2025-10-22 is complete: 4,683 of the 4,797 calendar days are on disk and
+      the other 114 have no data in the archive (the planner's count of days with data
+      agrees to within one). Fetched days per year: 2012 46, 2013 338, 2014-2022 every day,
+      2023 214, 2024 82 (both mostly covered by the original stores), 2025 281.
+
+      `raw/OPERA/20251023` is a partial store (no `.zmetadata`) from the failed write; the
+      resume check rewrites it automatically. The remaining range is all in the `RATE` naming
+      era, whose files are larger than the older `QIND_RATE` ones, hence the wide on-disk
+      range.
+
+      Before resuming: free space or get the quota raised (`quota` reports nothing on this
+      node, so ask the admins for the actual limit), and check headroom with a write larger
+      than a few MB — a 50 MB test passed on 09-28 and the fetch still failed 173 MB later.
+      Then relaunch (cores 4-5, 2 workers, per CLAUDE.md):
+
+      ```bash
+      E=/work/fquareng/.micromamba/envs/dl-stable; R=/home/fquareng/work/data/extremes/OPERA/raw
+      LD_LIBRARY_PATH=$E/lib PATH=$E/bin:$PATH OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+      MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 BLOSC_NTHREADS=1 \
+      setsid nohup taskset -c 4,5 $E/bin/python -u scripts/data/fetch_opera_archive.py \
+          --start 2025-10-23 --end 2026-09-22 --out $R/OPERA --reference $R/OPERA/20230801 \
+          --skip_existing --workers 2 > logs/fetch_archive_resume.log 2>&1 &
+      ```
+
+      Invoke the env's python directly as above rather than through `micromamba run`: the
+      wrapper takes a lock, so parallel launches serialise, and python must run with `-u`
+      or the log stays empty behind the output buffer.
+
+- [ ] **The 435 original days were capped at 150 mm/h upstream — being replaced (2026-09-29).**
+      All 435 original stores (2023-08-01 .. 2024-10-30, no QIND) have a maximum ≤ 150 mm/h,
+      while every archive-fetched year has 0.4–2.8% of tiles above it. The pipeline that
+      produced them had already applied the 150 mm/h declutter step. On 2024-06-01 the
+      archive refetch holds 6,418 pixels above 150 mm/h that the original lacks, while agreeing
+      100% below 149 mm/h (footprint IoU 0.9999).
+      The first v2 build (2026-09-28/29) was therefore inhomogeneous — capped tail on ~10% of
+      its days — and was discarded before its gamma targets finished (report kept in
+      `logs/dataset_v2_report_capped_20260929.md`).
+      `scripts/dataset_v2/refetch_and_rebuild.sh` does the replacement:
+      1. refetches the range into staging;
+      2. verifies each day against its original (`verify_refetch.py`: complete, QIND,
+         ≥ 90% of time steps, footprint IoU ≥ 0.9, ≥ 95% agreement below 149 mm/h);
+      3. swaps and deletes only the passing originals, and stops if < 95% pass;
+      4. recomputes the climatology, rescans 2023–24 and rebuilds v2.
+
+      Archive files can also contain `inf`; the scan treats a tile with any non-finite pixel
+      as not covered. **This also completes the QIND item below.**
+- [ ] **Add QIND to the original 435 days (2023-08-01 .. 2024-10-30).** Those stores in
+      `raw/OPERA/` predate the archive fetcher and hold `TOT_PREC` only; every other day has
+      `QIND` beside it. The full-archive fetch ran with `--skip_existing`, so it left them
+      untouched — deliberately, since they are the source of the current patch set. To fill
+      the gap without disturbing them, refetch that range into a separate directory, e.g.
+      `fetch_opera_archive.py --start 2023-08-01 --end 2024-10-30 --out raw/OPERA_qind ...`,
+      check that its `TOT_PREC` matches the originals, then copy only the `QIND` arrays across
+      (and re-consolidate metadata). Pin to cores 4-11 (CLAUDE.md), 2 cores for the fetcher.
 
 - [ ] **What the raw source actually contains** (measured on the fetched 2018-06-15, 96
       composites). The archive is far dirtier than the patch set suggests, because the
@@ -367,7 +751,13 @@ isoperimetric scatter.
       explicit outlier policy; there is no threshold-free version of this dataset.
 
 - [ ] **Use the OPERA quality index for artefact screening — it is already in the files,
-      but it is not sufficient on its own.**
+      but it is not sufficient on its own.** *What it measures* (RESEARCH_NOTES §7.1): a
+      total quality index from IMGW's RADVOL-QC / BALTRAD `qi_total`. It is the product of
+      individual indices for technical radar parameters, range, beam height, blockage,
+      attenuation and QC detections, and in ODYSSEY it weights each radar's contribution to
+      the composite. So it is an a-priori, mostly geometric *reliability* score, **not** a
+      detector of non-meteorological echoes, and it is not harmonised across countries. Use
+      it as a covariate or soft weight, not as the screen.
       Each composite carries a companion quality field (`pl.imgw.quality.qi_total`, values in
       [0,1]; a separate `QIND` dataset in the archive products). On the test composite it
       separates the way the artefact hypothesis predicts on the 2026 live composite: 21.0% of
@@ -409,8 +799,52 @@ isoperimetric scatter.
 - [ ] **Audit suite in place** (`scripts/data_quality/`, 2026-09-23). A 5-day smoke test
       already shows the any-flag rate rising with raw max (14% at 1–10 mm/h → 69% at 89–150
       → 100% above 150), 2012 much dirtier than 2024, and static-clutter pixels that exceed
-      31 mm/h in 35% of time steps. Next: run it on the full archive, then label ~300 tail
-      tiles and calibrate the rules.
+      31 mm/h in 35% of time steps. Next: run it on the full archive. **No labelled set**
+      (DECISIONS §17). Instead, tune the rules towards clear errors only, report each rule's
+      rejection rate per intensity bin, and spot-check each rule's gallery by eye.
+
+### To explore
+- [ ] **Temporal consistency of the downscaled fields** (ties in with another project of the
+      researcher; details to add).
+      - *Why it's open:* every model downscales each 15-min frame independently, with no
+        temporal input. So nothing makes consecutive outputs consistent. For flow matching,
+        independent noise per frame should make it worse (flicker in cell position and peak
+        intensity).
+      - *Data:* consecutive frames exist only where nothing is subsampled. `events_test`
+        (and `events_nimbus`) keep every 15-min tile of every event, so they give full
+        sequences. For more, add a `sequences` subset: whole test days, every frame, for
+        chosen tiles.
+      - *Metrics:*
+        1. +15 min correlation of the prediction vs the observation, raw and
+           motion-compensated, at 2 / 8 / 32 km. The same tool was started for the
+           ODYSSEY/NIMBUS persistence check.
+        2. Advect prediction(t) by the observed motion to t+15 and compare it with
+           prediction(t+15).
+        3. Accumulation consistency: the sum of 4 × 15-min predictions vs the observed 1-h
+           total, which also connects to the rate-vs-accumulation question for extremes
+           (RESEARCH_NOTES §7.4).
+        4. Temporal spectra, and time series of the Minkowski functionals: area, perimeter
+           and χ should evolve smoothly for a real storm.
+        5. Frame-to-frame jitter of the peak location and value.
+      - *Reference levels:* observed persistence is product-dependent (paired days: ODYSSEY
+        0.41, NIMBUS 0.26 at +15 min), so compare each model with its own product's
+        observations.
+      - *Possible remedies to test afterwards:* temporally correlated or shared noise across
+        frames for FM, conditioning on the previous frame or output, a temporal loss term.
+- [ ] **Can regimes be recognised from the low-res input alone?** Compute the Minkowski
+      functionals analytically on the coarse input (plus coarse intensity, wet fraction, DEM)
+      and test whether they separate precipitation regimes, without using the high-res field
+      as input. Score against target-derived regimes (Steiner convective fraction,
+      organisation indices, γ of the target) or MeteoSwiss GWT weather types, used as
+      evaluation truth only. Watch the 10×10 coarse patch: γ may need a wider coarse context.
+- [ ] **If not, from the predicted Minkowski functionals?** Classify on γ of the model's
+      prediction, γ(ŷ). It is also available at inference, but circular: the model could move
+      a sample into an easier regime, so use a frozen, detached classifier and check against
+      target-derived regimes. Plan and interpretation of the three outcomes: RESEARCH_NOTES
+      §4 "To explore".
+- [ ] **Reading on precipitation systems as seen on radar**: RESEARCH_NOTES §8 (textbooks,
+      conceptual models, European climatologies, orographic, rain-field geometry, weather
+      types).
 
 ### Data hygiene
 - [x] Rerun bicubic and `FM + Minkowski reward` at u=31 (done in the 09-16 re-eval).
@@ -443,8 +877,12 @@ question and the regime design are developed in `RESEARCH_NOTES.md`.
 Understand what the enlarged archive (2012 →) contains and what it can support, **before**
 any retraining. Details to come. The tooling for the quality part exists
 (`scripts/data_quality/`).
-- Artefact screening policy: pixel masking vs tile rejection, the declutter rule, the
-  static-clutter mask, the role of QIND. Calibrate against a labelled set.
+- Artefact screening policy: **reject clear errors only, keep imperfections, no labelled
+  set** (DECISIONS §17). Still to fix: the rule set and thresholds, pixel masking vs tile
+  rejection, the declutter rule, the static-clutter mask, and QIND as a covariate (not a
+  screen). Talk to MCH (Nerini, Moret) first. EURADCLIM is the precedent (RESEARCH_NOTES §7).
+- Product breaks in the archive (late 2015, 2017-09-29, 2024-07-05 ODYSSEY→NIMBUS): check homogeneity before
+  pooling years.
 - Rebuild the patch set with a quality column stored per patch, so a screen can change
   without a rebuild, and with **event-blocked splits**.
 - The descriptive analysis M2 and M5 need: tail statistics, how γ curves of extreme events
@@ -466,6 +904,9 @@ its predicted Minkowski functionals, and make the structural loss regime-aware.
 - Start from what ECMWF does. ecPoint's gridbox weather types are the closest analogue
   (RESEARCH_NOTES §4).
 - Needs a regime definition first. That is open work.
+- First exploration: whether regimes are recognisable from the low-res input and its
+  analytic Minkowski functionals alone, and if not, from γ of the prediction
+  (RESEARCH_NOTES §4 "To explore"). Reading list: RESEARCH_NOTES §8.
 - *Needs:* M1 (regime statistics on clean data).
 
 ### M4. Fix the four competing losses, for the deterministic and FM models

@@ -2,6 +2,8 @@
 
 Working notes, started 2026-09-23. `EXPERIMENTS.md` §6 lists the macro steps (M1–M5); this
 file develops the ideas behind M2, M3 and M5, and the Study-1 weighting question of M4.
+§7 covers radar data quality for M1 (what QIND measures, how agencies clean radar data), and
+§8 is a reading list on precipitation systems as seen on radar.
 Items marked **Decision** are open choices for the researcher, not settled.
 
 ---
@@ -196,6 +198,41 @@ regime-aware. The regime definition is open work. The starting point is what ECM
   ratio or the γ residual of a baseline. Keep the tree shallow. This makes "regime" mean
   "a different sub-grid geometry", which is what the loss needs to know.
 
+### To explore: regimes from what is available at inference
+
+A regime label is only usable at inference if it comes from what the model sees. Two routes,
+in order of preference. Neither uses the high-res field as an input.
+
+**Route 1: the low-res input and its analytic Minkowski functionals.** Compute γ(u) (area,
+perimeter, χ) analytically on the coarse input, together with coarse intensity statistics,
+wet fraction and DEM descriptors, and ask whether they separate regimes. They are available at
+inference, cost nothing, and are free of circularity.
+- *Truth for evaluation only:* regimes derived from the 2 km target — Steiner convective
+  fraction, organisation indices, γ of the target, or an external label (MeteoSwiss GWT weather
+  types, §8.7). The target is used to *score* the classifier, never as its input.
+- *Question:* how much regime information survives the 12.5× coarsening? Which regimes stay
+  separable (stratiform vs convective vs orographic vs linear/frontal), and which collapse
+  together? Does γ(LR) add anything beyond plain coarse intensity and wet-fraction statistics?
+- *Practical limit:* the coarse patch is only 10×10 pixels, so γ curves on it are very coarse.
+  Consider a larger coarse context (the neighbouring tiles), as ecPoint uses the whole gridbox
+  neighbourhood.
+
+**Route 2: the analytic Minkowski functionals of the prediction, γ(ŷ).** If Route 1 is too
+weak, classify on γ of the model's own super-resolved output, which is also available at
+inference.
+- *Caveat:* circularity (option (d) above). A regime taken from the prediction lets the model
+  move a sample into an easier regime. Use a frozen classifier, detach the regime from the
+  graph, and check γ(ŷ)-regimes against target-derived regimes.
+- The learned emulator's predicted γ is a third variant, but the emulator is lowest priority
+  (DECISIONS §14).
+
+**What would make this worth doing.** If Route 1 separates regimes well, the input carries
+the regime, and a regime-conditioned loss or input (options (a)–(c)) is well posed. If only
+Route 2 works, regime-awareness has to be built into the loop, with the circularity controls
+above. If neither works, regimes are not recoverable at 25 km, and that is a result for M5
+(the geometry is not visible from the coarse field).
+
+
 ---
 
 ## 5. Study 1 weighting: homoscedastic, Optuna, or calibrated bracket? (M4)
@@ -237,9 +274,518 @@ Full reasoning is in DECISIONS §16. In short:
    M1 counts.
 3. Fixed physical thresholds or sample-relative thresholds in the loss (§1).
 4. Regime definition and integration: options (a)–(d) (§4). Whether to bring in ERA5.
-5. Screening policy: pixel masking or tile rejection, and the declutter rule (M1,
-   `scripts/data_quality/`).
-6. Which archive years to use (the 2012 data is much dirtier than 2024 in the first audit).
+5. Screening policy: **decided in principle** (DECISIONS §17: reject clear errors only,
+   keep imperfections, no labelled set). Still open: the rule set and thresholds, pixel
+   masking vs tile rejection, the declutter rule. Discuss with MCH first (§7.4).
+6. Which archive years to use. The 2012 data is much dirtier than 2024 in the first audit,
+   and the archive has product breaks (late 2015, 2017-09-29, 2024-07-05; §7.2). Restricting to
+   after a break trades volume for homogeneity. After 2017-09-29 still leaves ~8 years of
+   15-min data.
+
+---
+
+## 7. Radar data quality: what QIND measures, and how agencies clean radar data (M1)
+
+### 7.1 What QIND is
+
+`QIND` is OPERA's per-pixel **total quality index**, in [0, 1] (0 = unusable, 1 = perfect),
+delivered with each composite. The ODIM task name in our files, `pl.imgw.quality.qi_total`,
+identifies the implementation: IMGW's (Polish met service) `qi_total` module in the BALTRAD
+toolbox, from the RADVOL-QC system.
+
+**How it is built** (Szturc et al. 2011; Ośródka et al. 2014, 2022):
+- Pick the significant *quality factors*: technical radar parameters (frequency, beam width,
+  sensitivity, calibration date), distance to radar / beam broadening, beam height, beam
+  blockage, attenuation in rain, and the detections of the QC algorithms (non-meteorological
+  echoes from the sun and other emitters, specks, ground clutter).
+- Map each factor to an individual index QIᵢ ∈ [0, 1].
+- Combine: in RADVOL-QC "after the whole quality control chain the final total QI is
+  determined using a multiplicative formula".
+
+**How the composite uses it.** In the ODYSSEY rain-rate composite, "each composite pixel is a
+weighted average of the valid pixels of the contributing radars, weighted by a quality index,
+the distance from center of the pixel and an exponential index related to inverse of the beam
+altitude" (Saltikoff et al. 2019). NIMBUS, the BALTRAD-based production line replacing
+ODYSSEY for rain rate (von Lerber et al., EMS 2023), composites from the lowest elevation
+only. In the archive the switch is visible as the product rename `QIND_RATE` → `RATE` on
+**2024-07-05** (the first hours of that day are still `QIND_RATE`). The NIMBUS file is a
+single-time `PPI` at the nominal time, while the ODYSSEY file covers a 15-min window (e.g.
+11:50–12:05). Both sit on the same 2 km grid.
+
+**What it is not.** QI is mostly an *a priori, geometry-driven reliability* of the measurement
+setup at that pixel (range, beam height, blockage, radar hardware), plus flags from the QC
+algorithms that ran. It is **not a detector of whether an echo is meteorological**. A clutter
+spike close to a radar with good geometry can score well. That is what we measured:
+- on the 2026 live composite, pixels ≥ 31 mm/h were twice as often below QI 0.8 (41.7% vs 21.0%);
+- on 2018-06-15T16:30, pixels > 500 mm/h had mean QI 0.267 against 0.282 overall — no signal;
+- `QIND` is defined on only ~7–11% of pixels, against ~43–50% for the rate (cause unknown).
+
+Also, QIs are **not harmonised across services** (Einfalt et al. 2010, "a tower of Babel?"),
+and the factor set and combination rule actually used in OPERA production are not in the
+papers accessible here. **Use QIND as a covariate or a soft reliability weight** (e.g. to
+down-weight far-range / blocked areas), and as one feature among several in the audit. **Do
+not use it as the artefact screen.**
+
+### 7.2 The standard cleaning chain at meteorological agencies
+
+Most of the chain runs on **single-radar volume data, before compositing**, so we inherit it
+rather than re-run it. Only the composite-level steps are ours to add.
+
+| # | step | removes / corrects | who (examples) | usable on our composite? |
+|---|---|---|---|---|
+| 1 | Doppler / static clutter filtering, clutter maps | ground clutter, anomalous propagation | MeteoSwiss (Germann et al. 2006, 2022), Met Office Nimrod (Harrison et al. 2000), Météo-France (Tabary 2007) | already applied upstream; **residual static clutter: yes**, from long-term statistics |
+| 2 | Texture / gradient / echo-geometry tests | isolated clutter, speckle | Gabella & Notarpietro 2002 (in wradlib); Steiner & Smith 2002; Lakshmanan et al. 2007 (neural net) | **yes** (EURADCLIM applies the Gabella filter to the OPERA composite) |
+| 3 | Emitter / RLAN / sun-spike removal | radial rays, rings, spokes | BALTRAD bRopo (FMI, Peura 2002); RADVOL-QC SPIKE (Ośródka & Szturc 2022); problem: Saltikoff et al. 2016 | **yes**, by geometry (straight radial lines centred on a radar site) |
+| 4 | Polarimetric non-met classification | wind turbines, chaff, biology | Ośródka & Szturc 2022 (DP.TURBINE, DP.NMET); Figueras i Ventura & Tabary 2012 | no (needs the volume data); only its residue is visible |
+| 5 | Beam-blockage / visibility correction | underestimation behind mountains | MeteoSwiss visibility maps; BALTRAD `beamb`; OPERA since late 2015 | no. Treat as a kept imperfection |
+| 6 | Attenuation correction (C-band) | underestimation behind strong cells | RADVOL-QC; polarimetric (ΦDP) at MeteoSwiss / Météo-France | no. Kept imperfection, but note it biases the tail |
+| 7 | Vertical-profile (VPR) correction, bright band | range-dependent over/underestimation | MeteoSwiss, Météo-France, Met Office | no |
+| 8 | Calibration monitoring (sun, cross-radar) | radar-wide biases | all services | partially: radar-wide jumps in time are detectable |
+| 9 | Z–R conversion | — | OPERA: Marshall–Palmer (EURADCLIM: Z = 200 R^1.6) | fixed. Explains why rates are not gauge-accurate |
+| 10 | Quality-based compositing | seams, overlap conflicts | Jurczyk et al. 2020; ODYSSEY / NIMBUS | done upstream |
+| 11 | **Satellite cloud mask** | rain under clear sky | OPERA since late 2015; **EURADCLIM**: CLAAS-2 (CM SAF, SEVIRI), 7×7-pixel neighbourhood, zero rain if all neighbours are cloud-free or thin cirrus | **yes**, if we add the satellite data |
+| 12 | Long-term static-clutter detection | hot pixels | EURADCLIM: `wradlib.clutter.histo_cut` on annual totals (50-class histogram, classes < 5% of the mode, iterated) | **yes**; our `clutter_climatology.py` is the analogue |
+| 13 | Availability rules | gaps, outages | EURADCLIM: ≥ 83.3% data availability per cell | **yes** |
+| 14 | Gauge adjustment | amplitude bias | CombiPrecip (MeteoSwiss), RADOLAN / RADKLIM (DWD), EURADCLIM, Park et al. 2019 | out of scope for 15-min SR; relevant for evaluation against gauges |
+| 15 | Climatological reprocessing | spokes, clutter, offline | RADKLIM (DWD; Kreklow et al. 2020) | model for a "climate version" of our set |
+
+**The single most relevant precedent is EURADCLIM** (Overeem et al. 2023): KNMI cleaned the
+*same* OPERA 15-min, 2 km rain-rate composite (2013–2020) with steps 2, 11 and 12, then
+gauge-adjusted it. Their own caveats map onto our problem directly:
+- non-meteorological echoes "can still be persistent for some areas";
+- radar-wide failures produce "very high rates caused by a constant signal source";
+- interference rings and radial patterns remain;
+- outliers "limit the applicability of EURADCLIM at the grid cell scale, especially for use in
+  extreme value modeling" — i.e. exactly the regime this project works in.
+
+**Product breaks inside the archive** (these make the archive non-stationary, independently of
+the weather):
+- **late 2015**: OPERA adds beam-blockage correction and a satellite cloud mask;
+- **2017-09-29 08:52 UTC**: compositing switches from logarithmic (dBZ) to linear (Z)
+  range-weighted averaging (from EURADCLIM);
+- **2024-07-05**: ODYSSEY → NIMBUS (`QIND_RATE` → `RATE`; lowest elevation, instantaneous);
+- plus a steadily growing radar count (~138 on average in 2013–2020).
+
+Checking the tail statistics across each break is part of M1, and the break dates are natural
+candidates for the "which years" decision (§6).
+
+### 7.3 What this means for us: clear errors out, imperfections kept
+
+The screening policy is in DECISIONS §17. It rejects **clear errors** only, and keeps
+imperfections so the model learns to be robust to them.
+
+- **Clear errors**: signatures that are non-meteorological by construction:
+  - residual static clutter (step 12);
+  - emitter rays and rings (step 3);
+  - isolated spikes far above their neighbourhood (step 2);
+  - physically impossible rates (we have seen 13,072 and 64,842 mm/h);
+  - radar-wide constant-signal failures;
+  - single-frame appearances with no precursor or successor (15-min continuity);
+  - rain under a clear sky (step 11, if satellite data is added);
+  - tiles dominated by nodata.
+- **Kept imperfections**: blockage and range underestimation, attenuation shadows, compositing
+  seams, drizzle speckle, mild residual clutter.
+
+The hard part is that **real extremes are also "anomalous"**: steep gradients, small intense
+cores, fast evolution. A rule that fires on "unusual intensity structure" will remove real
+storms preferentially, and bias exactly the tail the study is about. So prefer rules keyed on
+geometry, persistence and physical impossibility over rules keyed on intensity alone. Always
+report rejection rates per intensity bin.
+
+### 7.4 To discuss at MCH (Daniele Nerini, Lionel Moret)
+
+Best practice at MeteoSwiss before fixing the screen:
+- Which composite-level filters does MCH trust for OPERA data (Gabella-type, static-clutter
+  maps, satellite masks), and with what thresholds?
+- Does MCH use the OPERA QI at all, and how? Is QIND comparable across countries and years?
+- How does MCH separate real small intense cores from clutter spikes without volume data?
+  What is a defensible upper plausibility bound for a 15-min, 2 km rate?
+- Is there a reference over Switzerland (CombiPrecip, the Swiss composite) against which to
+  validate the screened OPERA tail?
+- Practice for ML training sets in the pysteps / nowcasting community: tile rejection vs
+  pixel masking, and the handling of the product breaks above.
+- Whether our declutter-zeroing (EXPERIMENTS §5) has an MCH analogue, and what they do
+  above their plausibility bound.
+
+**The extreme threshold (u = 31 mm/h).** Background: 31 is one point of the loss's
+log-spaced grid (DECISIONS §1). It serves as the POT level of every tail metric "for
+estimability, not physics" (DECISIONS §10). It also sets the FSS levels, the v2 `extremes`
+subset, the tail stratum and the clutter hot-pixel rule. Warning signs:
+- ξ_obs flips sign between 31 (+0.18) and 53 (−0.19);
+- no threshold diagnostics were ever run;
+- the fitted data were capped and artefact-laden;
+- exceedances were not declustered.
+
+To ask:
+- How does MCH define intense / extreme precipitation for **radar rates** at 2 km and
+  5–15 min, as opposed to the accumulation-based warning levels? Is a fixed instantaneous
+  31 mm/h meaningful, or should the level be regional and seasonal (E3, §2) — or even
+  product-specific, given that NIMBUS has 1.44× more pixels ≥ 31 mm/h than ODYSSEY on the
+  same days?
+- **Rate or accumulation?** Is the instantaneous 15-min rate the right quantity for
+  extremes, or should the tail be defined on 1-h accumulations (impact-relevant, comparable
+  with gauges)? 15-min snapshots miss short peaks (Valencia: 28.6 mm/h radar pixel vs
+  184.6 mm/h gauge-hour).
+- **POT practice:**
+  - threshold selection (mean-residual-life, parameter-stability plots);
+  - declustering of radar exceedances in space and time;
+  - fitting at pixel level or on event maxima;
+  - how MCH reports return levels from radar.
+- **Radar biases in the tail:** how Z–R conversion and hail contamination (above ~55 dBZ)
+  shape the rates above 31 mm/h, and whether a hail cap should apply before any tail
+  statistic.
+
+**Testing out-of-distribution capability** (for Lionel Moret, 2026-10-02). What v2 has
+today is not o.o.d.:
+- the week-blocked test set is independent of train, but drawn from the same climate,
+  product and regions;
+- the event set (`notes/events.md`) is curated known extremes whose types all occur in
+  training;
+- `nimbus` is a product shift, but it moves the target distribution itself (NIMBUS has
+  1.44× more pixels ≥ 31 mm/h on the same days), so it needs a same-product reference
+  (DECISIONS §18).
+
+Options, each a different notion of "unseen", built on the v2 week-blocked splits:
+
+| | Shift | How to build it | What it tests | Main confound |
+|---|---|---|---|---|
+| O1 | **Intensity cut-off** (E1, §2; M2) | remove from training every space–time block (day × tile neighbourhood) whose cleaned max ≥ u_c; those blocks are the test. u_c in mm/h or as a local quantile (E3) | extrapolation beyond the training range: the central hypothesis H3 | the radar tail itself (hail, Z–R, artefacts) above u_c |
+| O2 | **Held-out storm type** (E2) | leave one type out: derechos, supercells/hail, Mediterranean HPE, stationary lows. Needs labels beyond the 26 catalogued events (object-based classification, or a weather-type catalogue) | transfer of geometry across regimes, a stress test | labels; types overlap |
+| O3 | **Held-out region** | train without a region, test on it: e.g. the Alps (orography), the Mediterranean coast, or Switzerland as a whole | spatial transfer, orographic forcing | each region has its own national radar network and processing |
+| O4 | **Held-out period** | train on 2012–2021, test on 2022–2024 (ODYSSEY) | non-stationarity, climate trend | the 2015 and 2017 product breaks and the growing radar count |
+| O5 | **Product / sensor shift** | NIMBUS (built), the national composites (CombiPrecip, the Swiss composite) | robustness to how the observation is made | the reference moves with the product |
+| O6 | **Input-source shift** | coarse input from NWP (ICON-CH1/2) or a climate model instead of coarsened radar | the realistic deployment (perfect-prog) | no km-scale truth: statistical evaluation only |
+| O7 | **Graded "how unseen"** (§3, Q5) | not a split: distance from each test event to its nearest training analogue (γ space or coarse-input space); skill against distance | a continuous version of every option above | needs an analogue metric |
+
+Proposed core: **O1 as the primary experiment** (it is the hypothesis), **O7 reported on every
+test set**, NIMBUS (O5) kept as the robustness row it already is. O2 as a stress test if
+labels can be had. O3/O4/O6 only if MCH sees them as the operationally relevant shift.
+Whatever the option, report the i.i.d. → o.o.d. *degradation* per model (§2), and how o.o.d.
+the input is as well as the target.
+
+To ask:
+- Which shift matters operationally to MCH for downscaling: unprecedented intensities, Alpine
+  orography, new radars or products, future climate, or NWP inputs?
+- **O1:** above which rate does the radar tail stop being trustworthy enough to be a test
+  target (hail, attenuation, Z–R)? Should the cut be on 15-min rates or 1-h accumulations,
+  and in mm/h or relative to local climate?
+- **O3:** is a held-out region meaningful when every country has its own network? Would
+  **Switzerland held out** work, with CombiPrecip and the gauges as an independent truth?
+- **O2:** does MCH have an event catalogue or classification (e.g. TRT cell tracks, POH/MESHS
+  hail, lightning) that could label storm types across the archive?
+- **Independent truth for o.o.d. events:** CombiPrecip, gauges, hail (POH/MESHS), lightning.
+  Which can MCH share, and for which period?
+- **O6:** interest in applying the model to ICON-CH1/2 or to climate projections, and what
+  evaluation MCH would accept without km-scale truth.
+- How does MCH evaluate its own ML nowcasting on unseen extremes?
+
+### 7.4b Proposed cleaning plan for an extremes study (proposal, 2026-09-28 — not decided)
+
+Premise, from the audit: the flag rate rises with intensity, and the very top of the
+distribution is almost entirely artefact. So the screen matters most exactly where it is most
+likely to delete real storms. Work from the most certain signatures to the least certain.
+Prefer fixing pixels over dropping tiles when the artefact is point-like.
+
+1. **Fix the DEM orientation first** (EXPERIMENTS §5). It is a bug, not a screening choice.
+2. **Missing, not zero.** Anything removed becomes NaN, with a valid-pixel mask in the loss,
+   never 0. Zeroing is what makes the current declutter step punch holes in real storms.
+3. **Static masks, per product period.** Mask pixels that reach ≥ 31 mm/h in > 1% of steps
+   (~100× climatology), computed separately per period (clutter changes, e.g. around 2016
+   and 2023). This is pixel-level and time-invariant, and removes e.g. the Weissfluhgipfel
+   tile that supplies the three largest maxima.
+4. **Geometry, using the radar sites.** RLAN rays are straight lines *through a radar
+   site*, and rings are circles *around* one. With the OPERA database, a thin elongated
+   component aligned with the direction to its nearest radar is a near-certain ray. Reject
+   the tile for rays, rings and radar-wide failures, since these are extended artefacts.
+5. **Spatial support.** A real 2 km core spans several pixels. A pixel ≫ its neighbourhood
+   with no support is masked as a pixel, and the storm around it is kept.
+6. **Temporal support.** A cell with no precursor or successor within advection distance at
+   t ± 15 min is suspect. It has high precision for spikes, but check its rejection rate
+   against intensity, because short-lived convection exists.
+7. **Physical plausibility bound** on the 15-min, 2 km rate, after masking (3–6). Set it with
+   MCH (§7.4), not by us. Anything above it is an artefact by definition.
+8. **Per-radar, per-period exclusion or down-weighting** for the consistently bad sites
+   (EXPERIMENTS §5), where 3–7 do not already clean them.
+9. **QIND** as a soft weight or covariate only (§7.1).
+10. **Validate the surviving tail against independent evidence**, not against the rules
+    themselves:
+    - rejection rate per intensity bin, per rule;
+    - lightning co-occurrence for convective extremes;
+    - gauge extremes (ECA&D, as EURADCLIM does) and the Swiss reference (CombiPrecip);
+    - a by-eye pass over the top of the surviving tail (`patch_gallery.py --select top_max`).
+11. **Then define "extreme" on the screened data**, regionally (E3, §2), so that
+    artefact-prone regions do not define the tail. Build the o.o.d. split on it.
+
+### 7.4c Status of the radar post-processing, and whether to release it (2026-10-02)
+
+**Implemented** (`src/data/cleaning.py`, `tests/test_cleaning.py`, used identically by the
+scan and the store build), against the 7.4b plan:
+
+| 7.4b step | Status |
+|---|---|
+| 1. DEM orientation | fixed (2026-09-28) |
+| 2. Missing, not zero | partly: repaired pixels take their neighbourhood's value and nothing is zeroed above 150 mm/h, but removal is still by *tile*, and partially covered tiles are still excluded (`notes/events.md` §5) |
+| 3. Static masks per period | done, per calendar year, over the complete archive (≥ 31 mm/h in > 1% of steps → neighbourhood median) |
+| 4. Geometry | rays done (thin components ≥ 80 km aligned with a radar within 250 km); range rings detected climatologically (audit flag, 2026-10-02); radar-wide failures not done |
+| 5. Spatial support | done (spike repair) |
+| 6. Temporal support | audit flag (2026-10-02), pending gauge validation |
+| 7. Plausibility bound | provisional 500 mm/h, not yet set with MCH |
+| 8. Per-radar, per-period exclusion | candidate list over the whole archive (2026-10-02), pending gauge validation |
+| 9. QIND as a weight | under test: scale differs between ODYSSEY and NIMBUS; AUC against gauges pending |
+| 10. Validation against independent evidence | **in progress**: DWD + SwissMetNet 10-min gauges (EXPERIMENTS §5) |
+| 11. Regional definition of "extreme" | not done |
+
+Also done: the product-break analysis (DECISIONS §18, `era_gap.py`), rejection rates per
+intensity bin in every build report, and a reproducible pipeline from the public archive
+(fetch → climatology → scan → splits → store → checks).
+
+Rejection is now light: 0.2–0.4% of tiles in every bin from 1 to 500 mm/h, 40% above 500.
+The early audit had found the top of the tail mostly artefact. So whether the 150–500 mm/h
+range that v2 keeps is mostly real is **not known**. That is step 10, and it is the gap
+between "a cleaning we use" and "a product others can trust".
+
+**Is a shareable product worth it?** It depends on which product.
+
+- *A reprocessed OPERA rate archive* (cleaned 15-min fields, 2012–2026). The closest
+  precedent is EURADCLIM (KNMI; Overeem et al. 2023): the same composite, cleaned and
+  gauge-adjusted, but distributed as 1-h and 24-h accumulations for 2013–2020 (check whether
+  a later version extends it). Ours would differ by keeping the 15-min instantaneous rates and
+  an uncapped tail, and by spanning both products. But a credible archive product needs
+  Europe-wide validation against gauges, the missing rules (6, 8, rings), and hosting for
+  ~1.3 TB. **Not worth it alone**, unless KNMI or MCH want to co-own it.
+- *An ML benchmark for km-scale downscaling of extremes over Europe*: the v2 family as it
+  stands (leak-free week-blocked splits, the event set, the NIMBUS product-shift set,
+  per-tile quality flags, per-year clutter masks), plus the code that regenerates it from the
+  public archive and baseline scores. Existing radar ML datasets are national (MeteoNet,
+  RainNet/RADOLAN, the US SEVIR) or OPERA crops built for nowcasting (Weather4cast). None
+  combines Europe-wide coverage, an extremes focus, event- and product-shift test sets, and
+  leak-free splits. **Worth it**: most of the work is already on the thesis path (step 10 is
+  needed for M1/M2 anyway, and the baselines are the thesis models). The release-specific
+  part (licence check of the OPERA open-data terms, a datasheet, DOI and hosting of the
+  metadata, masks and code, plus the patches or a regeneration script, a short data paper)
+  is roughly a few weeks. Venues: ESSD, or a datasets-and-benchmarks track.
+
+Minimum before releasing anything: step 10 on at least Switzerland (CombiPrecip, gauges)
+and a gallery pass over the top of the tail; rule 6 (temporal support); the 2013 events and
+the partial-coverage fix (`notes/events.md`); and a decision with MCH on the plausibility
+bound. Worth raising with Daniele and Lionel: whether MCH would validate the Swiss part, or
+co-author.
+
+### 7.5 References for §7
+
+Verified 2026-09-28 by search (authors, year, venue). † = from memory, re-verify before citing.
+
+OPERA and the quality index
+- Szturc, J., Ośródka, K. & Jurczyk, A. (2011). Quality index scheme for quantitative
+  uncertainty characterization of radar-based precipitation. *Meteorol. Appl.* 18.
+  doi:10.1002/met.230
+- Ośródka, K., Szturc, J. & Jurczyk, A. (2014). Chain of data quality algorithms for 3-D
+  single-polarization radar reflectivity (RADVOL-QC system). *Meteorol. Appl.* 21.
+  doi:10.1002/met.1323
+- Ośródka, K. & Szturc, J. (2022). Improvement in algorithms for quality control of weather
+  radar data (RADVOL-QC system). *Atmos. Meas. Tech.* 15, 261–277. doi:10.5194/amt-15-261-2022
+- Jurczyk, A., Szturc, J. & Ośródka, K. (2020). Quality-based compositing of weather radar
+  derived precipitation. *Meteorol. Appl.* 27. doi:10.1002/met.1812
+- Einfalt, T. et al. (2010). The quality index for radar precipitation data: a tower of Babel?
+  *Atmos. Sci. Lett.* 11. doi:10.1002/asl.271
+- Huuskonen, A., Saltikoff, E. & Holleman, I. (2014). The operational weather radar network in
+  Europe. *BAMS* 95, 897–907. doi:10.1175/BAMS-D-12-00216.1
+- Saltikoff, E. et al. (2019). OPERA the radar project. *Atmosphere* 10, 320.
+  doi:10.3390/atmos10060320
+- von Lerber, A. et al. (2023). OPERA5 production lines (NIMBUS). EMS Annual Meeting abstract
+  EMS2023-325. (conference abstract, not peer-reviewed)
+- BALTRAD bRopo documentation (FMI anomaly detection; after Peura 2002, ERAD).
+  http://git.baltrad.eu/manual/bropo/index.html
+
+Cleaning of the OPERA composite and European climate datasets
+- **Overeem, A. et al. (2023). EURADCLIM: the European climatological high-resolution
+  gauge-adjusted radar precipitation dataset. *ESSD* 15, 1441.**
+  doi:10.5194/essd-15-1441-2023 — read first.
+- Park, S., Berenguer, M. & Sempere-Torres, D. (2019). Long-term analysis of gauge-adjusted
+  radar rainfall accumulations at European scale. *J. Hydrol.* 573, 768–777. arXiv:1904.02788
+- Lopez, P. (2014). Comparison of ODYSSEY precipitation composites to SYNOP rain gauges and
+  ECMWF model. ECMWF Tech. Memo. 717. (ECMWF grey literature: documents RLAN interference and
+  S-band biases in the composites)
+- Kreklow, J. et al. (2020). Radar-based precipitation climatology in Germany — developments,
+  uncertainties and potentials. *Atmosphere* 11, 217. (RADKLIM) †co-authors
+- Overeem, A., Holleman, I. & Buishand, A. (2009). Derivation of a 10-year radar-based
+  climatology of rainfall. *J. Appl. Meteor. Climatol.* 48. †
+
+National services
+- Germann, U., Galli, G., Boscacci, M. & Bolliger, M. (2006). Radar precipitation measurement
+  in a mountainous region. *QJRMS* 132, 1669–1692. doi:10.1256/qj.05.190 (MeteoSwiss)
+- Germann, U. et al. (2022). Weather radar in complex orography. *Remote Sens.* 14, 503.
+  doi:10.3390/rs14030503 (MeteoSwiss; review of the whole Swiss chain)
+- Tabary, P. (2007). The new French operational radar rainfall product. Part I: Methodology.
+  *Wea. Forecasting* 22, 393–408 †; Tabary, P. et al. (2007). Part II: Validation. *Wea.
+  Forecasting* 22, 409–427. (Météo-France)
+- Figueras i Ventura, J. & Tabary, P. (2012). Long-term monitoring of French polarimetric radar
+  data quality... *QJRMS*. doi:10.1002/qj.1934
+- Harrison, D., Driscoll, S. & Kitchen, M. (2000). Improving precipitation estimates from
+  weather radar using quality control and correction techniques. *Meteorol. Appl.* 7, 135–144.
+  doi:10.1017/S1350482700001468 (Met Office Nimrod)
+
+General reviews and methods
+- Villarini, G. & Krajewski, W. F. (2010). Review of the different sources of uncertainty in
+  single polarization radar-based estimates of rainfall. *Surv. Geophys.* 31, 107–129.
+- Saltikoff, E. et al. (2019). An overview of using weather radar for climatological studies:
+  successes, challenges, and potential. *BAMS* 100. doi:10.1175/BAMS-D-18-0166.1
+- Saltikoff, E. et al. (2016). The threat to weather radars by wireless technology. *BAMS* 97.
+  doi:10.1175/BAMS-D-15-00048.1
+- Lakshmanan, V. et al. (2007). An automated technique to quality control radar reflectivity
+  data. *J. Appl. Meteor. Climatol.* 46, 288–305.
+- Steiner, M. & Smith, J. A. (2002). Use of three-dimensional reflectivity structure for
+  automated detection and removal of nonprecipitating echoes in radar data. *J. Atmos. Oceanic
+  Technol.* 19. †
+- Gabella, M. & Notarpietro, R. (2002). Ground clutter characterization and elimination in
+  mountainous terrain. *Proc. ERAD 2002*. † (the filter EURADCLIM uses, via wradlib)
+- Heistermann, M., Jacobi, S. & Pfaff, T. (2013). An open source library for processing weather
+  radar data (wradlib). *HESS* 17. †
+- Pulkkinen, S. et al. (2019). Pysteps: an open-source Python library for probabilistic
+  precipitation nowcasting (v1.0). *GMD* 12. † (MCH co-authors, incl. D. Nerini)
+- Michelson, D. et al. (2020). Monitoring the impacts of weather radar data quality control for
+  quantitative application at the continental scale. *Meteorol. Appl.* 27.
+  doi:10.1002/met.1929 (ECCC, North America; a method for scoring a QC chain objectively)
+
+---
+
+## 8. Reading list: precipitation systems and how they look on radar (M3)
+
+Organised from foundations to the specific questions of M3. ★ = start here. Verified
+2026-09-28 by search unless marked †.
+
+### 8.1 Radar meteorology (how to read the images)
+- ★ Fabry, F. (2015). *Radar Meteorology: Principles and Practice*. Cambridge UP. — the best
+  single book for interpreting reflectivity imagery and its artefacts.
+- ★ Rauber, R. M. & Nesbitt, S. W. (2018). *Radar Meteorology: A First Course*. Wiley. —
+  organised by weather system, with many annotated examples.
+- Doviak, R. J. & Zrnić, D. S. (1993/2006). *Doppler Radar and Weather Observations*. Academic
+  Press / Dover. † — the physics reference.
+- Rinehart, R. E. (2010). *Radar for Meteorologists*, 5th ed. † — accessible.
+- Ryzhkov, A. V. & Zrnić, D. S. (2019). *Radar Polarimetry for Weather Observations*. Springer. †
+- Bringi, V. N. & Chandrasekar, V. (2001). *Polarimetric Doppler Weather Radar*. Cambridge UP. †
+- Wakimoto, R. M. & Srivastava, R. C., eds. (2003). *Radar and Atmospheric Science: A Collection
+  of Essays in Honor of David Atlas*. AMS Meteorol. Monogr. 30. †
+- Villarini & Krajewski (2010), Germann et al. (2022) in §7.5 — error sources, from the user's
+  side.
+
+### 8.2 Precipitation systems (what produces the patterns)
+- ★ Houze, R. A. (2014). *Cloud Dynamics*, 2nd ed. Academic Press. † — convective vs
+  stratiform, MCSs, fronts, orographic systems.
+- ★ Markowski, P. & Richardson, Y. (2010). *Mesoscale Meteorology in Midlatitudes*. Wiley. † —
+  storm modes, supercells, MCSs, fronts, orographic effects.
+- Trapp, R. J. (2013). *Mesoscale-Convective Processes in the Atmosphere*. Cambridge UP. †
+- Lin, Y.-L. (2007). *Mesoscale Dynamics*. Cambridge UP. †
+- Doswell, C. A., ed. (2001). *Severe Convective Storms*. AMS Meteorol. Monogr. 28. †
+- Lovejoy, S. & Schertzer, D. (2013). *The Weather and Climate: Emergent Laws and Multifractal
+  Cascades*. Cambridge UP. † — the scaling view of rain fields, directly relevant to the
+  perimeter–area scaling question (§3 Q2).
+
+### 8.3 Conceptual models of the main system types
+Extratropical cyclones and fronts
+- ★ Browning, K. A. (1986). Conceptual models of precipitation systems. *Wea. Forecasting* 1,
+  23–41. — warm/cold conveyor belts, ana/kata fronts, narrow cold-frontal rainbands,
+  wide rainbands, squall lines.
+- Hobbs, P. V. (1978). Organization and structure of clouds and precipitation on the mesoscale
+  and microscale in cyclonic storms. *Rev. Geophys.* 16. †
+- Schultz, D. M. & Vaughan, G. (2011). Occluded fronts and the occlusion process. *BAMS* 92. †
+- Catto, J. L., Jakob, C., Berry, G. & Nicholls, N. (2012). Relating global precipitation to
+  atmospheric fronts. *GRL* 39. †
+
+Convective vs stratiform
+- ★ Houze, R. A. (1997). Stratiform precipitation in regions of convection: a meteorological
+  paradox? *BAMS* 78. †
+- Steiner, Houze & Yuter (1995), in the §References — the standard radar separation algorithm.
+
+Mesoscale convective systems
+- ★ Houze, R. A. (2004). Mesoscale convective systems. *Rev. Geophys.* 42. †
+- ★ Schumacher, R. S. & Rasmussen, K. L. (2020). The formation, character and changing nature
+  of mesoscale convective systems. *Nat. Rev. Earth Environ.* 1, 300–314.
+- Parker, M. D. & Johnson, R. H. (2000). Organizational modes of midlatitude mesoscale
+  convective systems. *Mon. Wea. Rev.* 128. — trailing / leading / parallel stratiform
+  archetypes, defined on radar.
+- Gallus, W. A., Snook, N. A. & Johnson, E. V. (2008). Spring and summer severe weather reports
+  over the Midwest as a function of convective mode. *Wea. Forecasting* 23, 101–113. — nine
+  radar morphologies (isolated cell, cluster, broken line, squall line NS/TS/PS/LS, bow echo,
+  nonlinear).
+
+Convective storm modes
+- Thompson, R. L. et al. (2012). Convective modes for significant severe thunderstorms in the
+  contiguous United States. Part I. *Wea. Forecasting* 27. †
+- Jergensen, G. E., McGovern, A., Lagerquist, R. & Smith, T. (2020). Classifying convective
+  storms using machine learning. *Wea. Forecasting* 35, 537–559. — supercell / QLCS /
+  disorganised from radar + sounding.
+
+Extreme rain
+- ★ Doswell, C. A., Brooks, H. E. & Maddox, R. A. (1996). Flash flood forecasting: an
+  ingredients-based methodology. *Wea. Forecasting* 11. † — heavy rain = high rate × long
+  duration; why training and back-building matter.
+- Schumacher, R. S. & Johnson, R. H. (2005). Organization and environmental properties of
+  extreme-rain-producing mesoscale convective systems. *Mon. Wea. Rev.* 133, 961–976. —
+  training line/adjoining stratiform, and back-building/quasi-stationary: the two radar
+  signatures of extreme rain.
+
+### 8.4 Orographic precipitation (the Alps)
+- ★ Houze, R. A. (2012). Orographic effects on precipitating clouds. *Rev. Geophys.* 50, RG1001.
+- Roe, G. H. (2005). Orographic precipitation. *Annu. Rev. Earth Planet. Sci.* 33. †
+- Rotunno, R. & Houze, R. A. (2007). Lessons on orographic precipitation from the Mesoscale
+  Alpine Programme. *QJRMS* 133. †
+- Panziera, L. & Germann, U. (2010). The relation between airflow and orographic precipitation
+  on the southern side of the Alps as revealed by weather radar. *QJRMS* 136, 222–238. (MCH)
+- Foresti, L. et al. (2018). A 10-year radar-based analysis of orographic precipitation growth
+  and decay patterns over the Swiss Alpine region. *QJRMS* 144. doi:10.1002/qj.3364 (MCH)
+
+### 8.5 European climatologies and case literature
+- ★ Taszarek, M. et al. (2019). A climatology of thunderstorms across Europe from a synthesis
+  of multiple data sources. *J. Climate* 32, 1813–1837.
+- Wapler, K. & James, P. (2015). Thunderstorm occurrence and characteristics in Central Europe
+  under different synoptic conditions. *Atmos. Res.* 158–159, 231–244. — links radar cell
+  properties to automatic synoptic types, i.e. a regime study on radar.
+- Fluck, E., Kunz, M., Geissbuehler, P. & Ritz, S. P. (2021). Radar-based assessment of hail
+  frequency in Europe. *NHESS* 21, 683–701.
+- Nisi, L., Martius, O., Hering, A., Kunz, M. & Germann, U. (2016). Spatial and temporal
+  distribution of hailstorms in the Alpine region: a long-term, high resolution, radar-based
+  analysis. *QJRMS* 142, 1590–1604. (MCH); Nisi et al. (2018), A 15-year hail streak
+  climatology for the Alpine region, *QJRMS*, doi:10.1002/qj.3286.
+- Feldmann, M., Germann, U., Gabella, M. & Berne, A. (2021). A characterisation of Alpine
+  mesocyclone occurrence. *Weather Clim. Dynam.* 2, 1225. (MCH)
+- Feldmann, M. et al. (2023). Hailstorms and rainstorms versus supercells — a regional analysis
+  of convective storm types in the Alpine region. *npj Clim. Atmos. Sci.*
+  doi:10.1038/s41612-023-00352-z
+- Feldmann, M. et al. (2025). European supercell thunderstorms — a prevalent current threat and
+  an increasing future hazard. *Sci. Adv.* doi:10.1126/sciadv.adx0513 †first author
+- Ducrocq, V. et al. (2014). HyMeX-SOP1: the field campaign dedicated to heavy precipitation and
+  flash flooding in the northwestern Mediterranean. *BAMS* 95, 1083–1100.
+- Delrieu, G. et al. (2005). The catastrophic flash-flood event of 8–9 September 2002 in the
+  Gard region, France. *J. Hydrometeor.* 6. † — a radar-documented Mediterranean extreme.
+
+### 8.6 Geometry, organisation and classification of rain fields
+- ★ AghaKouchak, A., Nasrollahi, N., Li, J., Imam, B. & Sorooshian, S. (2011). Geometrical
+  characterization of precipitation patterns. *J. Hydrometeor.* 12, 274–285.
+  doi:10.1175/2010JHM1298.1 — shape indices of rain fields; the nearest precedent to
+  classifying by excursion-set geometry.
+- Haberlie, A. M. & Ashley, W. S. (2018). A method for identifying midlatitude mesoscale
+  convective systems in radar mosaics. Part I: Segmentation and classification. *J. Appl.
+  Meteor. Climatol.* 57, 1575–1598 (and Part II, tracking). — ML on radar mosaics, close in
+  setup to ours.
+- Brune et al. (2020); Janssens et al. (2021) — organisation indices; continuum rather than
+  classes (in the §References).
+- Wernli, H. et al. (2008). SAL — a novel quality measure for the verification of quantitative
+  precipitation forecasts. *Mon. Wea. Rev.* 136. † (already used in eval)
+- Davis, C., Brown, B. & Bullock, R. (2006). Object-based verification of precipitation
+  forecasts. Part I (MODE). *Mon. Wea. Rev.* 134. †
+- No work was found that classifies precipitation regimes by Minkowski functionals or
+  Euler-characteristic curves (searched again 2026-09-28; they are standard in cosmology).
+
+### 8.7 Weather-type (synoptic) classifications, for stratification
+- Huth, R. et al. (2008). Classifications of atmospheric circulation patterns: recent advances
+  and applications. *Ann. N. Y. Acad. Sci.* 1146, 105–152.
+- Weusthoff, T. (2011). Weather type classification at MeteoSwiss — introduction of new
+  automatic classification schemes. *Arbeitsberichte der MeteoSchweiz* 235. (GWT types; ask MCH
+  for the daily series)
+- Philipp, A. et al. (2010). Cost733cat — a database of weather and circulation type
+  classifications. *Phys. Chem. Earth* 35. †
+- Hewson & Pillosu (2021), Ferranti et al. (2015) — in the §References.
 
 ---
 

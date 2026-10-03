@@ -130,6 +130,22 @@ Check in this order:
 - **The tail contains radar artefacts, and the declutter step zeroes >150 mm/h** instead of
   clipping. See EXPERIMENTS §5 and `scripts/data_quality/`. Look at the images before
   believing anything driven by the top of the distribution.
+- **The patch store's DEM channel is N-S mirrored** (EXPERIMENTS §5, 2026-09-28): the DEM
+  GeoTIFF is north-first and the precipitation stores are south-first, and preprocessing
+  sliced both with the same index. Fixed 2026-09-28: the datasets now look the DEM up by
+  `(y, x)` (`src.data.geo.dem_patch`), the store's `dem` arrays are deleted, and
+  `dem_stats.json` is recomputed. **Every checkpoint before that date was trained with the
+  mirrored DEM**, so retrain before comparing, and recompute σ_r for new backbones. Always get the DEM through
+  `src.data.geo.load_dem_on_radar_grid`, and compute coordinates with `src.data.geo`, never
+  from the stores' `x`/`y` arrays (they are a linspace, not true pixel centres).
+- **v2 datasets** (EXPERIMENTS §5): `configs/config_v2.yaml` → `OPERA/patches_v2/` with
+  leak-free week-blocked splits, events forced into test, and subsets `light_*`,
+  `extremes_*`, `events_test` (5-column metadata = store row). Old checkpoints are not
+  comparable with v2: different data, splits, cleaning, DEM and scaler.
+- **Screening policy** (DECISIONS §17): reject *clear errors* only, keep imperfections so the
+  model learns robustness, and build no labelled set. Real extremes look "anomalous" too, so
+  report every rule's rejection rate by intensity bin. QIND is a reliability score, not an
+  artefact detector (RESEARCH_NOTES §7.1).
 - **The competing-loss rows are not a fair trial** (DECISIONS §8 status, §16): three were
   never active, SSIM is buggy, and the budgets were unmatched.
 - **DDPM is dropped** (DECISIONS §14). Do not add DDPM rows or fix DDPM code unless asked.

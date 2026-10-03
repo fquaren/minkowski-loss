@@ -477,3 +477,93 @@ floor-dominated implementation, so re-measure it after the data-range/eps fix.
 `MINKOWSKI_TARGET_WEIGHT` (Minkowski only) > built-in defaults. The launcher default is
 now `config`; it was `0.001`, the hacking weight.
 
+
+---
+
+## 17. Screening policy: reject clear errors only, keep imperfections, no labelled set
+
+**Question.** How strict should the artefact screen be, and does it need a labelled set to
+calibrate it?
+
+**Decision (2026-09-28, researcher).**
+- **Discard freely, but only clear errors.** The archive is large (~13 years of 15-min
+  composites over Europe, 2012-09 → 2025-10), so losing patches costs little. Data that is
+  *meaningless* (non-meteorological by construction) must not enter training or evaluation.
+- **Keep imperfections.** Patches with small, realistic flaws stay: blockage and range
+  underestimation, attenuation shadows, compositing seams, drizzle speckle, mild residual
+  clutter. The model should be **robust** to these, and it only learns that robustness if it
+  sees them. The goal is not a perfectly clean dataset.
+- **No labelled set.** Labelling ~300 tail tiles to tune rule thresholds is not worth it at
+  this data volume. This supersedes step 6–7 of the `scripts/data_quality/README.md` loop.
+
+**What counts as a clear error** (RESEARCH_NOTES §7.3): signatures that are
+non-meteorological by construction:
+- residual static clutter;
+- emitter / RLAN rays and rings;
+- isolated spikes far above their neighbourhood;
+- physically impossible rates (observed: 13,072 and 64,842 mm/h);
+- radar-wide constant-signal failures;
+- single-frame appearances with no precursor or successor;
+- rain under a clear sky, if satellite data is added;
+- tiles dominated by nodata.
+
+**The risk this creates, and the safeguards.** Without labels, a rule's precision and recall
+on *real* extremes are never measured. For this project that is the dangerous direction. Real
+extremes are also "anomalous" (steep gradients, small intense cores, fast evolution), so a rule
+that fires on unusual intensity structure removes real storms preferentially and biases the
+very tail under study. EURADCLIM's authors say the same of their cleaned OPERA product: its
+outliers limit its use "especially for use in extreme value modeling". The safeguards stand in
+for labels:
+1. Prefer rules keyed on **geometry, persistence and physical impossibility** over rules keyed
+   on intensity structure alone.
+2. **Report the rejection rate per intensity bin**, region and year for every rule. A rule
+   whose rejection rate climbs steeply with intensity is suspect until its rejected tiles have
+   been looked at.
+3. **Look before trusting:** spot-check the gallery of each rule's rejections and of the
+   unflagged tail (`patch_gallery.py`). This is a sanity check by eye, a few minutes per rule,
+   not a labelling campaign.
+4. Where available, cross-check against independent evidence: satellite cloud type (as
+   EURADCLIM does), lightning, and severe-weather reports.
+5. **The same screen for training and evaluation**, including the held-out o.o.d. extremes
+   (M2). Otherwise the o.o.d. tail is contaminated, or is judged on different data.
+6. Measure robustness rather than assume it: report skill on the kept-but-imperfect subset
+   (e.g. far range, behind blockage) separately.
+
+**Open, to settle after talking to MCH (Daniele Nerini, Lionel Moret; RESEARCH_NOTES §7.4):**
+the concrete rule set and thresholds, tile rejection vs pixel masking, the plausibility bound
+on the rate, and what replaces the declutter-zeroing above 150 mm/h (EXPERIMENTS §5).
+
+Confidence: the policy is a researcher decision. The risk analysis is high-confidence,
+because the direction of the bias follows from what the rules detect.
+
+---
+
+## 18. ODYSSEY and NIMBUS: train on one product, test the other separately
+
+**What we found (2026-09-30).** OPERA changed production chain on **2024-07-05**. The archive
+product becomes `RATE` (NIMBUS) instead of `QIND_RATE` (ODYSSEY). The grid, 2 km resolution,
+projection and 15-min cadence are the same. What differs:
+- *how a frame is made:* ODYSSEY is a composite of the scans in a 15-min window, NIMBUS the
+  lowest-elevation PPI at the nominal time;
+- *the radar set.*
+
+On days available in both products, NIMBUS:
+- has ~30–40% less wet area;
+- has intensities 8–20% higher in median, with a wide spread;
+- correlates with ODYSSEY at only 0.65–0.80 in log space;
+- has about half the +15 min persistence.
+
+Every archive day from 2024-07-05 on is NIMBUS (~475 days on disk). Quantification:
+`scripts/data_quality/era_gap.py`, EXPERIMENTS §5.
+
+**Decision (researcher).** v2 train/val/test are drawn from ODYSSEY days only. NIMBUS days
+form a separate `nimbus` split (with `events_nimbus`, `light_nimbus`, `extremes_nimbus`),
+buffered from the rest like any other split.
+- *Why:* mixing products would put ~10% NIMBUS into test, and a model trained mostly on
+  ODYSSEY would then score worse on NIMBUS for reasons of product, not of extremeness. That
+  is exactly the confound the o.o.d. claims must rule out. Kept separate, NIMBUS becomes a
+  clean product-shift test ("does it survive a change of radar product?").
+- *What it costs:* ~10% of the data, and several flagship events (Storm Boris, the Valencia
+  DANA) are evaluated as shifted-product cases.
+- *Reversible:* the era is stored per patch (`era` in `full_*_info.csv.gz`), and the split
+  is metadata only (`--nimbus_start ''` disables it).
