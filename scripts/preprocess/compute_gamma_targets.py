@@ -111,7 +111,8 @@ def main():
     store = zarr.open(zarr_path, mode="r+")
     n_q = len(phys_thresh)
 
-    for split in ["train", "validation", "test"]:
+    # "nimbus": the v2 product-shift test group (absent in older stores, skipped then)
+    for split in ["train", "validation", "test", "nimbus"]:
         if split not in store:
             continue
 

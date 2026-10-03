@@ -344,7 +344,7 @@ def resolve_product(available, priority):
     """Pick the rate product this day actually carries, honouring the priority order.
 
     The archive renamed its products partway through: days up to the end of 2024 hold
-    `QIND_RATE`, and from 2025-01-01 the same content is published as plain `RATE`, with the
+    `QIND_RATE`, and from 2024-07-05 (OPERA's ODYSSEY -> NIMBUS switch) as plain `RATE`, with the
     quality index moved into the rate file as an ODIM `quality` subgroup rather than being
     named in the filename. Both yield RATE + QIND once read, so resolving per day is what
     lets one command span the whole archive.

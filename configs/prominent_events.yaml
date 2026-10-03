@@ -1,0 +1,231 @@
+# Prominent European precipitation / convective events inside the OPERA archive on disk.
+# Used by scripts/dataset_v2/make_splits.py: every event window (+/- buffer) is forced into
+# TEST, so no patch of these storms can reach training (DECISIONS §15), and the tiles that
+# intersect `bbox` during the window form the `events_test` subset.
+#
+# Dates are UTC days (inclusive). bbox = [lat_min, lat_max, lon_min, lon_max], generous on
+# purpose: the subset is then restricted to wet tiles, so a loose box only adds dry tiles.
+# Sources were checked on 2026-09-28; the dates/regions below follow them. Radar coverage is
+# not guaranteed (e.g. Italy's contribution to OPERA is partial); the split script reports
+# how many covered, wet tiles each event actually has.
+#
+# Not yet included because the 2013 data is not on disk: the May-June 2013 Central European
+# floods and the 27-28 July 2013 "Andreas" hailstorms (DE). Verify and add them after the
+# 2013 re-download.
+events:
+  - id: hymex_iop6_20120924
+    name: "HyMeX IOP6 — fast linear MCS over southern France"
+    type: [linear_mcs, heavy_rain, mediterranean]
+    start: 2012-09-23
+    end: 2012-09-25
+    bbox: [42.5, 46.0, 2.0, 6.0]
+    sources:
+      - "Ducrocq et al. (2014) HyMeX-SOP1, BAMS 95, 1083-1100. doi:10.1175/BAMS-D-12-00244.1"
+      - "Observational and modeling study of a MCS during HyMeX SOP1, Atmos. Res. https://www.sciencedirect.com/science/article/abs/pii/S0169809516306834"
+  - id: hymex_iop16_20121026
+    name: "HyMeX IOP16 — heavy precipitation over the NW Mediterranean"
+    type: [heavy_rain, mediterranean, flash_flood]
+    start: 2012-10-25
+    end: 2012-10-28
+    bbox: [41.0, 46.5, 2.0, 12.0]
+    sources:
+      - "Ducrocq et al. (2014) BAMS; HyMeX IOP16 studies, NHESS 20, 2753 (2020) https://nhess.copernicus.org/articles/20/2753/2020/"
+  - id: pentecost_ela_20140609
+    name: "Pentecost storm 'Ela' — bow echo / derecho, BE and western DE"
+    type: [derecho, bow_echo, linear_mcs]
+    start: 2014-06-08
+    end: 2014-06-10
+    bbox: [49.0, 52.5, 2.0, 9.0]
+    sources:
+      - "Mathias et al. (2017) Synoptic analysis and hindcast of an intense bow echo in western Europe: the 9 June 2014 storm, Wea. Forecasting 32. https://journals.ametsoc.org/view/journals/wefo/32/3/waf-d-16-0192_1.xml"
+  - id: muenster_20140728
+    name: "Münster cloudburst — 292 mm in 7 h (DE record-class)"
+    type: [stationary_convection, heavy_rain, pluvial_flood]
+    start: 2014-07-27
+    end: 2014-07-29
+    bbox: [51.4, 52.5, 6.9, 8.4]
+    sources:
+      - "DWD catalogue of heavy precipitation events (CatRaRE) https://www.dwd.de/EN/ourservices/catrare/catrare.html"
+      - "GFZ survey of the July 2014 pluvial flood https://www.gfz.de/en/press/news/details/survey-about-the-july-2014-pluvial-flood"
+  - id: montpellier_20140929
+    name: "Hérault / Montpellier — 252 mm in 3 h, Météo-France red alert"
+    type: [mediterranean, stationary_convection, flash_flood]
+    start: 2014-09-28
+    end: 2014-09-30
+    bbox: [43.2, 44.2, 3.0, 4.5]
+    sources:
+      - "Météo-France vigilance rouge, 29 Sep 2014 (reported: https://www.france24.com/en/20140930-france-montpellier-south-floods-rain-natural-disaster)"
+  - id: cannes_20151003
+    name: "Côte d'Azur (Cannes) flash floods — 175 mm in 2 h"
+    type: [mediterranean, stationary_convection, flash_flood]
+    start: 2015-10-03
+    end: 2015-10-04
+    bbox: [43.3, 44.0, 6.6, 7.5]
+    sources:
+      - "Inondations sur la Côte d'Azur : bilan hydro-météorologique des épisodes de 2015 et 2019, LHB (2021). https://www.tandfonline.com/doi/full/10.1080/27678490.2021.1976600"
+  - id: elvira_friederike_201605
+    name: "Lows Elvira/Friederike — Braunsbach (29 May) and Simbach (1 Jun) flash floods"
+    type: [stationary_convection, flash_flood, heavy_rain]
+    start: 2016-05-27
+    end: 2016-06-07
+    bbox: [47.5, 51.0, 2.0, 13.5]
+    sources:
+      - "Piper et al. (2016) Exceptional sequence of severe thunderstorms and related flash floods in May and June 2016 in Germany, Part I, NHESS. https://www.researchgate.net/publication/307923063"
+      - "BfG HyWa (2017) Die Sturzflut von Braunsbach am 29. Mai 2016. https://doi.bafg.de/HyWa/2017/HyWa_2017,3_2.pdf"
+  - id: poland_derecho_20170811
+    name: "Poland derecho — 11-12 Aug 2017"
+    type: [derecho, linear_mcs]
+    start: 2017-08-11
+    end: 2017-08-12
+    bbox: [50.5, 54.5, 15.0, 20.0]
+    sources:
+      - "Taszarek et al. (2019) Derecho evolving from a mesocyclone — 11 Aug 2017, Mon. Wea. Rev. 147. https://journals.ametsoc.org/view/journals/mwre/147/6/mwr-d-18-0330.1.xml"
+  - id: aude_20181015
+    name: "Aude floods — 295 mm in 12 h at Trèbes (Météo-France)"
+    type: [mediterranean, stationary_convection, flash_flood]
+    start: 2018-10-14
+    end: 2018-10-15
+    bbox: [42.6, 43.6, 1.8, 3.2]
+    sources:
+      - "Caumont et al. (2021) The heavy precipitation event of 14-15 October 2018 in the Aude catchment, NHESS 21, 1135. https://nhess.copernicus.org/articles/21/1135/2021/"
+  - id: alex_20201002
+    name: "Storm Alex — Alpes-Maritimes and Piemonte, > 500 mm/24 h"
+    type: [mediterranean, back_building, orographic, flash_flood]
+    start: 2020-10-01
+    end: 2020-10-03
+    bbox: [43.6, 45.2, 6.5, 8.5]
+    sources:
+      - "Tempête Alex du 2 octobre 2020 dans les Alpes-Maritimes, LHB 108 (2022). https://www.tandfonline.com/doi/abs/10.1080/27678490.2022.2082891"
+      - "Météo-France: 571 mm/24 h at Mons (reported)"
+  - id: swiss_hail_20210620
+    name: "Supercell across central Switzerland (MeteoSwiss hail season 2021)"
+    type: [supercell, hail]
+    start: 2021-06-20
+    end: 2021-06-20
+    bbox: [46.3, 47.8, 6.0, 10.5]
+    sources:
+      - "Kopp et al. (2023) The summer 2021 Switzerland hailstorms, Weather. https://rmets.onlinelibrary.wiley.com/doi/full/10.1002/wea.4306"
+  - id: moravia_tornado_20210624
+    name: "South Moravia F4/IF4 tornado supercell (Hodonín)"
+    type: [supercell, tornado, hail]
+    start: 2021-06-24
+    end: 2021-06-24
+    bbox: [48.3, 49.5, 16.0, 18.0]
+    sources:
+      - "ESSL damage survey report, 24 June 2021. https://www.essl.org/cms/wp-content/uploads/24-June-2021-violent-tornado-damage-assessment-.pdf"
+  - id: swiss_hail_20210628
+    name: "Lucerne hailstorms — 10 cm hail at Wolhusen (MeteoSwiss)"
+    type: [supercell, hail]
+    start: 2021-06-28
+    end: 2021-06-28
+    bbox: [46.3, 47.8, 6.0, 10.5]
+    sources:
+      - "Kopp et al. (2023) Weather. https://rmets.onlinelibrary.wiley.com/doi/full/10.1002/wea.4306"
+      - "ESSL: Hailstorms of 2021. https://www.essl.org/cms/hailstorms-of-2021/"
+  - id: swiss_italy_hail_20210708
+    name: "Severe hailstorms CH / N Italy — 11 cm hail near Milan"
+    type: [supercell, hail]
+    start: 2021-07-08
+    end: 2021-07-08
+    bbox: [45.0, 47.8, 6.0, 11.0]
+    sources:
+      - "Kopp et al. (2023) Weather; ESSL: Hailstorms of 2021."
+  - id: bernd_20210713
+    name: "Low 'Bernd' — Ahr/Erft/Vesdre floods (DE, BE, NL, LU)"
+    type: [stationary_low, heavy_rain, flood]
+    start: 2021-07-12
+    end: 2021-07-15
+    bbox: [49.5, 51.8, 4.5, 8.0]
+    sources:
+      - "ECMWF Newsletter 169: Extreme rain in Germany and Belgium in July 2021. https://www.ecmwf.int/en/newsletter/169/news/extreme-rain-germany-and-belgium-july-2021"
+      - "Copernicus ESOTC 2021: Flooding in July. https://climate.copernicus.eu/esotc/2021/flooding-july"
+  - id: med_derecho_20220818
+    name: "Mediterranean derecho — Corsica, N Italy, Slovenia, Austria, Czechia"
+    type: [derecho, linear_mcs, hail]
+    start: 2022-08-17
+    end: 2022-08-18
+    bbox: [39.5, 49.5, 3.5, 17.0]
+    sources:
+      - "ESSL: The derecho and hailstorms of 18 August 2022. https://www.essl.org/cms/the-derecho-and-hailstorms-of-18-august-2022/"
+  - id: emilia_romagna_20230502
+    name: "Emilia-Romagna floods, first episode"
+    type: [stationary_low, heavy_rain, flood]
+    start: 2023-05-01
+    end: 2023-05-03
+    bbox: [43.7, 45.0, 10.5, 12.8]
+    sources:
+      - "CIMA Research Foundation: The Italian floods of May 2023. https://www.cimafoundation.org/en/news/the-italian-floods-of-may-2023-a-scientific-analysis/"
+  - id: emilia_romagna_20230516
+    name: "Emilia-Romagna floods, second episode (40 h of extreme rain)"
+    type: [stationary_low, heavy_rain, flood]
+    start: 2023-05-15
+    end: 2023-05-17
+    bbox: [43.7, 45.0, 10.5, 12.8]
+    sources:
+      - "CIMA (2023); NHESS 24, 2995 (2024). https://nhess.copernicus.org/articles/24/2995/2024/"
+  - id: italy_hail_20230719
+    name: "N Italy giant hail — 16 cm at Carmignano di Brenta"
+    type: [supercell, hail]
+    start: 2023-07-19
+    end: 2023-07-19
+    bbox: [44.8, 46.8, 9.5, 13.5]
+    sources:
+      - "ESSL: Hail record broken again - 19 cm hailstone confirmed in Italy. https://www.essl.org/cms/hail-record-broken-again-19cm-hailstone-confirmed-in-italy/"
+  - id: chauxdefonds_italy_20230724
+    name: "La Chaux-de-Fonds downburst (217 km/h) and 19 cm hail at Azzano Decimo"
+    type: [supercell, downburst, hail]
+    start: 2023-07-24
+    end: 2023-07-25
+    bbox: [45.3, 47.5, 6.5, 13.5]
+    sources:
+      - "MeteoSwiss blog: Gewitter vom 24. Juli 2023 in La Chaux-de-Fonds. https://www.meteoschweiz.admin.ch/ueber-uns/meteoschweiz-blog/de/2024/04/gewitter-vom-24-juli-2023-in-la-chaux-de-fonds-untersuchung-des-verheerenden-windereignisses.html"
+      - "ESSL (2023) 19 cm hailstone. https://www.essl.org/cms/hail-record-broken-again-19cm-hailstone-confirmed-in-italy/"
+  - id: slovenia_20230804
+    name: "Slovenia floods — > 200 mm in 12 h (ARSO)"
+    type: [heavy_rain, flood, stationary_convection]
+    start: 2023-08-03
+    end: 2023-08-06
+    bbox: [45.4, 46.9, 13.4, 16.6]
+    sources:
+      - "Bezak et al. (2023) Brief communication: A first hydrological investigation of extreme August 2023 floods in Slovenia, NHESS 23, 3885. https://nhess.copernicus.org/articles/23/3885/2023/"
+  - id: s_germany_20240601
+    name: "Southern Germany floods (Bavaria, Baden-Württemberg), > 150 mm/24 h"
+    type: [stationary_low, orographic, heavy_rain, flood]
+    start: 2024-05-31
+    end: 2024-06-03
+    bbox: [47.3, 49.8, 8.5, 13.5]
+    sources:
+      - "ClimaMeter: 2024/06/01-03 Southern Germany floods. https://www.climameter.org/20240601-03-southern-germany-floods"
+  - id: misox_20240621
+    name: "Misox (GR) — repeated cells, 63.7 mm in 60 min at Grono (MeteoSwiss)"
+    type: [back_building, stationary_convection, flash_flood]
+    start: 2024-06-21
+    end: 2024-06-22
+    bbox: [45.8, 46.8, 8.3, 9.8]
+    sources:
+      - "MeteoSwiss blog: Überschwemmungen im Misox am 21. Juni 2024. https://www.meteoschweiz.admin.ch/ueber-uns/meteoschweiz-blog/de/2025/06/ueberschwemmungen-misox-teil-1.html"
+  - id: maggia_valais_20240629
+    name: "Upper Maggia valley and Valais floods (MeteoSwiss)"
+    type: [orographic, heavy_rain, flood]
+    start: 2024-06-29
+    end: 2024-06-30
+    bbox: [45.8, 46.8, 7.0, 9.2]
+    sources:
+      - "MeteoSwiss blog: Überschwemmungen im oberen Maggiatal vom 29. und 30. Juni 2024. https://www.meteoschweiz.admin.ch/ueber-uns/meteoschweiz-blog/de/2025/08/ueberschwemmung-maggia-juni-2024-teil3.html"
+  - id: boris_20240913
+    name: "Storm Boris — AT, CZ, PL, SK, RO, HU; 442 mm/3 d in N Czechia"
+    type: [stationary_low, orographic, heavy_rain, flood]
+    start: 2024-09-12
+    end: 2024-09-16
+    bbox: [45.0, 52.0, 12.0, 27.0]
+    sources:
+      - "ECMWF Newsletter 182: Severe rain in central Europe from Storm Boris. https://www.ecmwf.int/en/newsletter/182/news/severe-rain-central-europe-storm-boris"
+  - id: valencia_dana_20241029
+    name: "Valencia DANA — 771.8 mm in 14 h and 184.6 mm/h at Turís (AEMET)"
+    type: [cut_off_low, back_building, flash_flood]
+    start: 2024-10-28
+    end: 2024-10-30
+    bbox: [38.8, 40.0, -1.3, 0.2]
+    sources:
+      - "AEMET (station records, Turís). ESSL: Meteorological analysis of extreme flash flood situation in the Valencia region. https://www.essl.org/cms/meteorological-analysis-of-extreme-flash-flood-situation-in-the-valencia-region/"
+      - "HESS 29, 6715 (2025). https://hess.copernicus.org/articles/29/6715/2025/"
