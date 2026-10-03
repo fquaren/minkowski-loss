@@ -97,7 +97,7 @@ def main():
                     (n, coarse_size, coarse_size),
                     (1, coarse_size, coarse_size),
                 ),
-                ("dem", (n, patch_size, patch_size), (1, patch_size, patch_size)),
+                # no per-patch "dem": the datasets look it up by (y, x) (src/data/geo.py)
                 (
                     "quality_map",
                     (n, patch_size, patch_size),
@@ -150,7 +150,8 @@ def main():
     dem_stats_path = config.get(
         "DEM_STATS", os.path.join(config["PREPROCESSED_DATA_DIR"], "dem_stats.json")
     )
-    compute_dem_stats(output_zarr, dem_stats_path)
+    compute_dem_stats(output_zarr, dem_stats_path, dem_path=dem_path,
+                      metadata_file=metadata_paths["train"], patch_size=patch_size)
 
     print("\nPreprocessing pipeline finished.")
 

@@ -230,7 +230,17 @@ def main():
 
     target = decode(Y[:, 0:1], max_val)
     lr_field = decode(X[:, 0:1], max_val)                      # channel 0: interpolated input
-    dem = X[:, 1].cpu().numpy() * dem_std + dem_mean           # channel 1: z-scored DEM
+    # channel 1 is what the model was given as DEM. The current patch store cuts it from the
+    # north-first GeoTIFF with south-first precipitation offsets, i.e. from the N-S-mirrored
+    # place (src/data/geo.py). Keep it for reference, but plot the true DEM under the patch.
+    dem_model = X[:, 1].cpu().numpy() * dem_std + dem_mean
+    from src.data import geo
+    dem_full = geo.load_dem_on_radar_grid(config["STATIC_DEM_PATH"])
+    P = config["PATCH_SIZE"]
+    tile_rc = np.array([(int(ds.metadata[int(i)][1]), int(ds.metadata[int(i)][2])) for i in idx])
+    dem = np.stack([dem_full[r:r + P, c:c + P] for r, c in tile_rc])
+    latlon = np.array([[geo.tile_location(r, c, P)["lat"], geo.tile_location(r, c, P)["lon"]]
+                       for r, c in tile_rc])
 
     labels, preds, gammas = [], [], []
     with torch.no_grad():
@@ -291,6 +301,10 @@ def main():
     np.savez_compressed(
         args.output,
         dem=dem.astype(np.float32),
+        dem_model_input=dem_model.astype(np.float32),
+        tile_rc=tile_rc.astype(np.int64),
+        latlon=latlon.astype(np.float32),
+        timestamps=np.array([str(ds.metadata[int(i)][0]) for i in idx]),
         input=lr_field[:, 0].cpu().numpy().astype(np.float32),
         target=target[:, 0].cpu().numpy().astype(np.float32),
         preds=np.stack(preds).astype(np.float32),

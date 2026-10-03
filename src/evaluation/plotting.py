@@ -729,6 +729,20 @@ def perception_distortion_cloud(models: Sequence[Model], out_dir: str,
 # qualitative fields
 # ----------------------------------------------------------------------------------
 
+def _where(bundle: dict, n: int) -> str:
+    """', 46.98°N 9.61°E, 2023-07-05 06:30' when the bundle carries the location."""
+    out = ""
+    if "latlon" in bundle:
+        from src.data.geo import format_latlon
+        lat, lon = bundle["latlon"][n]
+        out += f", {format_latlon(float(lat), float(lon))}"
+    if "timestamps" in bundle:
+        t = str(bundle["timestamps"][n])
+        if len(t) >= 12:
+            out += f", {t[:4]}-{t[4:6]}-{t[6:8]} {t[8:10]}:{t[10:12]} UTC"
+    return out
+
+
 def load_field_bundle(path: str) -> dict:
     """Load the npz written by ``scripts/evaluate/dump_fields.py``."""
     d = np.load(path, allow_pickle=False)
@@ -757,11 +771,24 @@ def precip_norm(vmax: float, mode: str = "power"):
     raise ValueError(f"norm must be 'power', 'log' or 'linear', got {mode!r}")
 
 
-def _dem_panel(fig, ax, dem):
-    """DEM on its own terrain scale, with the colour bar below to keep the row compact."""
+def _dem_panel(fig, ax, dem, rc=None, patch=None):
+    """DEM on its own terrain scale, with the colour bar below to keep the row compact.
+
+    With the tile's south-west pixel ``rc = (row, col)`` the axes carry lat/lon ticks at the
+    edge pixels (the LAEA grid is not aligned with meridians).
+    """
     im = ax.imshow(dem, cmap="terrain", origin="lower")
     ax.set_title("DEM", fontsize=10)
     ax.set_xticks([]); ax.set_yticks([])
+    if rc is not None:
+        from src.data import geo
+        n, p = 3, patch or dem.shape[0]
+        pos = np.linspace(0, p - 1, n)
+        lon_b, _ = geo.rowcol_to_lonlat(np.full(n, rc[0]), rc[1] + pos)
+        _, lat_l = geo.rowcol_to_lonlat(rc[0] + pos, np.full(n, rc[1]))
+        ax.set_xticks(pos); ax.set_xticklabels([f"{v:.1f}°E" for v in lon_b], fontsize=6)
+        ax.set_yticks(pos); ax.set_yticklabels([f"{v:.1f}°N" for v in lat_l], fontsize=6)
+        ax.tick_params(length=2, pad=1)
     cb = fig.colorbar(im, ax=ax, orientation="horizontal", location="bottom",
                       fraction=0.046, pad=0.04)
     cb.set_label("elevation [m]", fontsize=9)
@@ -803,7 +830,8 @@ def field_comparison(bundle: dict, out_dir: str, drizzle: float = 0.1,
 
         ncol = 1 + len(fields)
         fig, axes = plt.subplots(1, ncol, figsize=(3.3 * ncol, 4.3), squeeze=False)
-        _dem_panel(fig, axes[0, 0], dem[n])
+        rc = bundle["tile_rc"][n] if "tile_rc" in bundle else None
+        _dem_panel(fig, axes[0, 0], dem[n], rc, dem.shape[-1])
 
         im = None
         for ax, (title, arr) in zip(axes[0, 1:], fields):
@@ -811,8 +839,8 @@ def field_comparison(bundle: dict, out_dir: str, drizzle: float = 0.1,
                                f"{title}\nmax {np.nanmax(arr):.1f} mm h$^{{-1}}$")
         fig.colorbar(im, ax=axes[0, 1:].tolist(), fraction=0.02, pad=0.02,
                      label="precipitation [mm h$^{-1}$]")
-        fig.suptitle(f"patch {int(idx[n])} — target max {float(np.nanmax(hr[n])):.1f} "
-                     f"mm h$^{{-1}}$", y=1.02)
+        fig.suptitle(f"patch {int(idx[n])}{_where(bundle, n)} — target max "
+                     f"{float(np.nanmax(hr[n])):.1f} mm h$^{{-1}}$", y=1.02)
         paths.append(_save(fig, out_dir, f"{prefix}_{int(idx[n]):06d}.png"))
     return paths
 
@@ -850,7 +878,8 @@ def field_detail(bundle: dict, out_dir: str, drizzle: float = 0.1,
             vmax = max(float(np.nanmax(a)) for a in (lr[n], preds[k, n], hr[n]))
             norm = precip_norm(vmax, norm_mode)
 
-            _dem_panel(fig, fig.add_subplot(gs[0, 0]), dem[n])
+            rc = bundle["tile_rc"][n] if "tile_rc" in bundle else None
+            _dem_panel(fig, fig.add_subplot(gs[0, 0]), dem[n], rc, dem.shape[-1])
 
             im, precip_axes = None, []
             for col, (title, arr) in enumerate(
@@ -881,7 +910,7 @@ def field_detail(bundle: dict, out_dir: str, drizzle: float = 0.1,
                     if c == 0:
                         axc.legend(frameon=False, fontsize=9)
 
-            fig.suptitle(f"{label} — patch {int(idx[n])} "
+            fig.suptitle(f"{label} — patch {int(idx[n])}{_where(bundle, n)} "
                          f"(target max {float(np.nanmax(hr[n])):.1f} mm h$^{{-1}}$)",
                          y=0.97, fontsize=14)
             paths.append(_save(fig, out_dir, f"{prefix}_{safe}_{int(idx[n]):06d}.png"))

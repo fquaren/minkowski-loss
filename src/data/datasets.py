@@ -225,7 +225,15 @@ class DeterministicSRDataset(Dataset):
         topology_mode: str = "b0",
         load_in_ram: bool = False,
         dem_clip_sigma: float = 3.0,
+        dem_path: str = None,
     ):
+        # The DEM is looked up under each patch's (y, x) from the full DEM, oriented like the
+        # precipitation (row 0 = south; src/data/geo.py), never read from the store. Stores
+        # built before 2026-09-28 held, per patch, the DEM of the N-S-mirrored place; those
+        # arrays were deleted (EXPERIMENTS §5). The store only ever had 79 distinct tiles.
+        from src.data import geo as _geo
+        self._dem_path = dem_path or _geo.DEFAULT_DEM_PATH
+        _geo.dem_cached(self._dem_path)                      # fail early if missing
         self.dem_mean, self.dem_std = dem_stats
         self.scaler_max_val = float(scaler_max_val)
         self.split = split
@@ -260,13 +268,19 @@ class DeterministicSRDataset(Dataset):
 
         self.metadata = []
         is_wet = []
+        store_rows = []
         with open(metadata_file, "r") as f:
             for line in f:
                 parts = line.strip().split(",")
-                if len(parts) == 4:
-                    ts, y, x, p_max = parts
+                if len(parts) in (4, 5):
+                    ts, y, x, p_max = parts[:4]
                     self.metadata.append((ts, int(y), int(x), float(p_max)))
                     is_wet.append(float(p_max) > 0.1)
+                    # 5th column: row of this patch in the store group. Subset lists (light,
+                    # extremes, events) point into the full split's store this way; a plain
+                    # 4-column file keeps the positional mapping.
+                    store_rows.append(int(parts[4]) if len(parts) == 5 else len(store_rows))
+        self._store_rows = np.asarray(store_rows, dtype=np.int64)
 
         self.valid_indices = np.arange(len(self.metadata))
         is_wet = np.array(is_wet)
@@ -291,7 +305,6 @@ class DeterministicSRDataset(Dataset):
             self.ram_original = g["original_precip"][:]
             self.ram_interp = g["interpolated_precip"][:]
             self.ram_gamma = g["gamma_targets"][:]
-            self.ram_dem = g["dem"][:]
         else:
             self._store = None
             self._group = None
@@ -308,6 +321,12 @@ class DeterministicSRDataset(Dataset):
             self._store = zarr.open(self.zarr_path, mode="r")
             self._group = self._store[self.split]
 
+    def _dem_for(self, meta_row, patch):
+        """DEM (m) under metadata row `meta_row`, from the oriented full DEM."""
+        from src.data import geo as _geo
+        _, y, x = self.metadata[int(meta_row)][:3]
+        return _geo.dem_patch(y, x, patch, self._dem_path)
+
     def __len__(self):
         return len(self.valid_indices)
 
@@ -315,16 +334,17 @@ class DeterministicSRDataset(Dataset):
         real_idx = self.valid_indices[idx]
 
         if self.load_in_ram:
-            target_phys = self.ram_original[real_idx]
-            interp_phys = self.ram_interp[real_idx]
-            gamma_phys = self.ram_gamma[real_idx]
-            dem_patch = self.ram_dem[real_idx]
+            srow = self._store_rows[real_idx]
+            target_phys = self.ram_original[srow]
+            interp_phys = self.ram_interp[srow]
+            gamma_phys = self.ram_gamma[srow]
         else:
             self._init_zarr()
-            target_phys = self._group["original_precip"][real_idx]
-            interp_phys = self._group["interpolated_precip"][real_idx]
-            gamma_phys = self._group["gamma_targets"][real_idx]
-            dem_patch = self._group["dem"][real_idx]
+            srow = int(self._store_rows[real_idx])
+            target_phys = self._group["original_precip"][srow]
+            interp_phys = self._group["interpolated_precip"][srow]
+            gamma_phys = self._group["gamma_targets"][srow]
+        dem_patch = self._dem_for(real_idx, target_phys.shape[-1])
 
         target_norm = np.clip(np.log1p(target_phys) / self.scaler_max_val, 0.0, 1.0)
         interp_norm = np.clip(np.log1p(interp_phys) / self.scaler_max_val, 0.0, 1.0)
@@ -378,7 +398,15 @@ class DiffusionSRDataset(Dataset):
         topology_mode: str = "b0",
         load_in_ram: bool = False,
         dem_clip_sigma: float = 3.0,
+        dem_path: str = None,
     ):
+        # The DEM is looked up under each patch's (y, x) from the full DEM, oriented like the
+        # precipitation (row 0 = south; src/data/geo.py), never read from the store. Stores
+        # built before 2026-09-28 held, per patch, the DEM of the N-S-mirrored place; those
+        # arrays were deleted (EXPERIMENTS §5). The store only ever had 79 distinct tiles.
+        from src.data import geo as _geo
+        self._dem_path = dem_path or _geo.DEFAULT_DEM_PATH
+        _geo.dem_cached(self._dem_path)                      # fail early if missing
         self.dem_mean, self.dem_std = dem_stats
         self.scaler_max_val = float(scaler_max_val)
         self.split = split
@@ -412,12 +440,15 @@ class DiffusionSRDataset(Dataset):
             self.split = split
 
         self.metadata = []
+        store_rows = []
         with open(metadata_file, "r") as f:
             for line in f:
                 parts = line.strip().split(",")
-                if len(parts) == 4:
-                    ts, y, x, p_max = parts
+                if len(parts) in (4, 5):
+                    ts, y, x, p_max = parts[:4]
                     self.metadata.append((ts, int(y), int(x), float(p_max)))
+                    store_rows.append(int(parts[4]) if len(parts) == 5 else len(store_rows))
+        self._store_rows = np.asarray(store_rows, dtype=np.int64)
 
         self.valid_indices = np.arange(len(self.metadata))
 
@@ -431,10 +462,12 @@ class DiffusionSRDataset(Dataset):
         if self.load_in_ram:
             store = zarr.open(self.zarr_path, mode="r")
             g = store[self.split]
-            self.ram_original = g["original_precip"].oindex[self.valid_indices]
-            self.ram_interp = g["interpolated_precip"].oindex[self.valid_indices]
-            self.ram_gamma = g["gamma_targets"].oindex[self.valid_indices]
-            self.ram_dem = g["dem"].oindex[self.valid_indices]
+            srows = self._store_rows[np.asarray(self.valid_indices)]
+            self.ram_original = g["original_precip"].oindex[srows]
+            self.ram_interp = g["interpolated_precip"].oindex[srows]
+            self.ram_gamma = g["gamma_targets"].oindex[srows]
+            # metadata row of each loaded patch, before the indices are renumbered
+            self._meta_rows = np.asarray(self.valid_indices).copy()
             self.valid_indices = np.arange(len(self.valid_indices))
         else:
             self._store = None
@@ -447,6 +480,12 @@ class DiffusionSRDataset(Dataset):
             ]
         )
 
+    def _dem_for(self, meta_row, patch):
+        """DEM (m) under metadata row `meta_row`, from the oriented full DEM."""
+        from src.data import geo as _geo
+        _, y, x = self.metadata[int(meta_row)][:3]
+        return _geo.dem_patch(y, x, patch, self._dem_path)
+
     def __len__(self):
         return len(self.valid_indices)
 
@@ -457,15 +496,17 @@ class DiffusionSRDataset(Dataset):
             target_phys = self.ram_original[real_idx]
             interp_phys = self.ram_interp[real_idx]
             gamma_phys = self.ram_gamma[real_idx]
-            dem_patch = self.ram_dem[real_idx]
+            meta_row = self._meta_rows[real_idx]
         else:
             if self._store is None:
                 self._store = zarr.open(self.zarr_path, mode="r")
                 self._group = self._store[self.split]
-            target_phys = self._group["original_precip"][real_idx]
-            interp_phys = self._group["interpolated_precip"][real_idx]
-            gamma_phys = self._group["gamma_targets"][real_idx]
-            dem_patch = self._group["dem"][real_idx]
+            srow = int(self._store_rows[real_idx])
+            target_phys = self._group["original_precip"][srow]
+            interp_phys = self._group["interpolated_precip"][srow]
+            gamma_phys = self._group["gamma_targets"][srow]
+            meta_row = real_idx
+        dem_patch = self._dem_for(meta_row, target_phys.shape[-1])
 
         target_norm = np.clip(np.log1p(target_phys) / self.scaler_max_val, 0.0, 1.0)
         interp_norm = np.clip(np.log1p(interp_phys) / self.scaler_max_val, 0.0, 1.0)

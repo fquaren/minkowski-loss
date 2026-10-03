@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 # Module-level cache for worker processes
 _WORKER_TIMESTAMP_MAP = None
+_WORKER_DEM = None
 
 
 def filter_precip_bounds(
@@ -77,7 +78,7 @@ def process_batch(batch_payload: dict) -> list:
     Reads precipitation and DEM patches, applies filtering and
     coarsening, and writes results to the shared Zarr store.
     """
-    global _WORKER_TIMESTAMP_MAP
+    global _WORKER_TIMESTAMP_MAP, _WORKER_DEM
 
     static_args = batch_payload["static"]
     tasks = batch_payload["tasks"]
@@ -98,13 +99,19 @@ def process_batch(batch_payload: dict) -> list:
     results = []
     target_zarr = zarr.open(output_zarr_path, mode="r+")
 
-    try:
-        with xr.open_dataset(dem_path, engine="rasterio") as ds:
-            dem_memory = (
-                ds["band_data"].isel(band=0).drop_vars("band", errors="ignore").load()
-            )
-    except Exception as e:
-        return [f"FATAL: Failed to load DEM: {e}"]
+    # The DEM must be in the precipitation orientation. The GeoTIFF is north-first (row 0 =
+    # north) while the radar stores are south-first (row 0 = south), so slicing the raw
+    # GeoTIFF with the precipitation (y_start, x_start) returned the DEM of the N-S-mirrored
+    # place. Every patch store built before 2026-09-28 has that mirrored DEM
+    # (EXPERIMENTS §5). `load_dem_on_radar_grid` orients it from the file's own coordinates
+    # and checks the residual offset is under half a pixel. Loaded once per worker.
+    if _WORKER_DEM is None:
+        try:
+            from src.data.geo import load_dem_on_radar_grid
+            _WORKER_DEM = load_dem_on_radar_grid(dem_path)
+        except Exception as e:
+            return [f"FATAL: Failed to load DEM: {e}"]
+    dem_memory = _WORKER_DEM
 
     source_cache = {}
     valid_indices = []
@@ -142,10 +149,9 @@ def process_batch(batch_payload: dict) -> list:
                 results.append(f"Skipped {idx}: boundary truncation.")
                 continue
 
-            dem_patch = dem_memory.isel(
-                y=slice(y_start, y_start + patch_size),
-                x=slice(x_start, x_start + patch_size),
-            ).values
+            dem_patch = dem_memory[
+                y_start : y_start + patch_size, x_start : x_start + patch_size
+            ]
 
             if dem_patch.shape != (patch_size, patch_size):
                 results.append(f"Skipped {idx}: DEM truncation.")
@@ -161,12 +167,18 @@ def process_batch(batch_payload: dict) -> list:
         except Exception as e:
             results.append(f"Error at {idx}: {e}")
 
+    # Per-patch DEM is no longer stored: the datasets look it up under each patch's (y, x)
+    # from the oriented full DEM (src/data/geo.py). It is still sliced above so that a patch
+    # the DEM cannot cover is skipped exactly as before; a legacy store that still has a
+    # `dem` array gets it written.
+    write_dem = f"{group_name}/dem" in target_zarr
     for i, (idx, precip) in enumerate(zip(valid_indices, precip_list)):
         coarse, interpolated = coarsen_and_interpolate(precip, factor)
         target_zarr[f"{group_name}/original_precip"][idx] = precip
         target_zarr[f"{group_name}/interpolated_precip"][idx] = interpolated
         target_zarr[f"{group_name}/coarse_precip"][idx] = coarse
-        target_zarr[f"{group_name}/dem"][idx] = dem_list[i]
+        if write_dem:
+            target_zarr[f"{group_name}/dem"][idx] = dem_list[i]
 
     return results if results else []
 
@@ -189,9 +201,40 @@ def compute_global_scaler(zarr_path: str, output_dir: str):
     print(f"Global log1p max: {global_max:.4f} → {path}")
 
 
-def compute_dem_stats(zarr_path: str, output_path: str):
-    """Compute mean and std of DEM from training data."""
+def compute_dem_stats(zarr_path: str, output_path: str, dem_path: str = None,
+                      metadata_file: str = None, patch_size: int = 128):
+    """Compute mean and std of the DEM over the training patches.
+
+    With `dem_path` and `metadata_file` (the default route since 2026-09-28), the statistics
+    are exact over every pixel of every training patch, computed from the oriented full DEM
+    and the number of times each tile occurs. This equals the old per-patch pass over
+    `train/dem`, which is no longer stored. Without them it falls back to reading
+    `train/dem` from a legacy store.
+    """
     print("\n--- Computing DEM statistics ---")
+    if dem_path and metadata_file:
+        from src.data.geo import load_dem_on_radar_grid
+        dem = load_dem_on_radar_grid(dem_path)
+        yx = np.loadtxt(metadata_file, delimiter=",", usecols=(1, 2), dtype=np.int64, ndmin=2)
+        tiles, counts = np.unique(yx, axis=0, return_counts=True)
+        count, sum_val, sum_sq = 0, np.float64(0.0), np.float64(0.0)
+        for (y, x), n in zip(tiles, counts):
+            v = dem[y:y + patch_size, x:x + patch_size]
+            v = v[~np.isnan(v)].astype(np.float64)
+            count += int(n) * v.size
+            sum_val += n * v.sum()
+            sum_sq += n * (v ** 2).sum()
+        mean = sum_val / count
+        std = np.sqrt(sum_sq / count - mean ** 2)
+        stats = {"dem_mean": float(mean), "dem_std": float(std),
+                 "source": "oriented DEM x tile counts of the train metadata",
+                 "n_patches": int(counts.sum()), "n_tiles": int(len(tiles))}
+        with open(output_path, "w") as f:
+            json.dump(stats, f, indent=4)
+        print(f"DEM stats: mean={mean:.2f}, std={std:.2f} over {counts.sum()} patches "
+              f"({len(tiles)} tiles) -> {output_path}")
+        return stats
+
     store = zarr.open(zarr_path, mode="r")
 
     if "train/dem" not in store:
