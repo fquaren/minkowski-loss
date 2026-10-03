@@ -19,7 +19,7 @@
 
 \title{How the data-quality assessment of the OPERA archive was computed}
 \author{Notes for the \texttt{minkowski-loss} project}
-\date{23 September 2026}
+\date{23 September 2026 \\ Part II added 3 October 2026}
 
 \begin{document}
 \maketitle
@@ -43,9 +43,23 @@ full-run results and how the code was checked.
 
 The audit \emph{describes} the data. It deletes nothing, and its rule thresholds are
 starting guesses to be calibrated against labels.
+
+Part~II (added 3 October) records what followed:
+\begin{itemize}[nosep]
+\item two corrections to Part~I (a mirrored DEM, a capped source) and the product break
+  from ODYSSEY to NIMBUS;
+\item the v2 cleaning, which repairs pixels and rejects few tiles;
+\item two audit flags, temporal support and climatological range rings;
+\item a per-radar quality ranking over the whole archive;
+\item a validation of every rule against 1,735 independent rain gauges.
+\end{itemize}
 \end{abstract}
 
 \tableofcontents
+
+%######################################################################
+\part{The audit of 23 September 2026}
+%######################################################################
 
 %======================================================================
 \section{What the assessment is for}
@@ -531,7 +545,9 @@ that no rule catches. Row 5 is a storm crossed by a spoke that merges with the r
 %======================================================================
 
 The full run took about 4 hours with 6 workers on 8 cores. It covered 745 days (2012-09-04 to
-2024-10-30) and 4,804,051 tiles, of which 413,654 (8.61\%) are in the tail.
+2024-10-30) and 4,804,051 tiles, of which 413,654 (8.61\%) are in the tail. The
+DEM-derived features and the \code{sea_clutter} rates were computed on a mirrored DEM
+(\S\ref{sec:corrections}).
 
 \begin{figure}[t]
 \centering
@@ -599,7 +615,8 @@ persistence is 0.53--0.72 in every stratum.}
 \item Rule thresholds are uncalibrated. The rates measure signature prevalence, not artefact
   counts.
 \item There is no radar-site geometry, so spokes and rings merged with rain are missed
-  (Fig.~\ref{fig:sig}e, Fig.~\ref{fig:gallery}, rows 0 and 5).
+  (Fig.~\ref{fig:sig}e, Fig.~\ref{fig:gallery}, rows 0 and 5). Addressed in Part~II: rays
+  through radar sites (\S\ref{sec:cleaning}) and climatological rings (\S\ref{sec:flags}).
 \item The in-cell criterion for $>150$\,mm/h pixels is fooled by extended artefacts
   (Fig.~\ref{fig:hole}, bottom).
 \item Flag rates are correlated across tiles of the same storm, so the standard errors are
@@ -608,6 +625,323 @@ persistence is 0.53--0.72 in every stratum.}
   domain.
 \item Tiles with partial coverage are excluded, following the current patch definition. The
   domain edge is therefore under-represented.
+\end{itemize}
+
+%######################################################################
+\part{After the audit: the v2 screen and its validation (28 September -- 3 October 2026)}
+%######################################################################
+\sloppy  % long \code{} tokens otherwise overrun the margin
+
+Part~I \emph{described} the archive. Part~II records what was built on it, and how the
+result was checked against independent data rather than against labels. Two things changed
+the approach.
+\begin{itemize}[nosep]
+\item \textbf{No labelled set} (DECISIONS \S17). The policy is to reject \emph{clear errors}
+  only and keep imperfections. Rules are therefore restricted to signatures that are
+  non-meteorological by construction, and judged by their rejection rate per intensity bin
+  instead of by precision and recall against labels (\S\ref{sec:summary}).
+\item \textbf{Rain gauges as the independent truth.} A rule that removes artefacts should
+  flag pixels that a gauge underneath sees as dry far more often than the pixels it leaves
+  alone, \emph{at the same radar intensity}. \S\ref{sec:gauges} measures this for every rule.
+\end{itemize}
+The day-to-day record is in \S5 of \code{EXPERIMENTS.md}, and the plan this follows is
+\S7.4b of \code{RESEARCH_NOTES.md}.
+
+%======================================================================
+\section{Corrections to Part I}\label{sec:corrections}
+%======================================================================
+
+\paragraph{The DEM was N-S mirrored (found 28 September).}
+The DEM GeoTIFF is north-first and the precipitation stores are south-first, and both were
+sliced with the same offsets. Every DEM-derived feature in Part~I (\code{sea_frac},
+\code{dem_mean}, \code{argmax_over_sea}, \code{wet_over_sea_frac}) and the
+\code{sea_clutter} rule were computed on the terrain of the mirrored place. The feature
+files are from 23 September and have not been recomputed, so those columns, and the
+\code{sea_clutter} rates in Fig.~\ref{fig:rates}, are wrong. Nothing else in Part~I depends on
+the DEM. Grid orientation and coordinates now come from \code{src/data/geo.py}.
+
+\paragraph{The 150\,mm/h cap is gone from the archive.}
+Fig.~\ref{fig:range} showed that the original 2023--24 stores never exceed 150\,mm/h. All
+457 days from 2023-08-01 to 2024-10-30 have since been replaced by archive stores with QIND
+(checked on disk, 3 October). The archive copies agree with the originals below 149\,mm/h
+and add the values above. The originals of the 101 days after the product switch are kept in
+\code{raw/OPERA_orig_postswitch/}, for the paired product comparison below.
+
+\paragraph{A product break on 2024-07-05.}
+OPERA switched from ODYSSEY (\code{QIND_RATE}, a composite of the scans in a 15-minute
+window) to NIMBUS (\code{RATE}, the lowest-elevation scan at the nominal time). On days held
+in both products, NIMBUS has 30--40\% less wet area, median intensities 8--20\% higher, half
+the $+15$\,min persistence, and a log-space correlation with ODYSSEY of only 0.65--0.80.
+v2 therefore trains and tests on ODYSSEY only, and keeps NIMBUS as a separate product-shift
+split (DECISIONS \S18). Every result below is reported per product, because the two
+differ in exactly the quantities the rules use.
+
+%======================================================================
+\section{The v2 cleaning}\label{sec:cleaning}
+%======================================================================
+
+\code{src/data/cleaning.py} is used identically by the tile scan, the store build and the
+gauge pairing, so what is selected, what is stored and what is validated cannot drift apart
+(tests: \code{tests/test_cleaning.py}). It has two levels.
+
+\paragraph{Pixel repairs} (point-like clear errors). Nothing is set to zero to hide a value; a
+repaired pixel takes the value its neighbourhood supports.
+\begin{itemize}[nosep]
+\item \emph{Drizzle}: $R<0.1$\,mm/h $\to0$, the noise floor, as in v1.
+\item \emph{Static clutter}: a pixel is \emph{hot} in year $y$ if $\hat p_{31}>0.01$ over that
+  year's valid steps (about $100\times$ climatology; the climatology of \S\ref{sec:clim}, now
+  computed per calendar year over the whole archive). A hot pixel takes the median of the
+  non-hot valid pixels of its $5\times5$ neighbourhood, if that is lower.
+\item \emph{Spikes}: a pixel with $R\ge10$\,mm/h whose brightest 8-neighbour is below $10\%$
+  of it has no spatial support at 2\,km, and is lowered to that neighbour's value.
+\end{itemize}
+Values between 150 and 500\,mm/h are kept as measured: v2 has no declutter zeroing.
+
+\paragraph{Tile rejections} (extended clear errors).
+\begin{itemize}[nosep]
+\item \emph{Unphysical}: cleaned maximum $>500$\,mm/h (about 67\,dBZ with Marshall--Palmer).
+  Provisional; the bound is to be set with MeteoSwiss.
+\item \emph{Ray}: a thin straight component at least 40\,px (80\,km) long, within $10^\circ$ of
+  the direction to an OPERA radar within 250\,km (RLAN interference). The alignment with a
+  radar is what separates a ray from a squall line, which is also long and thin. This
+  answers the ``no radar-site geometry'' limitation of Part~I for rays.
+\end{itemize}
+Rejection is light below the unphysical bound (Table~\ref{tab:reject}). The resulting
+datasets: 1,977,908 train, 251,667 validation, 282,684 test and 487,743 NIMBUS patches, on
+splits drawn by whole ISO weeks with at least 2 days between train and validation or test,
+and 26 catalogued events forced into test.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+raw tile max (mm/h) & tiles & rejected & unphysical & ray \\ \midrule
+$[1,10)$ & 13,347,882 & 0.16\% & 0.00\% & 0.16\% \\
+$[10,31)$ & 4,743,452 & 0.44\% & 0.00\% & 0.44\% \\
+$[31,89)$ & 2,129,084 & 0.39\% & 0.00\% & 0.39\% \\
+$[89,150)$ & 450,892 & 0.26\% & 0.00\% & 0.26\% \\
+$[150,500)$ & 316,681 & 0.44\% & 0.00\% & 0.44\% \\
+$[500,\infty)$ & 100,987 & 40.45\% & 40.33\% & 0.36\% \\ \bottomrule
+\end{tabular}
+\caption{Tile rejection by raw maximum in the v2 build (\code{OPERA/v2/report.md}). Below
+500\,mm/h only the ray rule rejects. Above it, 60\% of tiles survive because the pixel
+repairs bring their maximum under the bound.}
+\label{tab:reject}
+\end{table}
+
+%======================================================================
+\section{Audit flags: temporal support and range rings}\label{sec:flags}
+%======================================================================
+
+Two further signatures are computed as \emph{flags} that remove nothing until the gauges
+have judged them. \code{scripts/dataset_v2/scan_flags.py} writes them for every covered
+tile with cleaned maximum $\ge1$\,mm/h (13.2\,h on 6 workers over 5,023 days), together with
+the position of the tile's maximum, the nearest active radar and the QIND there.
+
+\begin{definition}[Temporal support]
+Let $C$ be an 8-connected cell of the cleaned frame with $R_t\ge10$\,mm/h, and $W(C)$ the
+pixels within 15\,px (30\,km, a 15-minute move at 33\,m/s) of $C$ in a square window. $C$ is
+\emph{unsupported} if
+\[
+  \max_{W(C)} R_{t-15} < 1 \quad\text{and}\quad \max_{W(C)} R_{t+15} < 1\ \text{mm/h},
+\]
+i.e.\ it has neither a precursor nor a successor. It is \emph{undecidable} if either
+neighbour frame is missing or not fully covered over $W(C)$. Neighbour frames at 00:00 and
+23:45 are read from the adjacent day stores, and only if exactly 15\,min away.
+\end{definition}
+
+\paragraph{Range rings.} Rings are not thin arcs in single frames: a single-frame detector
+(\code{cleaning.ring_flag}, a circle about a radar fitting clearly better than a line) found
+none on 7,005 tiles. They are sparse pixels on a circle that only add up over time, so
+\code{ring_climatology.py} detects them in the per-year exceedance climatology. With
+static-clutter pixels set to NaN, and $f=\hat p_{31}$ averaged per 1-px range bin and
+$10^\circ$ sector about each radar site (current and archive entries, ranges 16--150\,px), a
+range $r$ is a ring in a sector if
+\[
+  f(r) > 3\,\operatorname{median}\{f(r'):\,3\le|r'-r|\le6\} \quad\text{and}\quad f(r)>5\cdot10^{-5},
+\]
+and a ring if this holds in at least 18 of the 36 sectors ($180^\circ$). The mask covers the
+ring range $\pm1$\,px in its hit sectors. Found: Stevns and Sindal (DK) at about 234\,km in
+every year 2013--2017, and Ikaalinen (178\,km) and Vimpeli (49\,km) in Finland in 2012; none
+after the September 2017 compositing change. A tile is \code{on_ring} when its maximum lies on
+the mask.
+
+%======================================================================
+\section{Consistently bad radars}\label{sec:radars}
+%======================================================================
+
+\code{radar_quality_v2.py} attributes every pixel to the nearest radar active that year
+within 250\,km, and scores each radar-year on six signals:
+\begin{itemize}[nosep]
+\item from the climatology: the hot-pixel share, and the exceedance frequencies $f_{31}$,
+  $f_{150}$, $f_{500}$ over non-hot pixels, each divided by the median of the 5 nearest other
+  radars that year, since rain climates differ (\code{rel_f*});
+\item from the flags: the share of tail tiles ($\ge31$\,mm/h) whose maximum is unsupported, or
+  on a ring (radar-years with at least 50 tail tiles).
+\end{itemize}
+A radar-year is an \emph{outlier} on a signal if it is in the worst 5\% of radar-years
+\emph{and} above zero. A radar is \emph{consistently bad} if it is an outlier on the same
+signal in at least half of its years, and at least 3.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{@{}lllrl@{}}
+\toprule
+radar & site & country & years & bad on \\ \midrule
+frbol & Bollène & FR & 15 & hot pixels \\
+seang & Ängelholm & SE & 15 & unsupported \\
+itteo & Teolo & IT & 13 & $f_{500}$ \\
+isegs & Fljotsdalsheidi & IS & 13 & hot pixels, $f_{31}$, $f_{150}$ \\
+-- & Monte Lauro & IT & 10 & $f_{31}$, $f_{500}$ \\
+dkste & Stevns & DK & 10 & unsupported \\
+dksin & Sindal & DK & 10 & unsupported \\
+sekkr & Karlskrona & SE & 7 & unsupported, ring \\
+sease & Hemse & SE & 6 & unsupported \\
+grand & Andravida & GR & 6 & $f_{31}$, $f_{150}$ \\
+hrdeb & Debeljak & HR & 5 & hot pixels \\
+sehud & Hudiksvall & SE & 5 & $f_{31}$ \\
+debln & Berlin & DE & 4 & ring \\
+sevar & Vara & SE & 4 & $f_{31}$, unsupported, ring \\ \bottomrule
+\end{tabular}
+\caption{The 14 consistently bad radars of 261 (3,071 radar-years, 2012--2026). ``Years''
+counts the radar-years in the ranking. Nothing is excluded on this list yet.}
+\label{tab:radars}
+\end{table}
+
+\paragraph{Three bugs in the first run.} The first run with flags listed 204 of 246 radars.
+\begin{itemize}[nosep]
+\item The ring share is zero in 73\% of radar-years, so its 95th percentile was 0 and the
+  test $\ge q_{0.95}$ flagged 75.5\% of them; hence the ``above zero'' condition.
+\item Nine sites have both a current and an archive entry in the radar database with
+  overlapping years (e.g.\ Flechtdorf, Essen, Rostock). Both counted as active: they split
+  the site's pixels, appeared twice per year, and were each other's nearest neighbour in
+  the relative scores. Radars are now keyed by ODIM code with duplicates merged.
+\item Sixteen sites have no ODIM code (e.g.\ Monte Lauro). The ranking dropped them, and the
+  flag scan writes the same empty label for them as for ``no radar within 250\,km''. They are
+  now keyed by location, and flagged tiles are re-attributed from the position of their
+  maximum.
+\end{itemize}
+
+\paragraph{Attribution caveat.} The database lists Stevns and Sindal only from 2017, so their
+2013--16 rings fall on the nearest radar active then. Ängelholm has a non-zero ring share
+only in 2013--17 and is probably carrying Stevns's ring. The ring signal cannot be used per
+radar until those archive years are added.
+
+%======================================================================
+\section{Validation against rain gauges}\label{sec:gauges}
+%======================================================================
+
+\paragraph{Gauges.} 10-minute records from DWD (1,454 stations with data) and MeteoSwiss
+SwissMetNet (281), all open (\code{scripts/validation/fetch_gauges.py}). They cover Germany
+and Switzerland only: CombiPrecip for 2012--2026 has been requested from MeteoSwiss, and
+EURADCLIM needs a KNMI key. The gauges are first checked against each other, never against the
+radar (\code{gauge_qc.py}). Values above 50\,mm per 10\,min (including the 99.9 and 149.6
+fault codes), runs of at least 6 identical values $\ge1$\,mm, and bursts $\ge10$\,mm that
+have exactly 0 before and after \emph{and} no rain at any gauge within 30\,km over
+$\pm30$\,min are masked. That is 230 of 84.7M wet values.
+
+\paragraph{Pairing.} \code{gauge_vs_radar.py} cleans each frame on a crop around the gauges,
+with a 40-px margin so the cleaned values equal those of the full frame. For every gauge with
+a complete record that day, it keeps one row per frame where the raw $3\times3$ radar maximum
+reaches 5\,mm/h or a nearby gauge interval reaches 0.5\,mm per 10\,min. Each row carries the
+raw and cleaned values at the gauge pixel, the hot, temporal-support and ring flags there,
+QIND, and the gauge totals of the 10-minute intervals labelled $t-10$, $t$, $t+10$ and $t+20$.
+In all, 12,091,733 station-frames from 4,968 days.
+
+\paragraph{Alignment.} The interval labelling is left open and read from the data. The
+log-rate correlation peaks at the intervals labelled $t+10$ (0.29--0.47) and $t+20$ in all
+four network $\times$ product cells (Table~\ref{tab:align}). The matched gauge rate is the
+larger of those two intervals, in mm/h.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+network & product & $n$ & $t-10$ & $t$ & $t+10$ & $t+20$ \\ \midrule
+DWD & ODYSSEY & 6,352,421 & $-0.04$ & 0.16 & \textbf{0.45} & 0.26 \\
+DWD & NIMBUS & 1,312,918 & $-0.01$ & 0.17 & \textbf{0.47} & 0.23 \\
+SMN & ODYSSEY & 2,330,589 & $-0.04$ & 0.14 & \textbf{0.32} & 0.15 \\
+SMN & NIMBUS & 398,360 & $-0.05$ & 0.08 & \textbf{0.29} & 0.15 \\ \bottomrule
+\end{tabular}
+\caption{Correlation of $\log(1+R)$ between the radar and the gauge interval with each label.}
+\label{tab:align}
+\end{table}
+
+\begin{definition}[Corroboration]
+A radar pixel is \emph{corroborated} if the matched gauge rate is $\ge1$\,mm/h: it rained
+there. It is \emph{confirmed heavy} if the gauge rate is $\ge10$\,mm/h. Artefacts (clutter,
+spikes, rings, interference) leave the gauge dry; a real cell rarely does, despite the
+point-versus-2\,km and timing mismatches. A rule is informative if the pixels it flags are
+corroborated much less often than untouched pixels \emph{in the same raw-intensity bin}.
+\end{definition}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\linewidth]{fig_gauge_corroboration.png}
+\caption{Share of radar pixels corroborated by the gauge underneath (top) and confirmed heavy
+(bottom), by raw radar rate, per product. ``In tile rejected as unphysical'' covers every
+gauge pixel inside a rejected tile, not only its maximum. Bins with fewer than 20 pairs are
+omitted; under NIMBUS, temporal support and rings almost never fire (2 pixels and 0).
+\code{notes/figures/make_validation_figures.py}.}
+\label{fig:gauges}
+\end{figure}
+
+\paragraph{Results} (Fig.~\ref{fig:gauges}; \code{validation/corroboration.csv}).
+\begin{enumerate}
+\item \textbf{Untouched pixels are mostly real.} 0.85--0.91 corroborated under ODYSSEY from 10
+  to 150\,mm/h, and 0.95--0.96 under NIMBUS in every bin up to 500. The exception is the
+  ODYSSEY upper tail: 0.66 corroborated at 150--500\,mm/h ($n=134$, median gauge 11\,mm/h),
+  against 0.96 under NIMBUS ($n=406$, median 28\,mm/h). The 34 untouched pixels above
+  500\,mm/h are all uncorroborated. By year, the untouched tail ($\ge31$) is 0.77--0.93
+  corroborated in 2013--19 and 0.92--0.95 from 2020 (2012: 0.36, $n=14$).
+\item \textbf{Temporal support is the cleanest signature.} About 1\% of unsupported pixels are
+  corroborated, in every bin. It fires almost only under ODYSSEY.
+\item \textbf{Rings carry real rain at low rates only.} 0.82 corroborated at 10--31\,mm/h, 0.50
+  at 31--89, and 0 at 89\,mm/h and above ($n=1{,}782$). Real rain falls under the ring; the
+  high values on it are the artefact.
+\item \textbf{The spike rule depends on the product.} Under ODYSSEY, 4--13\% of repaired
+  pixels are corroborated, so it removes artefacts. Under NIMBUS, 32--44\%: the
+  instantaneous product resolves small real cores that the rule takes for spikes.
+\item \textbf{Hot-pixel repair is right.} 19,193 hot pixels above 500\,mm/h: 22\% are
+  corroborated, but only 0.6\% confirmed heavy (median gauge 0.06\,mm/h). The clutter
+  coincides with drizzle, not with storms.
+\item \textbf{The unphysical rule rejects real rain around its artefact.} Gauge pixels inside
+  rejected tiles are 0.67--0.79 corroborated below 89\,mm/h under ODYSSEY, and 0.91--0.97 in
+  \emph{every} bin under NIMBUS. Under NIMBUS, a rejected tile is a real storm with one bad
+  pixel.
+\item \textbf{The cleaning removes little rain.} Of 19,904 pixels lowered by more than 50\% from
+  $\ge31$\,mm/h, the gauge saw $\ge10$\,mm/h at 155 (0.8\%).
+\item \textbf{The radar underestimates heavy rain.} For gauge rates $\ge30$\,mm/h (117,411
+  station-frames), the cleaned $3\times3$ radar maximum is $\ge10$\,mm/h in 71\% of cases,
+  with a median radar/gauge ratio of 0.45.
+\item \textbf{QIND does not discriminate.} Among raw $\ge31$\,mm/h, the AUC of QIND for
+  corroborated against not is 0.53 under NIMBUS (both medians 1.00). Under ODYSSEY it is
+  0.26: \emph{inverted}, with median QIND 0.20 for corroborated pixels and 0.90 for
+  uncorroborated ones. The inversion is unexplained; clutter close to a radar may get a high
+  quality score. Check it before using QIND even as a covariate.
+\end{enumerate}
+
+\paragraph{What the numbers suggest} (proposals; the decisions are pending, EXPERIMENTS \S5).
+\begin{itemize}[nosep]
+\item Apply temporal support: reject or mask unsupported cells.
+\item Rings: repair the high values on the ring instead of rejecting the tile.
+\item Spikes: keep the rule for ODYSSEY; revisit it, or its thresholds, for NIMBUS.
+\item Unphysical: mask the offending pixels instead of rejecting the tile, at least under
+  NIMBUS.
+\item ODYSSEY 150--500\,mm/h: a third of it is uncorroborated even after cleaning. The
+  POT threshold and any tail claim should be checked with and without that range.
+\end{itemize}
+
+\paragraph{Limits of this validation.}
+\begin{itemize}[nosep]
+\item Germany and Switzerland only. Of the radars in Table~\ref{tab:radars}, only Berlin is
+  inside that area.
+\item Corroboration at 1\,mm/h shows that it rained, not that a 300\,mm/h value is right;
+  the $\ge10$\,mm/h row is the stronger test.
+\item A gauge samples a point, the radar a 2\,km pixel, and ODYSSEY integrates over a
+  15-minute window, so even real cells are not always corroborated (the ceiling is about 0.9).
+\item Pairs from the same storm are correlated, so the effective sample sizes are smaller than
+  the $n$ shown. Most flagged classes above 89\,mm/h hold only tens to hundreds of pairs.
 \end{itemize}
 
 %======================================================================
@@ -623,6 +957,16 @@ python scripts/data_quality/summarize_features.py config.yaml \
     --labels .../quality/gallery/random_max31-inf/labels.csv
 # figures in these notes:
 python notes/figures/make_data_quality_figures.py
+python notes/figures/make_validation_figures.py
+
+# Part II (see each script's docstring for its arguments)
+bash scripts/dataset_v2/run_scan.sh       # per-year climatology + tile scan
+bash scripts/dataset_v2/run_build.sh      # splits, store, gamma, checks
+python scripts/data_quality/ring_climatology.py
+bash scripts/dataset_v2/run_flags.sh      # temporal support, rings
+# gauges, pairs, tail validation, radar ranking:
+setsid nohup bash scripts/validation/run_validation.sh \
+    > logs/validation.log 2>&1 &
 \end{verbatim}
 
 \end{document}

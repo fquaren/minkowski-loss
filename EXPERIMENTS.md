@@ -505,12 +505,24 @@ isoperimetric scatter.
 
         - *Temporal support* is the cleanest rule: about 1% corroborated in every bin.
         - *Ring*: real rain under the ring below 31 mm/h, none at 89 mm/h and above. This
-          supports repairing the pixel over rejecting the tile.
-        - *Tile rejection* discards real rain: the non-max pixels of rejected tiles are
-          74% corroborated at 31-89 mm/h.
-        - *Untouched 150-500 mm/h*: ODYSSEY 0.66 (n=134), NIMBUS 0.96 (n=406). The
-          pre-2024-07 upper tail is dirtier. Untouched tail ≥ 31 by year: 0.77-0.87 for
-          2013-19, 0.92-0.95 from 2020 (2012: 0.36, n=14).
+          supports repairing the pixel over rejecting the tile. Rings and temporal support
+          almost never fire under NIMBUS (0 and 2 pixels).
+        - Figure and full write-up: `notes/data_quality_assessment.pdf` Part II;
+          `notes/figures/make_validation_figures.py`.
+        - *Tile rejection* discards real rain: gauge pixels inside unphysical-rejected
+          tiles are 67-79% corroborated below 89 mm/h under ODYSSEY, and 91-97% in every
+          bin under NIMBUS. Under NIMBUS a rejected tile is a real storm with one bad
+          pixel: mask the pixel instead.
+        - *Untouched 150-500 mm/h*: ODYSSEY 0.66 (n=134, median gauge 11 mm/h), NIMBUS
+          0.96 (n=406, median 28 mm/h). The pre-2024-07 upper tail is dirtier. Untouched
+          tail ≥ 31 by year: 0.77-0.93 for 2013-19, 0.92-0.95 from 2020 (2012: 0.36, n=14).
+        - *Spike repair depends on the product*: ODYSSEY 4-13% corroborated (removes
+          artefacts), NIMBUS 32-44%. The instantaneous product resolves small real cores
+          that the rule takes for spikes.
+        - *Hot repair is right*: of 19,193 hot pixels ≥ 500 mm/h, 22% are corroborated
+          but only 0.6% have a gauge ≥ 10 mm/h (median 0.06): clutter coinciding with
+          drizzle. At high rates the ≥ 10 mm/h column (`corroboration.csv`) is the
+          stronger test.
         - *Cleaning removes little rain*: of 19,904 pixels lowered by > 50% from ≥ 31 mm/h,
           the gauge saw ≥ 10 mm/h at 155 (0.8%).
         - *Underestimation*: at gauge ≥ 30 mm/h (117k station-frames), the cleaned 3×3
@@ -714,7 +726,13 @@ isoperimetric scatter.
       wrapper takes a lock, so parallel launches serialise, and python must run with `-u`
       or the log stays empty behind the output buffer.
 
-- [ ] **The 435 original days were capped at 150 mm/h upstream — being replaced (2026-09-29).**
+- [x] **The 435 original days were capped at 150 mm/h upstream — replaced.**
+      *Checked on disk 2026-10-03:* all 457 day stores from 2023-08-01 to 2024-10-30 in
+      `raw/OPERA/` are archive stores with QIND. The originals of the 101 post-switch days
+      are kept in `raw/OPERA_orig_postswitch/` for the paired era comparison. The automatic
+      swap of 09-29 stopped (`logs/refetch_rebuild.log`: 331/435 passed `verify_refetch.py`,
+      below the 95% gate). How the remaining days were swapped is not recorded here. The
+      v2 build (10-01/02) ran on the replaced stores.
       All 435 original stores (2023-08-01 .. 2024-10-30, no QIND) have a maximum ≤ 150 mm/h,
       while every archive-fetched year has 0.4–2.8% of tiles above it. The pipeline that
       produced them had already applied the 150 mm/h declutter step. On 2024-06-01 the
@@ -732,7 +750,8 @@ isoperimetric scatter.
 
       Archive files can also contain `inf`; the scan treats a tile with any non-finite pixel
       as not covered. **This also completes the QIND item below.**
-- [ ] **Add QIND to the original 435 days (2023-08-01 .. 2024-10-30).** Those stores in
+- [x] **Add QIND to the original 435 days (2023-08-01 .. 2024-10-30).** Done by the
+      replacement above (2026-10-03: QIND in all 457 stores). Original note: those stores in
       `raw/OPERA/` predate the archive fetcher and hold `TOT_PREC` only; every other day has
       `QIND` beside it. The full-archive fetch ran with `--skip_existing`, so it left them
       untouched — deliberately, since they are the source of the current patch set. To fill

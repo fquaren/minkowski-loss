@@ -516,7 +516,7 @@ Prefer fixing pixels over dropping tiles when the artefact is point-like.
 11. **Then define "extreme" on the screened data**, regionally (E3, §2), so that
     artefact-prone regions do not define the tail. Build the o.o.d. split on it.
 
-### 7.4c Status of the radar post-processing, and whether to release it (2026-10-02)
+### 7.4c Status of the radar post-processing, and whether to release it (2026-10-02, status updated 2026-10-03)
 
 **Implemented** (`src/data/cleaning.py`, `tests/test_cleaning.py`, used identically by the
 scan and the store build), against the 7.4b plan:
@@ -526,13 +526,13 @@ scan and the store build), against the 7.4b plan:
 | 1. DEM orientation | fixed (2026-09-28) |
 | 2. Missing, not zero | partly: repaired pixels take their neighbourhood's value and nothing is zeroed above 150 mm/h, but removal is still by *tile*, and partially covered tiles are still excluded (`notes/events.md` §5) |
 | 3. Static masks per period | done, per calendar year, over the complete archive (≥ 31 mm/h in > 1% of steps → neighbourhood median) |
-| 4. Geometry | rays done (thin components ≥ 80 km aligned with a radar within 250 km); range rings detected climatologically (audit flag, 2026-10-02); radar-wide failures not done |
-| 5. Spatial support | done (spike repair) |
-| 6. Temporal support | audit flag (2026-10-02), pending gauge validation |
-| 7. Plausibility bound | provisional 500 mm/h, not yet set with MCH |
-| 8. Per-radar, per-period exclusion | candidate list over the whole archive (2026-10-02), pending gauge validation |
-| 9. QIND as a weight | under test: scale differs between ODYSSEY and NIMBUS; AUC against gauges pending |
-| 10. Validation against independent evidence | **in progress**: DWD + SwissMetNet 10-min gauges (EXPERIMENTS §5) |
+| 4. Geometry | rays done (thin components ≥ 80 km aligned with a radar within 250 km); range rings detected climatologically (audit flag, 2026-10-02). Gauges (10-03): ring pixels are real rain below 31 mm/h and never at ≥ 89 mm/h, so **repair the high values on the ring, don't reject the tile**. Radar-wide failures not done |
+| 5. Spatial support | done (spike repair). Gauges (10-03): right for ODYSSEY (4–13% of repaired pixels corroborated), **too aggressive for NIMBUS** (32–44%: small real cores) |
+| 6. Temporal support | audit flag (2026-10-02). **Validated (10-03): ~1% corroborated in every intensity bin**, the cleanest rule; ready to apply. It fires almost only under ODYSSEY |
+| 7. Plausibility bound | provisional 500 mm/h, not yet set with MCH. Gauges (10-03): rejecting the *tile* discards real rain (pixels inside rejected tiles 67–79% corroborated below 89 mm/h under ODYSSEY, 91–97% in every bin under NIMBUS), so **mask the pixel instead** |
+| 8. Per-radar, per-period exclusion | 14 consistently bad radars over the whole archive (2026-10-03, after fixing three ranking bugs; EXPERIMENTS §5). Not validatable with the current gauges: only Berlin lies in Germany/Switzerland |
+| 9. QIND as a weight | **does not discriminate (10-03)**: AUC 0.26 under ODYSSEY (inverted: median 0.20 corroborated vs 0.90 not), 0.53 under NIMBUS. Explain the inversion before using it even as a covariate |
+| 10. Validation against independent evidence | **done for Germany and Switzerland (10-03)**: 1,735 DWD + SwissMetNet 10-min gauges, 12.1M station-frames (EXPERIMENTS §5, `notes/data_quality_assessment.pdf` Part II). Rest of Europe: needs EURADCLIM / ECA&D; CombiPrecip asked from MCH |
 | 11. Regional definition of "extreme" | not done |
 
 Also done: the product-break analysis (DECISIONS §18, `era_gap.py`), rejection rates per
@@ -540,9 +540,13 @@ intensity bin in every build report, and a reproducible pipeline from the public
 (fetch → climatology → scan → splits → store → checks).
 
 Rejection is now light: 0.2–0.4% of tiles in every bin from 1 to 500 mm/h, 40% above 500.
-The early audit had found the top of the tail mostly artefact. So whether the 150–500 mm/h
-range that v2 keeps is mostly real is **not known**. That is step 10, and it is the gap
-between "a cleaning we use" and "a product others can trust".
+The early audit had found the top of the tail mostly artefact. Whether the 150–500 mm/h
+range that v2 keeps is mostly real is now **answered for Germany and Switzerland**, and it
+depends on the product. Untouched pixels at 150–500 mm/h are 96% corroborated under NIMBUS
+(median gauge 28 mm/h), but only 66% under ODYSSEY (median 11 mm/h). So a third of the
+ODYSSEY upper tail is still uncorroborated after cleaning, which matters because v2 trains
+on ODYSSEY. Extending this to the rest of Europe is the gap between "a cleaning we use" and
+"a product others can trust".
 
 **Is a shareable product worth it?** It depends on which product.
 
@@ -565,8 +569,9 @@ between "a cleaning we use" and "a product others can trust".
   metadata, masks and code, plus the patches or a regeneration script, a short data paper)
   is roughly a few weeks. Venues: ESSD, or a datasets-and-benchmarks track.
 
-Minimum before releasing anything: step 10 on at least Switzerland (CombiPrecip, gauges)
-and a gallery pass over the top of the tail; rule 6 (temporal support); the 2013 events and
+Minimum before releasing anything: step 10 on at least Switzerland (gauges done 10-03;
+CombiPrecip pending) and a gallery pass over the top of the tail; rule 6 (temporal support,
+validated, not yet applied); the 2013 events and
 the partial-coverage fix (`notes/events.md`); and a decision with MCH on the plausibility
 bound. Worth raising with Daniele and Lionel: whether MCH would validate the Swiss part, or
 co-author.
