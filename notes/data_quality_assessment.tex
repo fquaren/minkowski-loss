@@ -867,6 +867,8 @@ SMN & NIMBUS & 398,360 & $-0.05$ & 0.08 & \textbf{0.29} & 0.15 \\ \bottomrule
 \label{tab:align}
 \end{table}
 
+\subsection{Presence: did it rain?}\label{sec:presence}
+
 \begin{definition}[Corroboration]
 A radar pixel is \emph{corroborated} if the matched gauge rate is $\ge1$\,mm/h: it rained
 there. It is \emph{confirmed heavy} if the gauge rate is $\ge10$\,mm/h. Artefacts (clutter,
@@ -886,22 +888,23 @@ omitted; under NIMBUS, temporal support and rings almost never fire (2 pixels an
 \label{fig:gauges}
 \end{figure}
 
-\paragraph{Results} (Fig.~\ref{fig:gauges}; \code{validation/corroboration.csv}).
+\paragraph{Results} (Fig.~\ref{fig:gauges}; \code{validation/values_20261003/corroboration.csv}).
 \begin{enumerate}
-\item \textbf{Untouched pixels are mostly real.} 0.85--0.91 corroborated under ODYSSEY from 10
+\item \textbf{Untouched pixels are mostly real.} 0.86--0.91 corroborated under ODYSSEY from 10
   to 150\,mm/h, and 0.95--0.96 under NIMBUS in every bin up to 500. The exception is the
-  ODYSSEY upper tail: 0.66 corroborated at 150--500\,mm/h ($n=134$, median gauge 11\,mm/h),
-  against 0.96 under NIMBUS ($n=406$, median 28\,mm/h). The 34 untouched pixels above
-  500\,mm/h are all uncorroborated. By year, the untouched tail ($\ge31$) is 0.77--0.93
-  corroborated in 2013--19 and 0.92--0.95 from 2020 (2012: 0.36, $n=14$).
+  ODYSSEY upper tail: 0.69 corroborated at 150--500\,mm/h ($n=127$, median gauge 14\,mm/h),
+  against 0.96 under NIMBUS ($n=402$, median 28\,mm/h). No untouched v2 pixel exceeds
+  500\,mm/h. By year, the untouched tail ($\ge31$) is 0.77--0.93 corroborated in 2013--19
+  and 0.92--0.95 from 2020 (2012: 0.71, $n=7$).
 \item \textbf{Temporal support is the cleanest signature.} About 1\% of unsupported pixels are
   corroborated, in every bin. It fires almost only under ODYSSEY.
 \item \textbf{Rings carry real rain at low rates only.} 0.82 corroborated at 10--31\,mm/h, 0.50
   at 31--89, and 0 at 89\,mm/h and above ($n=1{,}782$). Real rain falls under the ring; the
   high values on it are the artefact.
-\item \textbf{The spike rule depends on the product.} Under ODYSSEY, 4--13\% of repaired
-  pixels are corroborated, so it removes artefacts. Under NIMBUS, 32--44\%: the
-  instantaneous product resolves small real cores that the rule takes for spikes.
+\item \textbf{The spike rule, by presence.} Under ODYSSEY, 4--13\% of repaired pixels are
+  corroborated; under NIMBUS, 32--44\%. Read alone, that suggests the rule hits small real
+  cores under NIMBUS. The value test (\S\ref{sec:values}) shows it does not: the gauge under
+  those pixels is near dry.
 \item \textbf{Hot-pixel repair is right.} 19,193 hot pixels above 500\,mm/h: 22\% are
   corroborated, but only 0.6\% confirmed heavy (median gauge 0.06\,mm/h). The clutter
   coincides with drizzle, not with storms.
@@ -921,23 +924,161 @@ omitted; under NIMBUS, temporal support and rings almost never fire (2 pixels an
   quality score. Check it before using QIND even as a covariate.
 \end{enumerate}
 
+\subsection{Values: is the tail calibrated?}\label{sec:values}
+
+\paragraph{Why presence is not enough.} Corroboration asks whether it rained. The project's
+claims are about how intense the tail is, so the values have to be compared too. The
+presence test can mislead at high rates: hot pixels above 500\,mm/h count as 22\%
+corroborated, but the median gauge rate under them is 0.06\,mm/h.
+
+\paragraph{Why the values cannot be compared one to one.} Even a perfect radar would not
+reproduce the gauge.
+\begin{itemize}[nosep]
+\item \emph{Point against area.} A gauge samples about 200\,cm\textsuperscript{2}, a pixel
+  4\,km\textsuperscript{2}. Peaks are rarely over a gauge, and an area average has a
+  lighter tail than a point.
+\item \emph{Selection.} Conditioning on high radar values selects radar overestimates;
+  conditioning on high gauge values selects underestimates.
+\item \emph{Time.} The gauge gives 10-minute totals. The radar value is close to an
+  instantaneous rate, which has a heavier tail than a 10-minute mean.
+\item \emph{Gauge errors at high rates:} wind-induced undercatch, saturation.
+\end{itemize}
+So each comparison below is read against a reference, never against ``ratio = 1''.
+
+\begin{definition}[Exceedance ratio]
+Over the station-frames $S$ where both values exist,
+\[
+  \rho(u)=\frac{\#\{s\in S: R_s\ge u\}}{\#\{s\in S: G_s\ge u\}},
+\]
+with $R$ the radar value at the gauge pixel and $G$ the gauge rate. Neither variable is
+conditioned on. Pairs exist only where the raw $3\times3$ radar maximum reaches 5\,mm/h or a
+gauge interval reaches 0.5\,mm. Cleaned $\le$ raw $\le$ raw $3\times3$, so both counts are
+complete for $u\ge5$\,mm/h, and the ratio needs no denominator. $G$ is the single
+best-correlated 10-minute interval, times 6. The interval is a 90\% bootstrap over days
+(500 resamples), since pairs of the same storm are correlated.
+\end{definition}
+
+A radar that reads low by a constant factor gives a \emph{flat} $\rho(u)<1$, so a flat
+$\rho$ means the tail has the right \emph{shape}. A rising $\rho$ means the radar tail is
+heavier than the gauge tail.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+product & radar & $u=10$ & 20 & 31 & 53 & 89 & 150 \\ \midrule
+ODYSSEY & raw pixel & 0.54 & 0.68 & 0.93 & 2.15 & 11.0 & 204 \\
+ & v2 pixel & 0.50 & 0.51 & 0.51 & 0.52 & 0.82 & 6.5 \\
+ & v2, flags excluded & 0.49 & 0.50 & 0.49 & 0.47 & 0.54 & 1.26 \\
+ & \emph{gauge exceedances} & \emph{381,581} & \emph{110,556} & \emph{45,927} & \emph{12,040} & \emph{1,926} & \emph{101} \\ \midrule
+NIMBUS & raw pixel & 0.95 & 1.03 & 1.19 & 1.74 & 4.06 & 44 \\
+ & v2 pixel & 0.94 & 1.01 & 1.14 & 1.64 & 3.58 & 31 \\
+ & \emph{gauge exceedances} & \emph{93,616} & \emph{28,369} & \emph{11,799} & \emph{3,070} & \emph{458} & \emph{13} \\ \bottomrule
+\end{tabular}
+\caption{Exceedance ratio $\rho(u)$, both networks. ``Flags excluded'' also drops pixels
+with no temporal support or on a range ring; under NIMBUS it equals the v2 row. 90\%
+bootstrap intervals, per-network rows, the $3\times3$-maximum variant and the sensitivity to
+the gauge interval are in \code{validation/values_20261003/validation_summary.md}.}
+\label{tab:exc}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{fig_gauge_values.png}
+\caption{(a) Exceedance ratio against the threshold, with the 90\% day-block bootstrap
+band for the v2 pixel (points with fewer than 20 gauge exceedances are omitted). (b) QQ of
+the two tails over the same station-frames: the $k$-th largest radar value against the
+$k$-th largest gauge value. Grey: equality.}
+\label{fig:values}
+\end{figure}
+
+\paragraph{Results} (Table~\ref{tab:exc}, Fig.~\ref{fig:values}).
+\begin{enumerate}
+\item \textbf{The ODYSSEY tail has the right shape up to about 53\,mm/h, after the flags up to
+  89.} In v2, $\rho$ is flat at 0.50--0.52 from 10 to 53\,mm/h: the radar reads about half
+  the gauge rate at every level (compare the median radar/gauge ratio 0.45 at gauge
+  $\ge30$), but its tail falls off like the gauge tail. Above that, $\rho$ rises to 0.82 at 89
+  and 6.5 at 150\,mm/h. Excluding the temporal-support and ring flags brings these down to
+  0.54 and 1.26. The flags remove nearly all of the excess at 89, and most of it at 150,
+  where a factor of about 2.5 over the baseline remains (on 101 gauge exceedances).
+\item \textbf{The cleaning already removes most of the raw excess.} Raw ODYSSEY gives 11 at 89
+  and 204 at 150\,mm/h.
+\item \textbf{The NIMBUS tail is too heavy above about 31\,mm/h.} $\rho$ is about 1 at 10--20,
+  then 1.14, 1.64, 3.6 and 31 at 31, 53, 89 and 150 (the last on only 13 gauge
+  exceedances). The flags do not fire under NIMBUS. Yet the presence test says these pixels
+  are rain (96\% corroborated at 150--500, median gauge 28\,mm/h): NIMBUS rates high values
+  higher than the gauges, rather than inventing them. The causes cannot be separated here.
+  NIMBUS is a single near-instantaneous scan against a 10-minute total, and hail inflates
+  $Z$--$R$ rates in convective cores. DWD's open 1-minute gauge records would isolate the
+  first.
+\item \textbf{The QQ shows the same crossing} (Fig.~\ref{fig:values}b). ODYSSEY v2 quantiles lie
+  below the gauge quantiles up to about 90\,mm/h, cross near 100, and end near 490\,mm/h
+  (the 500\,mm/h rule's ceiling) where the gauges end at 260. NIMBUS lies on the diagonal up
+  to about 45\,mm/h and above it from there.
+\item \textbf{Conditioning both ways.} Given a v2 pixel at 150--500\,mm/h, the median gauge is
+  0 under ODYSSEY ($n=652$; most of these pixels carry a flag, since only 127 are untouched)
+  and 24\,mm/h under NIMBUS ($n=402$). Given a gauge $\ge89$\,mm/h, the median radar pixel
+  is 31 (ODYSSEY) and 33\,mm/h (NIMBUS). So at the top the radar both misses heavy gauge rain
+  and produces high values the gauges do not see. That is the signature of the point-area
+  and timing mismatch plus residual artefacts, and the reason only the unconditioned
+  $\rho$ is read as calibration.
+\item \textbf{Per rule, by value} (\code{rule_values.csv}). AUC = P(gauge under an untouched
+  pixel $>$ gauge under a flagged one, same raw bin): 0.5 means the rule flags rain like any
+  other pixel, 1 means it flags only drier pixels.
+  \begin{itemize}[nosep]
+  \item \emph{Temporal support}: 0.84--0.94 (ODYSSEY).
+  \item \emph{Spikes}: 0.82--0.94 under ODYSSEY and 0.90--0.94 under NIMBUS. Under NIMBUS the gauge under a
+    repaired spike has a median of 0--0.6\,mm/h, against 6--24 under untouched pixels.
+    The 32--44\% presence rate only meant light rain nearby; the spike value itself is
+    unsupported, and lowering it to its neighbour is right. This revises the presence-based
+    reading (item~4 above).
+  \item \emph{Unphysical tile rejection}: 0.44--0.50 under NIMBUS, and 0.57--0.65 below
+    89\,mm/h under ODYSSEY. The pixels around the offending one are rain like any other.
+  \item \emph{Rings}: 0.54 at 10--31\,mm/h (rain), rising to 0.84 at 150--500 (artefact).
+  \end{itemize}
+\end{enumerate}
+
+\paragraph{Two fixes behind these numbers (3 October).} Every number in
+\S\ref{sec:gauges} comes from the corrected run (\code{validation/values_20261003/}).
+\begin{itemize}[nosep]
+\item \code{gauge_vs_radar.py} floors $t+\text{offset}$ to the 10-minute grid, so for
+  frames at :15 and :45 the gauge columns hold the intervals labelled 5\,minutes earlier.
+  The gauge QC mask matched exact offsets and missed every flagged value on those frames:
+  267 intervals were masked instead of 540, and a 71\,mm/10\,min fault value reached the
+  QQ.
+\item 4.7\% of pairs fall in tiles that are not fully covered, which v2 never uses. They
+  have no row in the tile table, and a missing flag was read as ``not rejected'', so they
+  counted as v2 and as ``untouched''. They held the absurd values (up to
+  $\sim10^4$\,mm/h), including the 34 ``untouched'' pixels above 500\,mm/h of the first run.
+\end{itemize}
+The presence results moved little. Only the untouched class and the per-year rates
+changed, by at most 0.03: ODYSSEY untouched at 150--500\,mm/h went from 0.66 ($n=134$) to
+0.69 ($n=127$). The exception is 2012, now 0.71 on $n=7$.
+
+\subsection{What follows}
+
 \paragraph{What the numbers suggest} (proposals; the decisions are pending, EXPERIMENTS \S5).
 \begin{itemize}[nosep]
 \item Apply temporal support: reject or mask unsupported cells.
 \item Rings: repair the high values on the ring instead of rejecting the tile.
-\item Spikes: keep the rule for ODYSSEY; revisit it, or its thresholds, for NIMBUS.
+\item Spikes: keep the rule for both products (\S\ref{sec:values}).
 \item Unphysical: mask the offending pixels instead of rejecting the tile, at least under
   NIMBUS.
-\item ODYSSEY 150--500\,mm/h: a third of it is uncorroborated even after cleaning. The
-  POT threshold and any tail claim should be checked with and without that range.
+\item ODYSSEY tail: with the flags applied, its shape agrees with the gauges up to
+  89\,mm/h, so the POT level $u=31$ lies on the calibrated part. Above about 150\,mm/h an
+  excess of about 2.5 remains: check tail claims with and without that range.
+\item NIMBUS tail: heavier than the gauges above about 31\,mm/h, and no rule touches it.
+  Tail metrics on the \code{nimbus} split mix the product shift with this excess. Test the
+  instantaneous-versus-10-minute explanation with DWD 1-minute gauges before deciding.
 \end{itemize}
 
 \paragraph{Limits of this validation.}
 \begin{itemize}[nosep]
 \item Germany and Switzerland only. Of the radars in Table~\ref{tab:radars}, only Berlin is
   inside that area.
-\item Corroboration at 1\,mm/h shows that it rained, not that a 300\,mm/h value is right;
-  the $\ge10$\,mm/h row is the stronger test.
+\item Corroboration at 1\,mm/h shows only that it rained (\S\ref{sec:presence}). The value
+  test (\S\ref{sec:values}) reads the \emph{shape} of the tail from a flat $\rho$, but its
+  level is not interpretable: the areal-reduction and timing offsets are not quantified.
 \item A gauge samples a point, the radar a 2\,km pixel, and ODYSSEY integrates over a
   15-minute window, so even real cells are not always corroborated (the ceiling is about 0.9).
 \item Pairs from the same storm are correlated, so the effective sample sizes are smaller than

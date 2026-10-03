@@ -14,8 +14,10 @@ For each day store and each gauge on the radar grid with a complete record that 
   q           QIND at the pixel (NaN where absent)
   g_m10, g_0, g_p10, g_p20
               gauge totals (mm per 10 min) of the intervals LABELLED t - 10, t, t + 10 and
-              t + 20 min. The label convention is left open on purpose: `validate_tail.py`
-              picks the alignment from the lag correlation.
+              t + 20 min, each floored to the 10-min grid: for frames at :15 / :45 they are
+              the intervals labelled t - 15, t - 5, t + 5 and t + 15. The label convention
+              is left open on purpose: `validate_tail.py` picks the alignment from the lag
+              correlation.
 
 Frames are cleaned on a crop around the gauges, with a 40-px margin: wider than the cleaning
 windows (3x3, 5x5), so the cleaned values equal those of the full frame. Temporal support

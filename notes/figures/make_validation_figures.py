@@ -1,10 +1,16 @@
 #!/usr/bin/env python
 """Gauge-validation figure for notes/data_quality_assessment.tex (Part II).
 
-Reads `validation/corroboration.csv` written by `scripts/validation/validate_tail.py` and
-writes notes/figures/data_quality/fig_gauge_corroboration.png: per product era, the share of
-radar pixels the gauge corroborates (>= 1 mm/h, top row) and confirms as heavy (>= 10 mm/h,
-bottom row), by raw radar intensity, for untouched pixels and each cleaning class.
+Reads the outputs of `scripts/validation/validate_tail.py` and writes to
+notes/figures/data_quality/:
+
+  fig_gauge_corroboration.png  per product era, the share of radar pixels the gauge
+                               corroborates (>= 1 mm/h, top row) and confirms as heavy
+                               (>= 10 mm/h, bottom row), by raw radar intensity, for untouched
+                               pixels and each cleaning class (`corroboration.csv`);
+  fig_gauge_values.png         tail calibration: exceedance ratio N(radar >= u) / N(gauge >= u)
+                               with its day-block bootstrap band, and the QQ of the two tails
+                               (`exceedance.csv`, `qq.csv`, from --values_dir).
 
     python notes/figures/make_validation_figures.py [--validation_dir ...]
 """
@@ -37,7 +43,10 @@ MIN_N = 20     # bins with fewer pixel-gauge pairs are not drawn
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--validation_dir", default="/home/fquareng/work/data/extremes/OPERA/validation")
+    ap.add_argument("--validation_dir",
+                    default="/home/fquareng/work/data/extremes/OPERA/validation/values_20261003")
+    ap.add_argument("--values_dir",
+                    default="/home/fquareng/work/data/extremes/OPERA/validation/values_20261003")
     a = ap.parse_args()
     c = pd.read_csv(os.path.join(a.validation_dir, "corroboration.csv"))
     os.makedirs(OUT, exist_ok=True)
@@ -72,6 +81,57 @@ def main():
     h, lab = axes[0, 0].get_legend_handles_labels()
     fig.legend(h, lab, loc="lower center", ncol=3, frameon=False, bbox_to_anchor=(0.5, -0.07))
     path = os.path.join(OUT, "fig_gauge_corroboration.png")
+    fig.savefig(path)
+    print(path)
+    if os.path.exists(os.path.join(a.values_dir, "exceedance.csv")):
+        values_figure(a.values_dir)
+
+
+ERA_COLOUR = {"ODYSSEY": "#2a78d6", "NIMBUS": "#eb6834"}          # palette slots 1-2
+# the 3x3-max variant only brackets the point-vs-area offset; it is in exceedance.csv
+VARIANT_STYLE = {"v2 pixel": ("-", "o"), "v2 pixel, flags excluded": ("-.", "D"),
+                 "raw pixel": ("--", "s")}
+
+
+def values_figure(values_dir):
+    exc = pd.read_csv(os.path.join(values_dir, "exceedance.csv"))
+    q = pd.read_csv(os.path.join(values_dir, "qq.csv"))
+    fig, (a0, a1) = plt.subplots(1, 2, figsize=(7.4, 3.3))
+    for era, colour in ERA_COLOUR.items():
+        for var, (ls, mk) in VARIANT_STYLE.items():
+            e = exc[(exc["era"] == era) & (exc["radar"] == var) & (exc["network"] == "all")
+                    & (exc["gauge"] == "best interval") & (exc["n_gauge"] >= 20)]
+            if not len(e):
+                continue
+            a0.plot(e["u"], e["ratio"], ls=ls, marker=mk, ms=4, color=colour, lw=1.5,
+                    markeredgecolor="white", markeredgewidth=0.6, label=f"{era}, {var}")
+            if var == "v2 pixel":
+                a0.fill_between(e["u"], e["q05"], e["q95"], color=colour, alpha=0.15, lw=0)
+            d = q[(q["era"] == era) & (q["radar"] == var) & (q["gauge_k"] >= 5) & (q["radar_k"] > 0)]
+            if len(d):
+                a1.plot(d["gauge_k"], d["radar_k"], ls=ls, marker=mk, ms=3.5, color=colour, lw=1.5,
+                        markeredgecolor="white", markeredgewidth=0.5)
+    a0.axhline(1, color="0.5", lw=0.8)
+    a0.set_xscale("log"); a0.set_yscale("log")
+    a0.set_xticks([10, 20, 31, 53, 89, 150]); a0.set_xticklabels(["10", "20", "31", "53", "89", "150"])
+    a0.set_xlabel("threshold u (mm/h)")
+    a0.set_ylabel("N(radar ≥ u) / N(gauge ≥ u)")
+    a0.set_title("(a) exceedance ratio, same station-frames")
+    lim = [5, 400]
+    a1.plot(lim, lim, color="0.5", lw=0.8)
+    a1.set_xscale("log"); a1.set_yscale("log"); a1.set_xlim(lim); a1.set_ylim(3, 3000)
+    a1.set_xlabel("k-th largest gauge rate (mm/h)")
+    a1.set_ylabel("k-th largest radar rate (mm/h)")
+    a1.set_title("(b) QQ of the two tails")
+    for ax in (a0, a1):
+        ax.grid(color="0.92", lw=0.6, which="major"); ax.set_axisbelow(True)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+    h, lab = a0.get_legend_handles_labels()
+    fig.legend(h, lab, loc="lower center", ncol=3, frameon=False, bbox_to_anchor=(0.5, -0.12),
+               fontsize=8)
+    fig.tight_layout()
+    path = os.path.join(OUT, "fig_gauge_values.png")
     fig.savefig(path)
     print(path)
 

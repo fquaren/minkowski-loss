@@ -23,6 +23,26 @@ Steps:
 5. QIND: AUC of QIND for corroborated vs not, among raw >= 31 mm/h, per era (QIND scales
    differ between products).
 
+Steps 1-5 ask whether it rained. Steps 6-8 ask whether the radar *values* are right. The
+gauge is a point and the radar a 2 km pixel, so a correct radar still reads lower than the
+gauge at high rates (areal reduction). Conditioning on one side selects that side's errors.
+Each comparison is therefore read against a reference, never as "ratio should be 1".
+
+6. Tail calibration, conditioning on neither side: over the same station-frames, the
+   exceedance ratio N(radar >= u) / N(gauge >= u) for u = 10..150 mm/h, per era, network and
+   radar variant (raw pixel; v2 pixel, rejected tiles excluded; v2 3x3 max; v2 pixel with
+   temporal-support and ring flags also excluded), with a 90% day-block bootstrap interval.
+   Pairs exist only where the radar 3x3 or a gauge interval shows rain, but the counts
+   are complete for u >= 5 mm/h, and the ratio needs no denominator. The QQ of the two
+   tails (k-th largest radar vs k-th largest gauge over the same set) goes to qq.csv.
+   Gauge rate here = the single best-correlated interval (the max of two, used in 2-5,
+   inflates the gauge tail); the max of two is given as a sensitivity row.
+7. Conditional quantiles both ways, on the v2 data: gauge given the radar bin, and radar
+   (pixel and 3x3) given the gauge bin. Their combination brackets the selection effects.
+8. Per-rule values: for each class and raw bin, gauge quantiles and the AUC of untouched vs
+   flagged gauge rates in the same bin (0.5 = the rule flags rain like any other, 1 = it
+   flags only pixels drier than untouched ones).
+
 Gauge values flagged by `gauge_qc.py` (impossible, stuck, isolated bursts) are masked first.
 
 Writes <out_dir>/validation_summary.md and the tables as CSV.
@@ -87,7 +107,10 @@ def apply_gauge_qc(p, qc_path):
     tmin = p["time"].values.astype("datetime64[m]").astype(np.int64)
     n = 0
     for col, off in zip(GCOLS, (-10, 0, 10, 20)):
-        k = pd.DataFrame({"network": p["network"].values, "station": p["station"].values, "t": tmin + off})
+        # gauge_vs_radar.py places t + off on the 10-min grid by flooring, so for frames at
+        # :15 / :45 the column holds the interval labelled t + off - 5
+        k = pd.DataFrame({"network": p["network"].values, "station": p["station"].values,
+                          "t": ((tmin + off) // 10) * 10})
         bad = k.merge(qc, on=["network", "station", "t"], how="left")["bad"].notna().values
         p.loc[bad, col] = np.nan
         n += int(bad.sum())
@@ -122,8 +145,11 @@ def matched_rate(p, al):
 
 def classes(p):
     lowered = (p["raw"] - p["cln"]) > 1e-3
+    # a pair whose tile is not in the scan table is in a tile v2 never uses (not fully
+    # covered): it cannot count as untouched v2 data
+    scanned = p["unphysical"].notna()
     c = {
-        "untouched": (~lowered) & (p["unphysical"].fillna(0) == 0) & (p["ray"].fillna(0) == 0)
+        "untouched": scanned & (~lowered) & (p["unphysical"] == 0) & (p["ray"] == 0)
                      & (p["support"] != 1) & (p["on_ring"] == 0),
         "hot repaired": lowered & (p["hot"] == 1),
         "spike repaired": lowered & (p["hot"] == 0),
@@ -160,6 +186,124 @@ def auc(pos, neg):
     from scipy.stats import mannwhitneyu
     u = mannwhitneyu(pos, neg, alternative="two-sided").statistic
     return float(u / (len(pos) * len(neg)))
+
+
+U_EXC = [10, 20, 31, 53, 89, 150]
+
+
+def best_single(p, al):
+    """Gauge rate (mm/h) from the single best-correlated interval per network and era."""
+    g = np.full(len(p), np.nan)
+    for _, r in al.iterrows():
+        c = GCOLS[int(np.nanargmax([r[c] for c in GCOLS]))]
+        m = ((p["network"] == r["network"]) & (p["era"] == r["era"])).values
+        g[m] = 6 * p.loc[m, c].values
+    return g
+
+
+def radar_variants(p):
+    """{name: (radar values, selection)}; v2 = cleaned values in the tiles v2 keeps (fully
+    covered, i.e. in the scan table, and not rejected)."""
+    kept = p["unphysical"].notna() & (p["unphysical"] == 0) & (p["ray"] == 0)
+    flags = kept & (p["support"] != 1) & (p["on_ring"] == 0)
+    return {"raw pixel": (p["raw"].values, np.ones(len(p), bool)),
+            "v2 pixel": (p["cln"].values, kept.values),
+            "v2 3x3 max": (p["cln3"].values, kept.values),
+            "v2 pixel, flags excluded": (p["cln"].values, flags.values)}
+
+
+def exceedance(p, g1, g2, n_boot=500, seed=0):
+    """Exceedance ratio N(radar >= u) / N(gauge >= u) with a 90% day-block bootstrap."""
+    rng = np.random.default_rng(seed)
+    day = pd.factorize(p["time"].dt.floor("D"))[0]
+    nd = day.max() + 1
+    boot = rng.integers(0, nd, size=(n_boot, nd))
+    w = np.stack([np.bincount(b, minlength=nd) for b in boot])        # (n_boot, nd) day weights
+    rows = []
+    for vname, (rad, sel0) in radar_variants(p).items():
+        gauges = [("best interval", g1)] + ([("max of two", g2)] if vname == "v2 pixel" else [])
+        for gname, g in gauges:
+            for era in ("ODYSSEY", "NIMBUS"):
+                for net in ("all", "dwd", "smn"):
+                    sel = sel0 & (p["era"] == era).values & np.isfinite(rad) & np.isfinite(g)
+                    if net != "all":
+                        sel &= (p["network"] == net).values
+                    for u in U_EXC:
+                        nr = np.bincount(day[sel & (rad >= u)], minlength=nd)
+                        ng = np.bincount(day[sel & (g >= u)], minlength=nd)
+                        R, G = w @ nr, w @ ng
+                        with np.errstate(divide="ignore", invalid="ignore"):
+                            br = np.where(G > 0, R / G, np.nan)
+                        rows.append({"radar": vname, "gauge": gname, "era": era, "network": net,
+                                     "u": u, "n_radar": int(nr.sum()), "n_gauge": int(ng.sum()),
+                                     "ratio": nr.sum() / ng.sum() if ng.sum() else np.nan,
+                                     "q05": float(np.nanquantile(br, 0.05)) if np.isfinite(br).any() else np.nan,
+                                     "q95": float(np.nanquantile(br, 0.95)) if np.isfinite(br).any() else np.nan})
+    return pd.DataFrame(rows)
+
+
+def qq(p, g1, n_pts=40):
+    """k-th largest radar vs k-th largest gauge over the same station-frames (v2 variants)."""
+    rows = []
+    for vname in ("raw pixel", "v2 pixel", "v2 3x3 max"):
+        rad, sel0 = radar_variants(p)[vname]
+        for era in ("ODYSSEY", "NIMBUS"):
+            sel = sel0 & (p["era"] == era).values & np.isfinite(rad) & np.isfinite(g1)
+            r = np.sort(rad[sel])[::-1]
+            gg = np.sort(g1[sel])[::-1]
+            K = int(((r >= 5) | (gg >= 5)).sum())               # complete above 5 mm/h
+            for k in np.unique(np.round(np.logspace(0, np.log10(max(K, 1)), n_pts)).astype(int)):
+                rows.append({"radar": vname, "era": era, "k": int(k),
+                             "radar_k": float(r[k - 1]), "gauge_k": float(gg[k - 1])})
+    return pd.DataFrame(rows)
+
+
+def conditional(p, g1):
+    """Gauge quantiles given the radar bin, and radar quantiles given the gauge bin (v2)."""
+    rad_bins = [1, 10, 31, 89, 150, 500, np.inf]
+    g_bins = [10, 31, 53, 89, np.inf]
+    v = radar_variants(p)
+    kept = v["v2 pixel"][1]
+    out = []
+    for era in ("ODYSSEY", "NIMBUS"):
+        e = kept & (p["era"] == era).values & np.isfinite(g1)
+        for vname in ("v2 pixel", "v2 3x3 max"):
+            rad = v[vname][0]
+            for lo, hi in zip(rad_bins[:-1], rad_bins[1:]):
+                s = e & (rad >= lo) & (rad < hi)
+                if s.sum() >= 20:
+                    q = np.quantile(g1[s], [0.1, 0.5, 0.9])
+                    out.append({"given": f"radar ({vname})", "era": era, "bin": f"[{lo:g}, {hi:g})",
+                                "n": int(s.sum()), "of": "gauge", "q10": q[0], "q50": q[1], "q90": q[2]})
+            for lo, hi in zip(g_bins[:-1], g_bins[1:]):
+                s = e & (g1 >= lo) & (g1 < hi) & np.isfinite(rad)
+                if s.sum() >= 20:
+                    q = np.quantile(rad[s], [0.1, 0.5, 0.9])
+                    out.append({"given": "gauge", "era": era, "bin": f"[{lo:g}, {hi:g})",
+                                "n": int(s.sum()), "of": f"radar ({vname})", "q10": q[0], "q50": q[1], "q90": q[2]})
+    return pd.DataFrame(out)
+
+
+def rule_values(p, g1):
+    """Per class and raw bin: gauge quantiles, and AUC of untouched vs flagged gauge rates."""
+    lab = [f"[{BINS[i]:g}, {BINS[i + 1]:g})" for i in range(len(BINS) - 1)]
+    b = pd.cut(p["raw"], BINS, right=False, labels=lab)
+    cl = classes(p)
+    out = []
+    for era in ("ODYSSEY", "NIMBUS"):
+        e = (p["era"] == era).values & np.isfinite(g1)
+        for bl in lab:
+            eb = e & (b == bl).values
+            ref = g1[eb & cl["untouched"].values]
+            for name, m in cl.items():
+                s = eb & m.values
+                if s.sum() < 20:
+                    continue
+                q = np.quantile(g1[s], [0.5, 0.9])
+                out.append({"class": name, "era": era, "raw bin": bl, "n": int(s.sum()),
+                            "gauge q50": q[0], "gauge q90": q[1],
+                            "AUC untouched > class": np.nan if name == "untouched" else auc(ref, g1[s])})
+    return pd.DataFrame(out)
 
 
 def main():
@@ -225,6 +369,39 @@ def main():
     m = classes(p)["untouched"] & (p["raw"] >= 31) & np.isfinite(g)
     yr = pd.DataFrame({"year": p.loc[m, "time"].dt.year, "c": g[m] >= a.wet}).groupby("year")["c"].agg(["mean", "size"])
     L += ["", "## 6. Untouched tail (raw >= 31) by year", "", md(yr.round(2)), ""]
+
+    # 7-9: are the values right? (docstring steps 6-8)
+    g1 = best_single(p, al)
+    exc = exceedance(p, g1, g)
+    q = qq(p, g1)
+    cond = conditional(p, g1)
+    rv = rule_values(p, g1)
+    for name, df in (("exceedance", exc), ("qq", q), ("conditional", cond), ("rule_values", rv)):
+        df.to_csv(os.path.join(a.out_dir, f"{name}.csv"), index=False)
+    fmt = lambda r: f"{r['ratio']:.2f} [{r['q05']:.2f}, {r['q95']:.2f}]"   # noqa: E731
+    L += ["## 7. Tail calibration: exceedance ratio N(radar >= u) / N(gauge >= u)", "",
+          "Same station-frames on both sides, no conditioning; 90% day-block bootstrap in "
+          "brackets. A correct 2 km radar is expected *below* 1 at high u (a point gauge has a "
+          "heavier tail than a 2 km area). Gauge = single best-correlated interval.", ""]
+    for era in ("ODYSSEY", "NIMBUS"):
+        e = exc[(exc["era"] == era) & (exc["network"] == "all") & (exc["gauge"] == "best interval")]
+        t = e.assign(v=e.apply(fmt, axis=1)).pivot(index="radar", columns="u", values="v")
+        n = e[e["radar"] == "v2 pixel"].set_index("u")
+        L += [f"**{era}** (v2 pixel counts, radar / gauge: "
+              + ", ".join(f"u={u}: {n.loc[u, 'n_radar']:,} / {n.loc[u, 'n_gauge']:,}" for u in U_EXC) + ")",
+              "", md(t), ""]
+    e = exc[(exc["radar"] == "v2 pixel") & (exc["network"] != "all") & (exc["gauge"] == "best interval")]
+    t = e.assign(v=e.apply(fmt, axis=1)).pivot(index=["era", "network"], columns="u", values="v")
+    L += ["By network (v2 pixel):", "", md(t), ""]
+    e = exc[(exc["radar"] == "v2 pixel") & (exc["network"] == "all")]
+    t = e.assign(v=e.apply(fmt, axis=1)).pivot(index=["era", "gauge"], columns="u", values="v")
+    L += ["Sensitivity to the gauge interval (v2 pixel):", "", md(t), ""]
+    L += ["## 8. Conditional quantiles (v2 data, mm/h)", "",
+          md(cond.round(1), index=False), ""]
+    L += ["## 9. Gauge rates under each rule's pixels (gauge = best interval)", "",
+          "AUC = P(gauge under an untouched pixel > gauge under a flagged one) in the same raw "
+          "bin: 0.5 = the rule flags rain like any other pixel, 1 = only drier pixels.", "",
+          md(rv.round(2), index=False), ""]
     open(os.path.join(a.out_dir, "validation_summary.md"), "w").write("\n".join(L) + "\n")
     print("\n".join(L))
 

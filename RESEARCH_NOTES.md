@@ -527,12 +527,12 @@ scan and the store build), against the 7.4b plan:
 | 2. Missing, not zero | partly: repaired pixels take their neighbourhood's value and nothing is zeroed above 150 mm/h, but removal is still by *tile*, and partially covered tiles are still excluded (`notes/events.md` §5) |
 | 3. Static masks per period | done, per calendar year, over the complete archive (≥ 31 mm/h in > 1% of steps → neighbourhood median) |
 | 4. Geometry | rays done (thin components ≥ 80 km aligned with a radar within 250 km); range rings detected climatologically (audit flag, 2026-10-02). Gauges (10-03): ring pixels are real rain below 31 mm/h and never at ≥ 89 mm/h, so **repair the high values on the ring, don't reject the tile**. Radar-wide failures not done |
-| 5. Spatial support | done (spike repair). Gauges (10-03): right for ODYSSEY (4–13% of repaired pixels corroborated), **too aggressive for NIMBUS** (32–44%: small real cores) |
+| 5. Spatial support | done (spike repair). Gauges (10-03): **right for both products**. The gauge under a repaired pixel is near dry (AUC vs untouched 0.82–0.94 ODYSSEY, 0.90–0.94 NIMBUS). NIMBUS's 32–44% presence rate is light rain nearby, not a supported spike |
 | 6. Temporal support | audit flag (2026-10-02). **Validated (10-03): ~1% corroborated in every intensity bin**, the cleanest rule; ready to apply. It fires almost only under ODYSSEY |
 | 7. Plausibility bound | provisional 500 mm/h, not yet set with MCH. Gauges (10-03): rejecting the *tile* discards real rain (pixels inside rejected tiles 67–79% corroborated below 89 mm/h under ODYSSEY, 91–97% in every bin under NIMBUS), so **mask the pixel instead** |
 | 8. Per-radar, per-period exclusion | 14 consistently bad radars over the whole archive (2026-10-03, after fixing three ranking bugs; EXPERIMENTS §5). Not validatable with the current gauges: only Berlin lies in Germany/Switzerland |
 | 9. QIND as a weight | **does not discriminate (10-03)**: AUC 0.26 under ODYSSEY (inverted: median 0.20 corroborated vs 0.90 not), 0.53 under NIMBUS. Explain the inversion before using it even as a covariate |
-| 10. Validation against independent evidence | **done for Germany and Switzerland (10-03)**: 1,735 DWD + SwissMetNet 10-min gauges, 12.1M station-frames (EXPERIMENTS §5, `notes/data_quality_assessment.pdf` Part II). Rest of Europe: needs EURADCLIM / ECA&D; CombiPrecip asked from MCH |
+| 10. Validation against independent evidence | **done for Germany and Switzerland (10-03)**: 1,735 DWD + SwissMetNet 10-min gauges, 12.1M station-frames, presence *and* values (EXPERIMENTS §5, `notes/data_quality_assessment.pdf` Part II). Tail calibration: ODYSSEY exceedance ratio flat to 89 mm/h once flags are applied, NIMBUS too heavy above ~31. Rest of Europe: needs EURADCLIM / ECA&D; CombiPrecip asked from MCH |
 | 11. Regional definition of "extreme" | not done |
 
 Also done: the product-break analysis (DECISIONS §18, `era_gap.py`), rejection rates per
@@ -542,10 +542,17 @@ intensity bin in every build report, and a reproducible pipeline from the public
 Rejection is now light: 0.2–0.4% of tiles in every bin from 1 to 500 mm/h, 40% above 500.
 The early audit had found the top of the tail mostly artefact. Whether the 150–500 mm/h
 range that v2 keeps is mostly real is now **answered for Germany and Switzerland**, and it
-depends on the product. Untouched pixels at 150–500 mm/h are 96% corroborated under NIMBUS
-(median gauge 28 mm/h), but only 66% under ODYSSEY (median 11 mm/h). So a third of the
-ODYSSEY upper tail is still uncorroborated after cleaning, which matters because v2 trains
-on ODYSSEY. Extending this to the rest of Europe is the gap between "a cleaning we use" and
+depends on the product.
+- *Presence.* Untouched pixels at 150–500 mm/h are 96% corroborated under NIMBUS (median
+  gauge 28 mm/h), but only 69% under ODYSSEY (median 14 mm/h).
+- *Values.* The ratio N(radar ≥ u) / N(gauge ≥ u) over the same station-frames is flat
+  (≈ 0.5) under ODYSSEY up to 53 mm/h, and up to 89 mm/h once the temporal-support and ring
+  flags are applied. So the tail shape at the POT level u = 31 is right, and with the flags
+  only an excess of about 2.5 at ≥ 150 mm/h remains.
+- *NIMBUS* is rain but too heavy-tailed from about 31 mm/h (ratio 3.6 at 89), with no rule
+  touching it. Possibly instantaneous scans against 10-min gauges: test with 1-min gauges.
+
+Extending this to the rest of Europe is the gap between "a cleaning we use" and
 "a product others can trust".
 
 **Is a shareable product worth it?** It depends on which product.

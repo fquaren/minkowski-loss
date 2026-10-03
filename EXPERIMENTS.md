@@ -486,16 +486,18 @@ isoperimetric scatter.
         correlation), corroboration rate (gauge >= 1 mm/h) per intensity bin for untouched
         pixels and for each rule's flagged pixels, rain wrongly removed, underestimation,
         QIND AUC per era, untouched-tail corroboration per year.
-      - *Validation results (2026-10-03, `logs/validation.log`, `validation/
-        validation_summary.md`).* Data: 12.1M station-frames, 1,735 gauges (1,454 DWD,
-        281 SMN), 4,968 days. The radar frame matches the gauge intervals 10-20 min later
-        in all four network × era cells (log-rate correlation 0.29-0.47). "Corroborated"
-        means a gauge >= 1 mm/h: it shows it was raining, not that the rate is right.
-        Corroboration by raw intensity bin (n):
+      - *Validation results (2026-10-03).* **Current outputs: `validation/values_20261003/`**
+        (`logs/validate_values_20261003.log`). The first run (`validation/validation_summary.md`,
+        `logs/validation.log`) had two bugs, fixed in `validate_tail.py`; see the end of
+        this item. Data: 12.1M station-frames, 1,735 gauges (1,454 DWD, 281 SMN), 4,968
+        days. The radar frame matches the gauge intervals 10-20 min later in all four
+        network × era cells (log-rate correlation 0.29-0.47).
+        **Presence** ("corroborated" = gauge ≥ 1 mm/h: it rained, not that the rate is
+        right), by raw intensity bin (n):
 
         | class | [10,31) | [31,89) | [89,150) | [150,500) | ≥500 |
         |---|---|---|---|---|---|
-        | untouched | 0.91 (244k) | 0.92 (34k) | 0.91 (2,176) | 0.89 (540) | 0.00 (34) |
+        | untouched | 0.91 (240k) | 0.92 (33k) | 0.91 (2,142) | 0.90 (529) | – (0) |
         | no temporal support | 0.01 (565) | 0.01 (141) | 0.00 (22) | 0.00 (391) | 0.01 (578) |
         | on range ring | 0.82 (606) | 0.50 (90) | 0.00 (19) | 0.00 (783) | 0.00 (980) |
         | spike repaired | 0.13 (1,664) | 0.24 (538) | 0.24 (88) | 0.26 (53) | 0.00 (14) |
@@ -507,22 +509,16 @@ isoperimetric scatter.
         - *Ring*: real rain under the ring below 31 mm/h, none at 89 mm/h and above. This
           supports repairing the pixel over rejecting the tile. Rings and temporal support
           almost never fire under NIMBUS (0 and 2 pixels).
-        - Figure and full write-up: `notes/data_quality_assessment.pdf` Part II;
-          `notes/figures/make_validation_figures.py`.
         - *Tile rejection* discards real rain: gauge pixels inside unphysical-rejected
           tiles are 67-79% corroborated below 89 mm/h under ODYSSEY, and 91-97% in every
           bin under NIMBUS. Under NIMBUS a rejected tile is a real storm with one bad
           pixel: mask the pixel instead.
-        - *Untouched 150-500 mm/h*: ODYSSEY 0.66 (n=134, median gauge 11 mm/h), NIMBUS
-          0.96 (n=406, median 28 mm/h). The pre-2024-07 upper tail is dirtier. Untouched
-          tail ≥ 31 by year: 0.77-0.93 for 2013-19, 0.92-0.95 from 2020 (2012: 0.36, n=14).
-        - *Spike repair depends on the product*: ODYSSEY 4-13% corroborated (removes
-          artefacts), NIMBUS 32-44%. The instantaneous product resolves small real cores
-          that the rule takes for spikes.
+        - *Untouched 150-500 mm/h*: ODYSSEY 0.69 (n=127, median gauge 14 mm/h), NIMBUS
+          0.96 (n=402, median 28 mm/h). No untouched v2 pixel exceeds 500 mm/h. Untouched
+          tail ≥ 31 by year: 0.77-0.93 for 2013-19, 0.92-0.95 from 2020 (2012: 0.71, n=7).
         - *Hot repair is right*: of 19,193 hot pixels ≥ 500 mm/h, 22% are corroborated
           but only 0.6% have a gauge ≥ 10 mm/h (median 0.06): clutter coinciding with
-          drizzle. At high rates the ≥ 10 mm/h column (`corroboration.csv`) is the
-          stronger test.
+          drizzle. Presence is a weak test at high rates.
         - *Cleaning removes little rain*: of 19,904 pixels lowered by > 50% from ≥ 31 mm/h,
           the gauge saw ≥ 10 mm/h at 155 (0.8%).
         - *Underestimation*: at gauge ≥ 30 mm/h (117k station-frames), the cleaned 3×3
@@ -531,6 +527,63 @@ isoperimetric scatter.
           corroborated vs 0.90 for not); NIMBUS 0.53 (both medians 1.00). It does not
           discriminate, and the ODYSSEY inversion is unexplained. Possibly clutter near a
           radar gets high quality: check before using it even as a covariate.
+
+        **Values** (`validate_tail.py` steps 6-8; `exceedance.csv`, `qq.csv`,
+        `conditional.csv`, `rule_values.csv`). The exceedance ratio ρ(u) = N(radar ≥ u) /
+        N(gauge ≥ u) is computed over the same station-frames, with no conditioning on
+        either side, and is complete for u ≥ 5. Gauge = best single 10-min interval; 90%
+        day-block bootstrap. A flat ρ means the tail has the right *shape*. Its level is
+        not interpretable: point-vs-2 km and instantaneous-vs-10-min offsets are not
+        quantified. ρ, both networks:
+
+        | product | radar | u=10 | 20 | 31 | 53 | 89 | 150 |
+        |---|---|---|---|---|---|---|---|
+        | ODYSSEY | raw pixel | 0.54 | 0.68 | 0.93 | 2.15 | 11.0 | 204 |
+        | ODYSSEY | v2 pixel | 0.50 | 0.51 | 0.51 | 0.52 | 0.82 | 6.5 |
+        | ODYSSEY | v2, temporal-support + ring flags excluded | 0.49 | 0.50 | 0.49 | 0.47 | 0.54 | 1.26 |
+        | NIMBUS | v2 pixel (flags change nothing) | 0.94 | 1.01 | 1.14 | 1.64 | 3.58 | 31 |
+        | | gauge exceedances, ODYSSEY / NIMBUS | 382k / 94k | 111k / 28k | 46k / 12k | 12k / 3.1k | 1,926 / 458 | 101 / 13 |
+
+        - *ODYSSEY*: flat at about 0.5 up to 53 mm/h, so the radar reads about half the
+          gauge at every level but the tail shape matches. With the flags applied, it
+          stays flat to 89 (0.54). **The POT level u = 31 sits on the calibrated part.**
+          At 150 mm/h an excess of about 2.5 remains (1.26 vs 0.5, on 101 gauge
+          exceedances).
+        - *NIMBUS*: the tail is heavier than the gauges from about 31 mm/h (3.6 at 89), and
+          no rule touches it. The pixels are rain (96% corroborated at 150-500) but rated
+          higher than the gauges. Single instantaneous scan vs 10-min gauge totals, or hail
+          in Z-R? **Test with DWD's open 1-min gauge records.** Until then, tail metrics on
+          the `nimbus` split mix the product shift with this excess.
+        - *Conditioning both ways*: given a v2 ODYSSEY pixel at 150-500 mm/h, the median
+          gauge is 0 (n=652, mostly flagged pixels); under NIMBUS it is 24 mm/h (n=402).
+          Given a gauge ≥ 89, the median radar pixel is 31 / 33 mm/h. At the top, the radar
+          both misses heavy gauge rain and produces values the gauges don't see, so only
+          the unconditioned ρ is read as calibration.
+        - *Per rule, by value* (AUC = P(gauge under untouched > gauge under flagged), same
+          raw bin; 0.5 = flags rain like any pixel):
+          - temporal support 0.84-0.94;
+          - ring 0.54 at 10-31 (rain) rising to 0.84 at 150-500;
+          - unphysical rejection 0.44-0.50 under NIMBUS (it rejects rain);
+          - **spikes 0.82-0.94 under ODYSSEY and 0.90-0.94 under NIMBUS**.
+        - **Correction: spike repair is right for NIMBUS too.** The gauge under a repaired
+          NIMBUS spike has a median of 0-0.6 mm/h, vs 6-24 under untouched pixels. The
+          32-44% presence rate only meant light rain nearby. This replaces the earlier
+          reading that the rule is too aggressive for NIMBUS.
+        - Figures and write-up: `notes/data_quality_assessment.pdf` Part II (§ "Values: is
+          the tail calibrated?"); `notes/figures/make_validation_figures.py`.
+
+        **Two bugs fixed before the current run** (the old outputs are kept in
+        `validation/values_20261003_buggy_unscanned_qc/`):
+        - *Gauge QC masking on :15 / :45 frames.* `gauge_vs_radar.py` floors t + offset to
+          the 10-min grid, so for :15 / :45 frames the gauge columns hold intervals
+          labelled 5 min earlier. The mask matched exact offsets, so it missed every flagged
+          value on those frames: 267 intervals masked instead of 540, and a
+          71 mm / 10 min fault value reached the QQ.
+        - *Pairs in tiles v2 never uses.* 4.7% of pairs are in tiles that are not fully
+          covered, so they have no row in the tile table, and a missing flag read as "not
+          rejected". They counted as v2 / untouched and held values up to ~10⁴ mm/h,
+          including the 34 "untouched" pixels ≥ 500 of the first run.
+        - Presence numbers moved by ≤ 0.03.
       - *Then decide*, per rule: reject the tile, repair the pixel, weight, or drop the rule;
         and whether the 150-500 mm/h range is kept.
 - [ ] **Fix the event set before training on v2** (`notes/events.md` §4–5, 2026-10-02).

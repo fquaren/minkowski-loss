@@ -124,7 +124,7 @@ all call it, so what is selected, what is stored and what is validated cannot dr
 | `radar_quality_v2.py` | Which radars are consistently bad over the whole archive? Six signals per radar-year, relative to the 5 nearest radars | `quality_v2/radars/radar_{year,summary}.csv`, `radar_quality.md` |
 | `../validation/fetch_gauges.py`, `gauge_qc.py` | Independent truth: DWD and SwissMetNet 10-min gauges, checked against each other only | `validation/gauges/` |
 | `../validation/gauge_vs_radar.py` | Radar (raw, cleaned, flags, QIND) paired with every gauge, per frame | `validation/pairs/` |
-| `../validation/validate_tail.py` | Is the tail real? Gauge corroboration per rule, intensity bin and product | `validation/validation_summary.md`, `corroboration.csv` |
+| `../validation/validate_tail.py` | Is the tail real? Presence: gauge corroboration per rule, intensity bin and product. Values: exceedance ratio N(radar ≥ u) / N(gauge ≥ u), tail QQ, conditional quantiles both ways, per-rule gauge AUC | current run: `validation/values_20261003/` (`validation_summary.md`, `corroboration.csv`, `exceedance.csv`, `qq.csv`, `conditional.csv`, `rule_values.csv`) |
 
 `scripts/validation/run_validation.sh` chains the gauges, pairs, validation and radar
 ranking (cores 10–11, so it can run beside the flag scan). Figures for the note come from
@@ -134,9 +134,13 @@ ranking (cores 10–11, so it can run beside the flag scan). Figures for the not
 
 - Temporal support is the cleanest rule: about 1% of the cells it flags are corroborated.
 - Ring pixels are real rain at low rates and artefact at ≥ 89 mm/h.
-- Spike repair is right for ODYSSEY but too aggressive for NIMBUS.
+- Spike repair is right for both products: the gauge under a repaired pixel is near dry
+  (a presence-only reading had suggested otherwise for NIMBUS).
 - Rejecting whole tiles discards real rain.
 - QIND does not discriminate; under ODYSSEY it is even inverted.
+- Tail calibration: the ODYSSEY exceedance ratio is flat (≈ 0.5) up to 89 mm/h once
+  the flags are applied, so the tail shape is right where the POT level sits. NIMBUS is
+  too heavy above about 31 mm/h, and no rule touches it.
 
 **Radar ranking: what changed on 2026-10-03.**
 
