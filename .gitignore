@@ -1,7 +1,7 @@
 .claude/
 *.npz
 *runs
-*.DS_Store
+.DS_Store
 *visualize
 
 # Byte-compiled / optimized / DLL files
