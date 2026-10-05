@@ -394,18 +394,35 @@ report rejection rates per intensity bin.
 
 ### 7.4 To discuss at MCH (Daniele Nerini, Lionel Moret)
 
-Best practice at MeteoSwiss before fixing the screen:
-- Which composite-level filters does MCH trust for OPERA data (Gabella-type, static-clutter
-  maps, satellite masks), and with what thresholds?
-- Does MCH use the OPERA QI at all, and how? Is QIND comparable across countries and years?
-- How does MCH separate real small intense cores from clutter spikes without volume data?
-  What is a defensible upper plausibility bound for a 15-min, 2 km rate?
-- Is there a reference over Switzerland (CombiPrecip, the Swiss composite) against which to
-  validate the screened OPERA tail?
-- Practice for ML training sets in the pysteps / nowcasting community: tile rejection vs
-  pixel masking, and the handling of the product breaks above.
-- Whether our declutter-zeroing (EXPERIMENTS §5) has an MCH analogue, and what they do
-  above their plausibility bound.
+**What we found, to check with MCH** (updated 2026-10-04 from the gauge validation:
+1,735 DWD and SwissMetNet 10-min gauges, 12.1M station-frames; `notes/data_quality_assessment`,
+`validation/repair_v3/repair_comparison.md`). Several earlier questions are now answered by
+our own data; we ask whether MCH's experience agrees.
+- **Screen.** We built and validated our own rules: static clutter (per-year hot pixels),
+  isolated spikes, emitter rays, range rings, cells with no precursor or successor at
+  ±15 min, and > 500 mm/h cores with their surroundings. Under each rule's pixels the
+  gauges are dry. Does MCH see artefact types we miss, or use other composite-level
+  filters (Gabella-type, satellite masks)?
+- **Repair, not rejection.** Rejecting a whole tile for one artefact threw away real rain
+  (the other pixels of rejected tiles match the gauges almost like untouched pixels), so v3
+  repairs pixels instead. Is that MCH's practice for ML training sets too?
+- **QIND.** Useless as a filter here: under ODYSSEY it points the wrong way (unconfirmed
+  tail pixels have the *higher* QIND, median 0.90 vs 0.20), under NIMBUS it carries no
+  signal, and its scale changes with the product. Is that known, and why?
+- **ODYSSEY reads about half the gauge**, with the gauges' tail shape up to ~89 mm/h after
+  repair. Is a factor ~0.5 expected from Z–R and from comparing a 2 km area with a point?
+- **NIMBUS rates heavy rain above the gauges, increasingly with intensity**: 1.15× as many
+  exceedances as the gauges at 31 mm/h, 3.6× at 89 mm/h; the pixels are rain (96% have rain
+  at the gauge), and no artefact rule touches them. Is this known? Is it the instantaneous
+  lowest-elevation scan against 10-min gauge totals, hail, or the NIMBUS processing? This
+  decides whether NIMBUS can be a test set.
+
+Still open:
+- A defensible upper plausibility bound for a 15-min, 2 km rate. We use 500 mm/h, with the
+  repair reaching down to 150 mm/h around such cores.
+- **CombiPrecip and POH/MESHS for 2012–2026.** The open-data portal keeps them for 14 days
+  only; we already use the open SwissMetNet gauges.
+- Handling of the product breaks (2015, 2017, 2024) in ML training sets.
 
 **The extreme threshold (u = 31 mm/h).** Background: 31 is one point of the loss's
 log-spaced grid (DECISIONS §1). It serves as the POT level of every tail metric "for
@@ -434,13 +451,15 @@ To ask:
 - **Radar biases in the tail:** how Z–R conversion and hail contamination (above ~55 dBZ)
   shape the rates above 31 mm/h, and whether a hail cap should apply before any tail
   statistic.
+- The gauges give a partial answer to "how far can the radar tail be trusted": after repair,
+  ODYSSEY keeps the gauges' tail shape to ~89 mm/h; NIMBUS is too heavy from ~31 mm/h.
 
 **Testing out-of-distribution capability** (for Lionel Moret, 2026-10-02). What v2 has
 today is not o.o.d.:
 - the week-blocked test set is independent of train, but drawn from the same climate,
   product and regions;
-- the event set (`notes/events.md`) is curated known extremes whose types all occur in
-  training;
+- the event set (`notes/events.md`; 25 storms in test and 2 in NIMBUS once v3 is built) is
+  curated known extremes whose types all occur in training;
 - `nimbus` is a product shift, but it moves the target distribution itself (NIMBUS has
   1.44× more pixels ≥ 31 mm/h on the same days), so it needs a same-product reference
   (DECISIONS §18).
@@ -473,8 +492,8 @@ To ask:
   **Switzerland held out** work, with CombiPrecip and the gauges as an independent truth?
 - **O2:** does MCH have an event catalogue or classification (e.g. TRT cell tracks, POH/MESHS
   hail, lightning) that could label storm types across the archive?
-- **Independent truth for o.o.d. events:** CombiPrecip, gauges, hail (POH/MESHS), lightning.
-  Which can MCH share, and for which period?
+- **Independent truth for o.o.d. events:** CombiPrecip, hail (POH/MESHS), lightning (the
+  10-min gauges are already in use). Which can MCH share, and for which period?
 - **O6:** interest in applying the model to ICON-CH1/2 or to climate projections, and what
   evaluation MCH would accept without km-scale truth.
 - How does MCH evaluate its own ML nowcasting on unseen extremes?

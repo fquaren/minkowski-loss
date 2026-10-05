@@ -9,9 +9,11 @@
 # not guaranteed (e.g. Italy's contribution to OPERA is partial); the split script reports
 # how many covered, wet tiles each event actually has.
 #
-# Not yet included because the 2013 data is not on disk: the May-June 2013 Central European
-# floods and the 27-28 July 2013 "Andreas" hailstorms (DE). Verify and add them after the
-# 2013 re-download.
+# `available: false` marks an event that has no data in the OPERA archive; it stays here
+# for the record and is skipped by the split and window scripts.
+#
+# Shifted windows: where an event's grid tiles are never fully covered, the event subsets
+# also get shifted 128 x 128 windows (scripts/dataset_v2/scan_event_windows.py).
 events:
   - id: hymex_iop6_20120924
     name: "HyMeX IOP6 — fast linear MCS over southern France"
@@ -24,12 +26,29 @@ events:
       - "Observational and modeling study of a MCS during HyMeX SOP1, Atmos. Res. https://www.sciencedirect.com/science/article/abs/pii/S0169809516306834"
   - id: hymex_iop16_20121026
     name: "HyMeX IOP16 — heavy precipitation over the NW Mediterranean"
+    available: false    # the OPERA archive has no data from 2012-10-10 to 2012-11-08
     type: [heavy_rain, mediterranean, flash_flood]
     start: 2012-10-25
     end: 2012-10-28
     bbox: [41.0, 46.5, 2.0, 12.0]
     sources:
       - "Ducrocq et al. (2014) BAMS; HyMeX IOP16 studies, NHESS 20, 2753 (2020) https://nhess.copernicus.org/articles/20/2753/2020/"
+  - id: ce_floods_201305
+    name: "Central European floods — Alpine rim, Bavaria, Austria, Czechia (Danube, Elbe)"
+    type: [stationary_low, orographic, heavy_rain, flood]
+    start: 2013-05-30
+    end: 2013-06-03
+    bbox: [46.5, 51.5, 9.0, 17.0]
+    sources:
+      - "Grams et al. (2014) Atmospheric processes triggering the central European floods in June 2013, NHESS 14, 1691-1702. doi:10.5194/nhess-14-1691-2014"
+  - id: andreas_20130728
+    name: "Hailstorm 'Andreas' — Reutlingen / Tübingen (BW) and Wolfsburg area (NI)"
+    type: [supercell, hail]
+    start: 2013-07-27
+    end: 2013-07-28
+    bbox: [47.5, 53.0, 7.5, 11.5]
+    sources:
+      - "Kunz et al. (2018) The severe hailstorm in southwest Germany on 28 July 2013: characteristics, impacts and meteorological conditions, QJRMS 144, 231-250. doi:10.1002/qj.3197"
   - id: pentecost_ela_20140609
     name: "Pentecost storm 'Ela' — bow echo / derecho, BE and western DE"
     type: [derecho, bow_echo, linear_mcs]

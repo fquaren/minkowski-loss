@@ -3,18 +3,22 @@
 
 One row per (timestamp, tile) where the 128x128 tile on the stride-128 grid has no NaN (the
 same validity rule as `generate_metadata.py`). The frame is cleaned first with
-`src.data.cleaning.clean_frame` (drizzle floor, static-clutter and spike repair; no zeroing
-above 150 mm/h), so every statistic describes the field the v2 store will actually hold.
+`src.data.day_cleaner.DayCleaner`: `clean_frame` (drizzle floor, static-clutter and spike
+repair; no zeroing above 150 mm/h), then the v3 repairs (footprints of > 500 mm/h cores, rays,
+range rings, cells without temporal support; `--no_repair` stops after `clean_frame`, i.e. the
+v2 field), so every statistic describes the field the store will actually hold.
 
 Columns: timestamp,row,col, cleaned-tile stats (max, mean, wet_frac, n_ge*, coarse_max),
-raw_max, n_fixed (pixels changed by the repair), ray (RLAN ray pointing at a radar),
-unphysical (cleaned max > 500), q_mean_wet / has_qind.
+raw_max, n_fixed (pixels changed by the cleaning), ray (RLAN ray pointing at a radar),
+unphysical (cleaned max > 500), q_mean_wet / has_qind, n_repaired (pixels lowered by the v3
+repairs; 0 with --no_repair).
 
 Output: <out_dir>/tiles/YYYYMMDD.csv.gz. Restartable with --skip_existing; a day is written
 through a temporary file, so a partial file never looks complete.
 
     python scripts/dataset_v2/scan_tiles.py config.yaml \
         --climatology .../quality_v2/clutter_climatology.npz \
+        --ring_mask .../quality_v2/ring_mask.npz \
         --out_dir .../quality_v2 --workers 6 --skip_existing
 """
 
@@ -33,6 +37,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 _CLIM = None
 _HOT = {}
 _SITES = None
+_RING = None
 
 
 def _hot(clim_path, year):
@@ -47,6 +52,15 @@ def _hot(clim_path, year):
     return _HOT[year]
 
 
+def _ring(path, year):
+    global _RING
+    if path is None:
+        return None
+    if _RING is None:
+        _RING = dict(np.load(path))
+    return _RING.get(f"y{year}")
+
+
 def _sites():
     global _SITES
     if _SITES is None:
@@ -56,22 +70,22 @@ def _sites():
     return _SITES
 
 
-def scan_day(day_dir, var, clim_path, patch, out_path):
+def scan_day(day_dir, var, clim_path, patch, out_path, ring_path=None, repair=True):
     import xarray as xr
-    from src.data.cleaning import clean_frame, ray_flag, tile_stats, UNPHYSICAL
-    try:
-        ds = xr.open_zarr(day_dir, consolidated=True)
-    except Exception:
-        ds = xr.open_zarr(day_dir, consolidated=False)
+    from src.data.cleaning import ray_flag, tile_stats, UNPHYSICAL
+    from src.data.day_cleaner import DayCleaner
     day = os.path.basename(day_dir.rstrip("/"))
-    hot = _hot(clim_path, int(day[:4]))
     sites = _sites()
+    dc = DayCleaner(os.path.dirname(day_dir.rstrip("/")), day, var,
+                    hot=lambda y: _hot(clim_path, y), ring=lambda y: _ring(ring_path, y),
+                    sites_rc=sites, repair=repair)
+    ds = dc.ds
     has_q = "QIND" in ds
     rows = []
     for t in range(ds.sizes["time"]):
-        raw = ds[var].isel(time=t).values.astype(np.float32)
+        raw = dc.raw(t)
         H, W = raw.shape
-        clean, _ = clean_frame(raw, hot)
+        clean, rcode = dc.clean(t)
         q = ds["QIND"].isel(time=t).values if has_q else None
         ts = (np.datetime_as_string(ds.time.values[t], unit="s")
               .replace("-", "").replace("T", "").replace(":", ""))
@@ -90,6 +104,7 @@ def scan_day(day_dir, var, clim_path, patch, out_path):
                     "ray": int(st["n_ge1"] >= 30 and ray_flag(ct, r0, c0, sites)),
                     "unphysical": int(st["max"] > UNPHYSICAL),
                     "has_qind": int(has_q),
+                    "n_repaired": int((rcode[r0:r0 + patch, c0:c0 + patch] > 0).sum()),
                 })
                 if has_q:
                     qt = q[r0:r0 + patch, c0:c0 + patch]
@@ -98,11 +113,11 @@ def scan_day(day_dir, var, clim_path, patch, out_path):
                 else:
                     st["q_mean_wet"] = np.nan
                 rows.append(st)
-    ds.close()
+    dc.close()
     df = pd.DataFrame(rows)
     cols = ["timestamp", "row", "col", "max", "mean", "wet_frac", "n_ge1", "n_ge10", "n_ge31",
             "n_ge53", "n_ge89", "n_ge150", "coarse_max", "raw_max", "n_fixed", "ray",
-            "unphysical", "q_mean_wet", "has_qind"]
+            "unphysical", "q_mean_wet", "has_qind", "n_repaired"]
     df = df[cols] if len(df) else pd.DataFrame(columns=cols)
     tmp = out_path + ".part"
     # %.7g: float32 round-trip. %.4g lost digits (486.25 -> 486.2), so the metadata max
@@ -117,6 +132,8 @@ def main():
     ap.add_argument("config")
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--climatology", default=None)
+    ap.add_argument("--ring_mask", default=None, help="ring_mask.npz (ring_climatology.py)")
+    ap.add_argument("--no_repair", action="store_true", help="v2 cleaning (clean_frame only)")
     ap.add_argument("--raw_dir", default=None)
     ap.add_argument("--days", nargs="*", default=None)
     ap.add_argument("--workers", type=int, default=6)
@@ -137,7 +154,8 @@ def main():
     t0 = time.time()
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(scan_day, d, cfg["PRECIP_VAR_NAME"], args.climatology,
-                          cfg["PATCH_SIZE"], os.path.join(out, os.path.basename(d) + ".csv.gz")): d
+                          cfg["PATCH_SIZE"], os.path.join(out, os.path.basename(d) + ".csv.gz"),
+                          args.ring_mask, not args.no_repair): d
                 for d in todo}
         for k, f in enumerate(as_completed(futs), 1):
             try:

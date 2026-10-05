@@ -2,7 +2,8 @@
 
 import numpy as np
 
-from src.data.cleaning import clean_frame, ray_flag, ring_flag, temporal_support, tile_stats
+from src.data.cleaning import (boundary_fill, clean_frame, ray_flag, repair_static,
+                               repair_unsupported, ring_flag, temporal_support, tile_stats)
 
 
 def blob(h=128, w=128, cy=64, cx=64, peak=100.0, sigma=6.0):
@@ -90,3 +91,42 @@ def test_temporal_support():
     gap = empty.copy(); gap[90:95, 90:95] = np.nan                # no coverage near the cell
     assert (temporal_support(cur, gap, empty)[100:104, 100:104] == -1).all()
     assert temporal_support(cur, empty, empty)[0, 0] == 0
+
+
+def test_boundary_fill_lowers_to_surroundings_and_keeps_nan():
+    z = np.full((20, 20), 4.0, np.float32); z[8:11, 8:11] = 300.0; z[0, :] = np.nan
+    ch = boundary_fill(z, z > 100)
+    assert ch.sum() == 9 and np.allclose(z[8:11, 8:11], 4.0) and np.isnan(z[0]).all()
+
+
+def test_footprint_repaired_and_real_cell_kept():
+    z = blob(peak=60.0, sigma=8.0)                                  # real storm, max 60
+    z[20:24, 20:24] = 200.0; z[21, 21] = 900.0                      # artefact: > 500 core + halo
+    r, code = repair_static(z)
+    assert r[20:24, 20:24].max() < 5 and (code[20:24, 20:24] > 0).all()
+    np.testing.assert_allclose(r[54:75, 54:75], z[54:75, 54:75])    # storm untouched
+
+
+def test_ray_repaired_not_tile():
+    t = blob(peak=30.0, sigma=6.0, cy=30, cx=30)
+    t[64, 10:120] = 5.0; t[63, 10:120] = 5.0                        # E-W ray
+    site = np.array([[64.0, 128 + 60.0]])
+    r, code = repair_static(t, sites_rc=site)
+    assert r[63:65, 50:120].max() < 1.0 and (code[63:65, 50:120] > 0).all()
+    np.testing.assert_allclose(r[20:41, 20:41], t[20:41, 20:41])    # the cell stays
+
+
+def test_ring_pixels_repaired_only_above_89():
+    z = np.full((10, 10), 2.0, np.float32); z[5, 2:8] = [40, 100, 100, 100, 40, 120]
+    ring = np.zeros_like(z, bool); ring[5, :] = True
+    r, code = repair_static(z, ring_mask=ring)
+    assert r[5, 2] == 40 and r[5, 6] == 40 and r[5, 3:6].max() < 89 and r[5, 7] < 89
+
+
+def test_unsupported_cell_repaired():
+    cur = np.zeros((200, 200), np.float32); cur[100:104, 100:104] = 40.0
+    r, code = repair_unsupported(cur, np.zeros_like(cur), np.zeros_like(cur))
+    assert r.max() == 0.0 and (code[100:104, 100:104] == 8).all()
+    near = np.zeros_like(cur); near[110:113, 108:111] = 3.0
+    r2, _ = repair_unsupported(cur, near, np.zeros_like(cur))
+    np.testing.assert_allclose(r2, cur)

@@ -7,7 +7,8 @@ Outputs under `--out_dir` (metadata only; `build_store.py` then writes the patch
   full_{train,val,test}.txt        4 columns ts,y,x,max, in store order (the store groups)
   light_{train,val,test}.txt       5 columns ts,y,x,max,store_row -> rows of full_<split>
   extremes_{train,val,test}.txt    5 columns, the tail (cleaned max >= --tail) of full
-  events_test.txt                  5 columns, every tile of every catalogued event
+  events_test.txt                  5 columns, every tile of every catalogued event (plus the
+                                   shifted event windows of --event_windows, if given)
   full_<split>_info.csv.gz         per store row: stratum, sampling weight, event id, ...
   days.csv                         each day's split, or why it was dropped
   report.md                        counts, rejection by intensity, per-event coverage
@@ -209,6 +210,8 @@ def main():
     ap.add_argument("config")
     ap.add_argument("--tiles_dir", required=True)
     ap.add_argument("--events", default="configs/prominent_events.yaml")
+    ap.add_argument("--event_windows", default=None,
+                    help="dir of scan_event_windows.py tables: shifted windows added to the event subsets")
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--budget", type=int, default=3_000_000, help="total full-dataset patches")
     ap.add_argument("--val_frac", type=float, default=0.10)
@@ -233,7 +236,7 @@ def main():
            f"event buffer {args.event_buffer} d; seed {args.seed}", ""]
 
     df = load_tiles(args.tiles_dir)
-    events = yaml.safe_load(open(args.events))["events"]
+    events = [e for e in yaml.safe_load(open(args.events))["events"] if e.get("available", True)]
     print(f"[splits] {len(df):,} tiles over {df['day'].nunique()} days; {len(events)} events",
           flush=True)
 
@@ -250,6 +253,20 @@ def main():
             for b, r in g.iterrows()]
     rep.append("")
     df = df[~rej].reset_index(drop=True)
+    df["window"] = np.int8(0)
+    win_event = None
+    if args.event_windows:
+        w = load_tiles(args.event_windows)
+        wev = pd.concat([pd.read_csv(f, usecols=["event"]) for f in
+                         sorted(glob.glob(os.path.join(args.event_windows, "*.csv.gz")))],
+                        ignore_index=True)["event"].astype(str).values
+        keep = ((w["unphysical"] == 0) & (w["ray"] == 0)).values
+        w = w[keep].reset_index(drop=True)
+        w["window"] = np.int8(1)
+        win_event = wev[keep]
+        rep += [f"Event windows (shifted, test only): {len(w):,} added "
+                f"({int((~keep).sum())} rejected).", ""]
+        df = pd.concat([df, w], ignore_index=True)
 
     # ---- day splits
     split, reason, is_event = assign_days(df["day"].unique(), events, args)
@@ -260,6 +277,8 @@ def main():
     vc = days_tab["split"].value_counts()
     rep += ["## Days", "", " | ".join(f"{k}: {v}" for k, v in vc.items()), ""]
     df["event"] = event_rows(df, events)
+    if win_event is not None:                      # a window keeps the event it was cut for
+        df.loc[df["window"] == 1, "event"] = win_event
 
     # ---- leak check: no timestamp in two splits, and train >= 24 h from val/test
     kept = df[df["split"] != "drop"]
@@ -303,7 +322,7 @@ def main():
         out[sp] = sel
         write_meta(os.path.join(args.out_dir, f"full_{sp}.txt"), sel)
         sel[["timestamp", "row", "col", "max", "raw_max", "n_fixed", "has_qind", "stratum",
-             "weight", "event", "era"]].to_csv(os.path.join(args.out_dir, f"full_{sp}_info.csv.gz"),
+             "weight", "event", "era", "window"]].to_csv(os.path.join(args.out_dir, f"full_{sp}_info.csv.gz"),
                                         index=True, index_label="store_row",
                                         compression="gzip", float_format="%.6g")
         cnt = sel["stratum"].value_counts()
@@ -332,13 +351,14 @@ def main():
     rep.append("")
 
     # ---- per-event coverage
-    rep += ["## Events", "", "| event | split | tiles | tiles >= 31 | max (mm/h) |",
-            "|---|---|---|---|---|"]
+    rep += ["## Events", "", "| event | split | tiles | of which windows | tiles >= 31 | max (mm/h) |",
+            "|---|---|---|---|---|---|"]
     for e in events:
         for sp in ("test", "nimbus"):
             te = out[sp]; m = te["event"].values == e["id"]
             if m.any() or (sp == "test" and not (out["nimbus"]["event"].values == e["id"]).any()):
-                rep.append(f"| {e['id']} | {sp} | {int(m.sum()):,} | {int((te['max'].values[m] >= 31).sum()):,} | "
+                rep.append(f"| {e['id']} | {sp} | {int(m.sum()):,} | {int(te['window'].values[m].sum()):,} | "
+                           f"{int((te['max'].values[m] >= 31).sum()):,} | "
                            f"{(te['max'].values[m].max() if m.any() else float('nan')):.1f} |")
     open(os.path.join(args.out_dir, "report.md"), "w").write("\n".join(rep) + "\n")
     print("\n".join(rep))

@@ -586,6 +586,33 @@ isoperimetric scatter.
         - Presence numbers moved by ≤ 0.03.
       - *Then decide*, per rule: reject the tile, repair the pixel, weight, or drop the rule;
         and whether the 150-500 mm/h range is kept.
+- [ ] **v3 rebuild: repairs instead of tile rejection, fixed event set — launched
+      2026-10-04** (`logs/rebuild_v3.log`). `scripts/dataset_v2/rebuild_v3.sh` -> `quality_v3/`,
+      `OPERA/v3/`, `patches_v3/`, `configs/config_v3.yaml` (v2 untouched); ~15-16 h scan +
+      store + gamma + checks on 8 workers. Disk: v2 store 59 GB, so v3 fits (~1.55 of 2.3 TB).
+      - *Cleaning* (`src/data/cleaning.py` `repair_static` / `repair_unsupported`, applied by
+        `src/data/day_cleaner.py` in the scan, the store and the validation): footprints
+        (regions >= 150 mm/h around a > 500 core), ray components, ring pixels >= 89 mm/h,
+        cells without temporal support, each lowered to the median of its outer ring.
+        `--no_repair` reproduces the v2 tables exactly (checked on 2018-06-15).
+      - *Validated on the same 12.1M gauge pairs* (`repair_pairs.py`, `compare_repair.py`
+        -> `validation/repair_v3/repair_comparison.md`):
+        - ODYSSEY rho(u) v2 -> v3: 0.52 -> 0.48 at 53, 0.82 -> 0.57 at 89, 6.46 -> 1.47
+          [1.12, 1.92] at 150 mm/h (102 gauge exceedances). NIMBUS unchanged (1.15 at 31,
+          3.6 at 89): its excess is not an artefact the repairs touch.
+        - Repaired pixels: the gauge saw >= 10 mm/h under 5.3% of them (untouched >= 10:
+          44.6%). Unsupported cells: gauge q90 0, AUC 0.95. Footprints: gauge q90 <= 0.2,
+          AUC 0.90. Rings >= 89: gauge 0.
+        - **Weak spot: rings at 31-89 mm/h** (n = 91): gauge >= 10 mm/h under 38.5%, AUC
+          0.71. Ring repair from 89 mm/h instead of 31 would keep that rain and still catch
+          the ring tail (652 pixels at 150-500, all dry). **Decided 2026-10-04: 89 mm/h**
+          (`REPAIR_RING_MIN`); the validation above was run with 31.
+        - Regained tiles (v2 rejected, v3 keeps; 9,625 tile-frames at gauges): pixels at
+          10-89 mm/h are rain (corroborated 0.74-0.76 vs 0.86-0.88 untouched, AUC
+          0.55-0.58); at >= 89 mm/h weaker (0.60 and 0.52, n = 135): some artefact halo
+          survives outside the >= 150 footprint.
+      - *Events*: 2013 floods and Andreas added, IOP16 unavailable, Emilia-Romagna windows
+        (`notes/events.md` §7).
 - [ ] **Fix the event set before training on v2** (`notes/events.md` §4–5, 2026-10-02).
       - The May–June 2013 Central European floods and the 27–28 July 2013 "Andreas"
         hailstorms are **training days in v2**: they were never added to

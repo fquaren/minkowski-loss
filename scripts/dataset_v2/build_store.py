@@ -9,8 +9,8 @@ v1 ones minus `dem` (looked up by (y, x); src/data/geo.py) and the empty `qualit
 the existing datasets and `compute_gamma_targets.py` read it unchanged.
 
 The target is exactly the field the tile scan described: each frame is cleaned once with
-`src.data.cleaning.clean_frame` (drizzle floor, static-clutter and spike repair, no zeroing
-above 150 mm/h) with the same per-year clutter mask, and then cut. `--stage verify` checks
+`src.data.day_cleaner.DayCleaner` (clean_frame + the v3 repairs, or clean_frame only with
+`--no_repair`) with the same per-year clutter and ring masks, and then cut. `--stage verify` checks
 this: the stored tile max must equal the metadata max for every sampled row.
 
 Work is grouped by day, so each 15-minute frame is read and cleaned once. Resumable: finished
@@ -37,6 +37,26 @@ GROUPS = {"train": "full_train.txt", "validation": "full_val.txt", "test": "full
           "nimbus": "full_nimbus.txt"}   # NIMBUS product-shift split (2024-07-05 on)
 _HOT = {}
 _CLIM = None
+_RING = None
+_SITES = None
+
+
+def _ring(path, year):
+    global _RING
+    if path is None:
+        return None
+    if _RING is None:
+        _RING = dict(np.load(path))
+    return _RING.get(f"y{year}")
+
+
+def _sites():
+    global _SITES
+    if _SITES is None:
+        from src.data import geo
+        s = geo.load_radar_sites()
+        _SITES = np.c_[s["row"].values, s["col"].values].astype(float)
+    return _SITES
 
 
 def read_meta(path):
@@ -84,17 +104,16 @@ def create_store(out_dir, meta_dir, patch, coarse):
 
 def build_day(args_):
     """Write every row of `rows` (all on one day) of group `g`. Returns (g, day, n, max)."""
-    g, day, rows, ts, ys, xs, raw_dir, var, clim, out_dir, factor, patch = args_
+    g, day, rows, ts, ys, xs, raw_dir, var, clim, out_dir, factor, patch, ring, repair = args_
     import torch
-    import xarray as xr
     import zarr
-    from src.data.cleaning import clean_frame
+    from src.data.day_cleaner import DayCleaner
     from src.data.preprocessing import coarsen_and_interpolate
     torch.set_num_threads(1)
-    ds = xr.open_zarr(os.path.join(raw_dir, day), consolidated=True)
+    dc = DayCleaner(raw_dir, day, var, hot=lambda y: _hot(clim, y), ring=lambda y: _ring(ring, y),
+                    sites_rc=_sites(), repair=repair)
     stamps = {(np.datetime_as_string(t, unit="s").replace("-", "").replace("T", "")
-               .replace(":", "")): k for k, t in enumerate(ds.time.values)}
-    hot = _hot(clim, int(day[:4]))
+               .replace(":", "")): k for k, t in enumerate(dc.times)}
     grp = zarr.open(store_path(out_dir), mode="r+")[g]
     order = np.argsort(ts[rows], kind="stable")
     cur_t, clean, day_max = None, None, 0.0
@@ -102,7 +121,7 @@ def build_day(args_):
         if ts[i] != cur_t:
             cur_t = ts[i]
             k = stamps[cur_t]
-            clean, _ = clean_frame(ds[var].isel(time=k).values.astype(np.float32), hot)
+            clean = dc.clean(k)[0]
         tile = clean[ys[i]:ys[i] + patch, xs[i]:xs[i] + patch]
         tile = np.nan_to_num(tile, nan=0.0)
         c, interp = coarsen_and_interpolate(tile, factor)
@@ -110,7 +129,7 @@ def build_day(args_):
         grp["interpolated_precip"][i] = interp
         grp["coarse_precip"][i] = c
         day_max = max(day_max, float(tile.max()))
-    ds.close()
+    dc.close()
     return g, day, len(rows), day_max
 
 
@@ -129,7 +148,8 @@ def stage_build(cfg, a):
             futs = [ex.submit(build_day, (g, d, np.nonzero(days == d)[0], ts, ys, xs,
                                           cfg["RAW_OPERA_DATA_DIR"], cfg["PRECIP_VAR_NAME"],
                                           a.climatology, a.out_dir, cfg["DOWNSCALING_FACTOR"],
-                                          cfg["PATCH_SIZE"])) for d in todo]
+                                          cfg["PATCH_SIZE"], a.ring_mask, not a.no_repair))
+                    for d in todo]
             for k, fu in enumerate(as_completed(futs), 1):
                 gg, d, n, mx = fu.result()
                 prog.setdefault(gg, {})[d] = mx
@@ -199,6 +219,8 @@ def main():
     ap.add_argument("--meta_dir", required=True)
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--climatology", required=True)
+    ap.add_argument("--ring_mask", default=None, help="ring_mask.npz (ring_climatology.py)")
+    ap.add_argument("--no_repair", action="store_true", help="v2 cleaning (clean_frame only)")
     ap.add_argument("--stage", default="all", choices=["create", "build", "verify", "aux", "all"])
     ap.add_argument("--workers", type=int, default=6)
     a = ap.parse_args()

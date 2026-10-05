@@ -192,3 +192,21 @@ Numbers to refresh before quoting: the 12-day sample is small (2014–2026, ever
 Measure the coastal share on the full scan tables (fraction of ≥ 31 mm/h tile-frames that
 are partially covered, by distance to the coast and to the network edge) if the paragraph
 makes it into the paper.
+
+## 7. Status, 2026-10-04: fixes prepared for the v3 rebuild (not yet built)
+
+- **2013 events added** to `configs/prominent_events.yaml`: `ce_floods_201305`
+  (2013-05-30..06-03; Grams et al. 2014, NHESS) and `andreas_20130728` (2013-07-27..28;
+  Kunz et al. 2018, QJRMS). In a trial split on the v2 tables they become test events with
+  3,201 and 1,907 tiles (782 and 365 tiles >= 31 mm/h); the test split grows from 463 to 484
+  days, min gaps unchanged (2 days).
+- **HyMeX IOP16** is marked `available: false` and skipped.
+- **Option A implemented** (`scripts/dataset_v2/scan_event_windows.py`,
+  `make_splits.py --event_windows`): shifted windows on a stride-16 lattice, fully covered,
+  wet, not overlapping a covered grid tile or each other, wettest first. Emilia-Romagna gets
+  500 and 578 windows (about 2 per frame); events whose grid tiles are covered get none
+  (Andreas: 0). The windows extend beyond the Emilia-Romagna box into the Apennines and
+  Liguria, which is where their peaks (148 and 335 mm/h) are: look at them in the gallery
+  before quoting a per-event peak.
+- Options B and C (blind-spot repair, masked partial tiles) remain future work; the paper
+  paragraph in §6 still applies to the training data.

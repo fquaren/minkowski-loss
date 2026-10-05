@@ -33,6 +33,21 @@ applied by the scan or the store build, pending validation against gauges):
   ring              a thin arc centred on an OPERA radar within 250 km (range ring), told
                     apart from a straight band by fitting both a circle about the radar and
                     a line
+
+Repairs (v3, 2026-10-03; `repair_static` + `repair_unsupported`, decided from the gauge
+validation in `notes/data_quality_assessment`). Each lowers a clear-error footprint to the
+median of the valid pixels on its outer 1-px ring, so the rain around it stays and the tile
+is kept instead of rejected:
+
+  footprint    every connected region >= 150 mm/h that contains a pixel > 500 mm/h (the
+               pixels around a > 500 core are artefact too: 10% gauge-corroborated at
+               150-500 mm/h, against 74% at 31-89 mm/h elsewhere in the same tiles)
+  ray          the ray components themselves (the `ray_flag` criterion, per stride-128
+               tile), instead of rejecting the tile (73% of the other pixels were rain)
+  ring         pixels >= 89 mm/h on a climatological range ring of that year
+               (`ring_climatology.py`; dry under every gauge at >= 89 mm/h, but real
+               rain under 38% of ring pixels at 31-89, so those are kept)
+  unsupported  cells with no temporal support (gauge median and 90th percentile 0 mm/h)
 """
 
 from __future__ import annotations
@@ -55,6 +70,10 @@ SUPPORT_RADIUS_PX = 15       # 30 km: 15 min at 33 m/s
 RING_MIN_ARC_PX = 40         # 80 km of arc
 RING_MAX_RADIAL_STD_PX = 1.5 # thin in range
 RING_CURVATURE_RATIO = 0.8   # circle residual must beat the straight-line residual by 20%
+REPAIR_RING_MIN = 89.0       # ring pixels repaired from this rate (mm/h); at 31-89 the gauges
+                             # saw >= 10 mm/h under 38% of ring pixels (2026-10-04)
+FOOTPRINT_MIN = 150.0        # region around a > UNPHYSICAL core that is repaired (mm/h)
+REPAIR_FOOTPRINT, REPAIR_RAY, REPAIR_RING, REPAIR_UNSUPPORTED = 1, 2, 4, 8   # bit codes
 
 _RING = np.ones((3, 3), dtype=bool)
 _RING[1, 1] = False
@@ -264,3 +283,120 @@ def ring_flag(tile: np.ndarray, row0: int, col0: int, sites_rc: np.ndarray,
             if span * r.mean() >= RING_MIN_ARC_PX:
                 return True
     return False
+
+
+_EIGHT = np.ones((3, 3), bool)
+
+
+def boundary_fill(z: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Lower each 8-connected component of `mask` to the median of the valid pixels on its
+    outer 1-px ring (pixels already lower keep their value). In place; returns the boolean
+    map of pixels that changed. NaN (no coverage) stays NaN and never enters a median.
+    Works per component on its bounding box (components are few and small)."""
+    mask = mask & np.isfinite(z)
+    changed = np.zeros(z.shape, bool)
+    if not mask.any():
+        return changed
+    lab, n = ndimage.label(mask, structure=_EIGHT)
+    H, W = z.shape
+    for k, sl in enumerate(ndimage.find_objects(lab), 1):
+        if sl is None:
+            continue
+        ys = slice(max(sl[0].start - 1, 0), min(sl[0].stop + 1, H))
+        xs = slice(max(sl[1].start - 1, 0), min(sl[1].stop + 1, W))
+        comp = lab[ys, xs] == k
+        zs = z[ys, xs]
+        ring = ndimage.binary_dilation(comp, structure=_EIGHT) & ~mask[ys, xs] & np.isfinite(zs)
+        target = float(np.median(zs[ring])) if ring.any() else 0.0
+        low = comp & (zs > target)
+        zs[low] = target
+        changed[ys, xs] |= low
+    return changed
+
+
+def _ray_components_mask(tile: np.ndarray, row0: int, col0: int, sites_rc: np.ndarray) -> np.ndarray:
+    """Pixels of the components `ray_flag` would fire on (same criterion: >= 1 mm/h,
+    >= 30 px, elongation > 0.9, length >= RAY_MIN_LEN_PX, axis within RAY_MAX_ANGLE_DEG of
+    the direction to a radar within RAY_MAX_DIST_KM), as a mask."""
+    out = np.zeros(tile.shape, bool)
+    if sites_rc is None or not len(sites_rc):
+        return out
+    z = np.nan_to_num(tile, nan=0.0)
+    lab, n = ndimage.label(z >= 1.0, structure=_EIGHT)
+    max_px = RAY_MAX_DIST_KM / 2.0
+    for k, sl in enumerate(ndimage.find_objects(lab), 1):
+        if sl is None:
+            continue
+        comp = lab[sl] == k
+        yy, xx = np.nonzero(comp)
+        if yy.size < 30:
+            continue
+        yy = yy + sl[0].start
+        xx = xx + sl[1].start
+        my, mx = yy.mean(), xx.mean()
+        cyy, cxx = (yy * yy).mean() - my ** 2, (xx * xx).mean() - mx ** 2
+        cxy = (xx * yy).mean() - mx * my
+        tr, det = cyy + cxx, cyy * cxx - cxy ** 2
+        disc = np.sqrt(max(tr ** 2 / 4 - det, 0.0))
+        lmax, lmin = tr / 2 + disc, max(tr / 2 - disc, 0.0)
+        if not (1 - np.sqrt(lmin / max(lmax, 1e-12)) > 0.9 and np.sqrt(12 * lmax) >= RAY_MIN_LEN_PX):
+            continue
+        ang = 0.5 * np.arctan2(2 * cxy, cxx - cyy)
+        d = sites_rc - np.array([row0 + my, col0 + mx])
+        near = np.hypot(d[:, 0], d[:, 1]) <= max_px
+        if not near.any():
+            continue
+        dirs = np.arctan2(d[near, 0], d[near, 1])
+        diff = np.abs(((dirs - ang) + np.pi / 2) % np.pi - np.pi / 2)
+        if np.degrees(diff.min()) <= RAY_MAX_ANGLE_DEG:
+            out[sl] |= comp
+    return out
+
+
+def repair_static(z: np.ndarray, ring_mask: np.ndarray | None = None,
+                  sites_rc: np.ndarray | None = None, row0: int = 0, col0: int = 0,
+                  patch: int = 128):
+    """Footprint, ray and ring repairs of one `clean_frame` output (or a crop of it whose
+    south-west pixel is (row0, col0) on the full grid). Returns (repaired copy, code map),
+    code = OR of the REPAIR_* bits of the repairs that lowered each pixel. Rays are searched
+    per stride-`patch` tile of the FULL grid that lies inside the array, as in the scan."""
+    z = z.copy()
+    code = np.zeros(z.shape, np.uint8)
+    # 1. footprints of > UNPHYSICAL cores
+    core = np.nan_to_num(z, nan=0.0) > UNPHYSICAL
+    if core.any():
+        lab, n = ndimage.label(np.nan_to_num(z, nan=0.0) >= FOOTPRINT_MIN, structure=_EIGHT)
+        hit = np.unique(lab[core])
+        fp = np.isin(lab, hit[hit > 0])
+        code[boundary_fill(z, fp)] |= REPAIR_FOOTPRINT
+    # 2. rays, per tile of the global stride grid
+    if sites_rc is not None and len(sites_rc):
+        H, W = z.shape
+        rmask = np.zeros(z.shape, bool)
+        z0 = np.nan_to_num(z, nan=0.0)
+        for g0 in range(-(-row0 // patch) * patch, row0 + H - patch + 1, patch):
+            for h0 in range(-(-col0 // patch) * patch, col0 + W - patch + 1, patch):
+                y, x = g0 - row0, h0 - col0
+                t = z0[y:y + patch, x:x + patch]
+                if (t >= 1.0).sum() < 30:
+                    continue
+                rmask[y:y + patch, x:x + patch] |= _ray_components_mask(t, g0, h0, sites_rc)
+        if rmask.any():
+            code[boundary_fill(z, rmask)] |= REPAIR_RAY
+    # 3. climatological range rings
+    if ring_mask is not None:
+        rm = ring_mask & (np.nan_to_num(z, nan=0.0) >= REPAIR_RING_MIN)
+        if rm.any():
+            code[boundary_fill(z, rm)] |= REPAIR_RING
+    return z, code
+
+
+def repair_unsupported(z: np.ndarray, prev, nxt, code: np.ndarray | None = None):
+    """Lower cells with no temporal support (`temporal_support` == 1). `prev` / `nxt` as in
+    `temporal_support` (frames, `support_maps` tuples or None). Returns (repaired copy, code)."""
+    z = z.copy()
+    code = np.zeros(z.shape, np.uint8) if code is None else code.copy()
+    un = temporal_support(z, prev, nxt) == 1
+    if un.any():
+        code[boundary_fill(z, un)] |= REPAIR_UNSUPPORTED
+    return z, code
