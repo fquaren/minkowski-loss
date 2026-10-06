@@ -362,9 +362,19 @@ isoperimetric scatter.
         regions and seasons differ (50-55N is the only subset with tight CIs, xi ~ 0.41 flat
         over 15-53; >= 55N is non-monotone, suspect). NIMBUS has 0.5 dBZ-step point masses
         and a different xi(u) curve; keep it out of any pooled fit.
-      - *Next:* a radar-failure screen (saturation value 364.63, whole-disk / range-smooth
-        fields) decided under DECISIONS §17 (these are clear errors), then rerun
-        `pot_threshold.py --stage all` on the cleaned set before choosing u.
+      - *Identified (2026-10-06):* 364.63 mm/h is exactly 64.0 dBZ under Z = 200 R^1.6, a
+        reflectivity ceiling of the Valjevo (Serbia) radar area on 80 rain days in 2023. The
+        Spanish disk is Torrejón de Velasco (Madrid). Its > 500 cores were "repaired" to
+        their ring median, which is the failing radar too: a flat 88.27 mm/h plateau of
+        4,865 pixels in one tile. A repeated-value test (>= 50 pixels of one exact value
+        >= 31 mm/h per tile, 0.069% of train tail tiles) found a third failure: a 48.62 mm/h
+        (= 50.0 dBZ) ceiling, tile r640 c1408, 7 days in Nov 2019
+        (`multiplicity_flags_train.csv`, `fig/tail_suspects_4862.png`). Why the v3 rules miss
+        them, and five proposed rules: RESEARCH_NOTES §7.4d.
+      - *Next:* implement the RESEARCH_NOTES §7.4d rules (repeated value, ceiling table,
+        radar-disk failure, repair guard, episodic radar ranking) under DECISIONS §17 (clear
+        errors), rebuild, then rerun `pot_threshold.py --stage all` before choosing u. Keep
+        the tail-fit audit as a standard post-build check.
 
       Questions for Daniele Nerini and Lionel Moret are in RESEARCH_NOTES §7.4. Every tail
       column changes if u changes, so settle this before the v2 re-evaluation.

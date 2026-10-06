@@ -545,7 +545,7 @@ scan and the store build), against the 7.4b plan:
 | 1. DEM orientation | fixed (2026-09-28) |
 | 2. Missing, not zero | partly: repaired pixels take their neighbourhood's value and nothing is zeroed above 150 mm/h, but removal is still by *tile*, and partially covered tiles are still excluded (`notes/events.md` §5) |
 | 3. Static masks per period | done, per calendar year, over the complete archive (≥ 31 mm/h in > 1% of steps → neighbourhood median) |
-| 4. Geometry | rays done (thin components ≥ 80 km aligned with a radar within 250 km); range rings detected climatologically (audit flag, 2026-10-02). Gauges (10-03): ring pixels are real rain below 31 mm/h and never at ≥ 89 mm/h, so **repair the high values on the ring, don't reject the tile**. Radar-wide failures not done |
+| 4. Geometry | rays done (thin components ≥ 80 km aligned with a radar within 250 km); range rings detected climatologically (audit flag, 2026-10-02). Gauges (10-03): ring pixels are real rain below 31 mm/h and never at ≥ 89 mm/h, so **repair the high values on the ring, don't reject the tile**. Radar-wide failures not done; three missed failures and proposed rules in §7.4d (2026-10-06) |
 | 5. Spatial support | done (spike repair). Gauges (10-03): **right for both products**. The gauge under a repaired pixel is near dry (AUC vs untouched 0.82–0.94 ODYSSEY, 0.90–0.94 NIMBUS). NIMBUS's 32–44% presence rate is light rain nearby, not a supported spike |
 | 6. Temporal support | audit flag (2026-10-02). **Validated (10-03): ~1% corroborated in every intensity bin**, the cleanest rule; ready to apply. It fires almost only under ODYSSEY |
 | 7. Plausibility bound | provisional 500 mm/h, not yet set with MCH. Gauges (10-03): rejecting the *tile* discards real rain (pixels inside rejected tiles 67–79% corroborated below 89 mm/h under ODYSSEY, 91–97% in every bin under NIMBUS), so **mask the pixel instead** |
@@ -601,6 +601,83 @@ validated, not yet applied); the 2013 events and
 the partial-coverage fix (`notes/events.md`); and a decision with MCH on the plausibility
 bound. Worth raising with Daniele and Lionel: whether MCH would validate the Swiss part, or
 co-author.
+
+### 7.4d What v3's screen misses, and the tail fit as an audit (2026-10-06)
+
+Found by the POT threshold study (EXPERIMENTS §5, `scripts/data_quality/pot_threshold.py`,
+outputs in `OPERA/quality_v3/pot_threshold/`). Three failures survive the v3 build; images in
+`fig/tail_suspects.png` and `fig/tail_suspects_4862.png`.
+
+| failure | where, when | signature | train pixels |
+|---|---|---|---|
+| reflectivity ceiling 364.63 mm/h (= 64.0 dBZ under Z = 200 R^1.6) | Valjevo (Serbia) area, 80 rain days Feb-Nov 2023 | speckle at one exact value inside real rain; no pixel saturated in > 50% of frames | 60,145 (+14,480 val, 23,520 test) |
+| radar-wide failure | Torrejón de Velasco (Madrid), 2018-04-29, all day | the whole disk at a smooth, range-dependent 60-340 mm/h, raw cores to 10^4 mm/h | 16% of all train pixels > 89 mm/h |
+| ceiling 48.62 mm/h (= 50.0 dBZ) | tile r640 c1408 (nearest listed radar Bobohalma, 102 km), 7 days Nov 2019 | a speckled stationary 30-55 mm/h blob | 98 tiles |
+
+**Why each rule lets them through.** Every v3 rule assumes the artefact is *small, local or
+transient* against a background of real rain:
+- *static clutter* (≥ 31 mm/h in > 1% of a calendar year's steps): the ceilings are
+  intermittent and rain-conditional, and the Madrid failure lasts one day (0.3% of a year);
+- *spike*: a pixel is repaired only if its brightest neighbour is < 10% of it, but the
+  saturated pixels sit inside 30-150 mm/h rain;
+- *unphysical / footprint*: keyed on > 500 mm/h. The ceilings are below 500. Madrid has
+  > 500 cores, but the footprint repair lowers the connected ≥ 150 region to the median of
+  its outer ring, and that ring is the failing radar too. The result is a flat plateau:
+  4,865 pixels of one tile at exactly 88.27 mm/h (2018-04-29 06:15, r256 c256). The repair
+  launders the artefact instead of removing it. v2 would have rejected the two tiles with
+  > 500 cores, but not the third.
+- *ray, ring*: geometric tests for thin lines and arcs; a disk or a speckled sector is
+  neither;
+- *temporal support*: catches cells with no precursor or successor. These failures persist,
+  which is the opposite;
+- *bad-radar ranking* (`radar_quality_v2.py`): flags radars that are outliers in at least
+  half of their years. A one-day or one-season episode is diluted in a radar-year and never
+  qualifies; the ranking is also not applied as an exclusion;
+- *gauge validation*: DWD + SwissMetNet only, so Serbia, Romania and Spain are unseen.
+
+"Radar-wide constant-signal failures" are on the clear-error list (DECISIONS §17, §7.3 above)
+but no rule implements them.
+
+**Proposed additions** (clear errors by construction, so within DECISIONS §17):
+1. *Repeated-value test (tile).* On the 0.01 mm/h ODYSSEY grid, real rain almost never
+   repeats one exact value: per tile, the maximum count of a single value ≥ 31 mm/h has
+   median 1, 99th percentile 3, 99.9th 24 (588,617 train tail tiles). Flag a tile when that
+   count is ≥ 50 (0.069% of tail tiles, 11% of their pixels ≥ 31): it catches the two
+   ceilings and the repair plateaus, and found the 48.62 episode unprompted. NIMBUS is
+   coarsely quantised (0.5 dBZ steps), so there the test must count in excess of its own
+   per-value baseline.
+2. *Ceiling table (pixel).* Per radar area and year, find values whose count exceeds ~50x the
+   median of the neighbouring ±0.5 dB bins (364.63 is ~7,500x). Pixels at a ceiling are
+   censored ("≥ ceiling"), not measured. Mask them, or reject the tile-frame when they are
+   more than a handful, since a ceiling also hides how far the rain really went.
+3. *Radar-disk failure (radar-frame).* For each radar and frame, over the area where it is the
+   nearest radar: wet fraction (≥ 1 mm/h), mean rate, and the share of log-rate variance
+   explained by range alone, R²_r = 1 - Var(z - <z>_θ(r)) / Var(z). Real rain varies in
+   azimuth; a receiver or calibration fault is a function of range with a sharp circular edge
+   at the maximum range. Add a cross-radar check: the same-day exceedance fraction against the
+   neighbouring radars' in their overlap. Flag the radar-frame and reject every tile it
+   dominates. Set thresholds from the distribution over all radar-frames; failures should be
+   far outliers.
+4. *Guard the repair.* `boundary_fill` is valid only if the ring is real rain. Do not repair,
+   but escalate to the radar-frame flag, when a component is large (e.g. > 500 px) or its ring
+   median is itself ≥ 31 mm/h, and check after every repair that no plateau was created
+   (the test of item 1, run after repairs).
+5. *Episodic radar ranking.* Rank radar-days, not radar-years, on rel_f150, ceiling counts and
+   item 3, with a robust z-score against the radar's own climatology.
+
+**The tail fit as an audit.** The threshold-stability fit found all three failures without
+being designed to look for them. Real extremes from many independent storms thin out
+smoothly: above a high enough threshold, the excess over u has the same shape whatever u
+is, so the fitted ξ stops changing. A failure puts many pixels at a few values, in one
+place, over a short time, and the smooth model cannot absorb that bump. Three things show
+it: ξ(u) drifts instead of reaching a plateau, the day-block bootstrap interval widens
+because one day carries a large share, and the empirical upper quantiles stick at one value
+(364.63 was the 99% quantile of the exceedances for every u from 25 to 115). It is a
+dataset-level detector, not a rule: it says that the tail is contaminated and, through
+per-day and per-value attribution, where to look. It cannot tell a failure from a real
+extreme day (an event like Elvira/Friederike is just as influential), it is blind to
+failures below u or ones with a smooth tail, and the images decide. Run it after every
+build, alongside the rejection rates per intensity bin.
 
 ### 7.5 References for §7
 
