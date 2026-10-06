@@ -330,6 +330,42 @@ isoperimetric scatter.
       - per region and season (E3), since one fixed level may not suit all of Europe;
       - then fix one level for every table, or justify keeping 31.
 
+      **First pass on v3, 2026-10-06: not settleable yet, the tail is still artefact-driven.**
+      `scripts/data_quality/pot_threshold.py` (extract pixels > 10 mm/h, then GPD fits over
+      u = 10-150 with a day-block bootstrap, B = 200; weighted by stratum and unweighted;
+      pixel-level and tile x storm-run cluster maxima; per latitude band and season). Outputs in
+      `OPERA/quality_v3/pot_threshold/` (`report.md`, `fits.csv`, `mrl.csv`, `fig/`); log
+      `logs/pot_threshold_v3.log`. Binned weighted MLE checked against `genpareto.fit` on
+      synthetic GPD data (4 decimals) and recovers constant xi, sigma* on a pure GPD.
+      - *As built, no threshold is stable.* xi falls monotonically in every pooled split:
+        train (weighted) +0.55 at 15, +0.47 at 31, +0.36 at 53, +0.17 at 89, -0.12 at 150;
+        test (unweighted = what eval computes as `gpd_xi_obs`) +0.54 at 31, +0.14 at 89.
+        Cluster maxima agree with the pixel fits from 53 up. The v1 reference values in
+        CLAUDE.md (+0.176 at 31, -0.190 at 53) do not apply to v3.
+      - *Cause: two radar failures v3's repairs do not catch* (`fig/tail_suspects.png`):
+        - a point mass at **364.63 mm/h** (~64 dBZ saturation): 60,145 train / 14,480 val /
+          23,520 test pixels, vs a median 5-8 per 0.01 mm/h bin; 99.6% from 2023, one radar
+          near 44.2N 19.2E (tiles r512-640, c1280-1408), a speckled saturated sector. It is
+          12% of all test pixels > 89 mm/h.
+        - **2018-04-29, southern Spain** (38.8N 5.0W, tiles r256-384 c256-384): a whole
+          radar disk at a smooth range-dependent 60-340 mm/h; 16% of all train exceedances of
+          89 mm/h come from this one day.
+        Neither has a > 500 core, a ray or a ring, so `repair_static` / `repair_unsupported`
+        leave them alone.
+      - *Removing only those tiles* (797 of 1.07M train, 134 test) flattens the curve: train xi
+        +0.36, +0.35, +0.34, +0.36, +0.37 at 31, 40, 53, 70, 89; test +0.28 ... +0.22 ...
+        +0.24 over 31-89. So the decline was mostly these artefacts, not sub-asymptotic shape.
+        These two were found by eye; at u = 89 the top 10 train days still hold 37% of the
+        exceedances, so expect more.
+      - *Also found:* in test, event tiles (weight 1) vs the rest of the tail stratum (~2.7)
+        make the unweighted eval fit event-heavy; removing them moves xi by <= 0.05. Train
+        regions and seasons differ (50-55N is the only subset with tight CIs, xi ~ 0.41 flat
+        over 15-53; >= 55N is non-monotone, suspect). NIMBUS has 0.5 dBZ-step point masses
+        and a different xi(u) curve; keep it out of any pooled fit.
+      - *Next:* a radar-failure screen (saturation value 364.63, whole-disk / range-smooth
+        fields) decided under DECISIONS §17 (these are clear errors), then rerun
+        `pot_threshold.py --stage all` on the cleaned set before choosing u.
+
       Questions for Daniele Nerini and Lionel Moret are in RESEARCH_NOTES §7.4. Every tail
       column changes if u changes, so settle this before the v2 re-evaluation.
 - [ ] **ODYSSEY vs NIMBUS gap analysis** (`scripts/data_quality/era_gap.py`; outputs in
