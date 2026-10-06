@@ -567,3 +567,116 @@ buffered from the rest like any other split.
   DANA) are evaluated as shifted-product cases.
 - *Reversible:* the era is stored per patch (`era` in `full_*_info.csv.gz`), and the split
   is metadata only (`--nimbus_start ''` disables it).
+
+---
+
+## 19. v4 screen: radar ceilings, radar-wide failures, and a guarded repair
+
+**What we found (2026-10-06).** The POT threshold study on v3 (EXPERIMENTS §5,
+RESEARCH_NOTES §7.4d) exposed three failures that every v3 rule misses, because each rule
+assumes an artefact that is small, local or transient against real rain:
+- a reflectivity ceiling at 364.63 mm/h (exactly 64.0 dBZ under Z = 200 R^1.6) in the Valjevo
+  (Serbia) area on 80 rain days of 2023; 12% of all test pixels > 89 mm/h;
+- a radar-wide failure of Torrejón de Velasco (Madrid) on 2018-04-29; 16% of all train pixels
+  > 89 mm/h. The v3 footprint repair lowered it to its ring median, which is the failing
+  radar too, and left a flat 88.27 mm/h plateau (4,865 pixels in one tile);
+- a ceiling at 48.62 mm/h (exactly 50.0 dBZ), tile r640 c1408, 7 days of Nov 2019, found by
+  the repeated-value test without being looked for.
+
+"Radar-wide constant-signal failures" were on the §17 clear-error list from the start but had
+no rule.
+
+**Decisions (researcher, 2026-10-06), on Claude's proposal.**
+- *Five rules, all keyed on an error signature* (§17 safeguard 1), none on intensity alone:
+  1. repeated value per tile: real rain on the 0.01 mm/h ODYSSEY grid almost never repeats
+     one value (per tail tile: median 1, 99.9th percentile 24 repeats of one value >= 31);
+     >= 50 repeats rejects the tile. On NIMBUS (values on a ladder with ratio 1.0593 between
+     levels) the count is taken in excess of the adjacent levels;
+  2. ceiling table per radar area and year: values counted > ~50x the median of their
+     +-0.5 dB neighbours. A ceiling pixel is censored, not measured;
+  3. radar-disk failure per radar and frame (wet fraction, mean, share of log-rate variance
+     explained by range alone, jump at the area boundary and at the maximum-range circle);
+  4. guarded repair: `boundary_fill` refuses components above a size limit, and the
+     repeated-value test runs after every repair;
+  5. radar-day ranking against each radar's own seasonal level and its 5 nearest radars.
+- *Ceiling pixels:* a tile-frame with >= 5 ceiling pixels is rejected; with 1-4 they are
+  replaced by the median of their valid 8-neighbours, like a spike, and coded.
+- *Radar-day exclusions come from a list the researcher reviews by eye*, not from thresholds
+  alone (§17 safeguard 3: look before trusting). The reviewed list is versioned in
+  `configs/quality_v4.yaml`.
+- *Scope:* only these five rules. Static coverage holes (option B) and masked partial tiles
+  (option C, `notes/events.md`) stay out, so the v3 -> v4 difference is attributable.
+- *Decisions are taken at split time from per-tile columns* (`make_splits.py`), so a threshold
+  can change without a rescan (roadmap M1).
+
+**Two corrections to the first proposal**, made while planning:
+- the "cross-check against neighbouring radars in the overlap zone" cannot be done directly:
+  the composite holds one value per pixel and no per-radar field. It becomes the jump in rate
+  across the radar's area boundary and at its maximum-range circle;
+- "do not repair when the ring median is >= 31 mm/h" would refuse almost every footprint
+  repair: a footprint is the >= 150 mm/h region, so its outer ring sits just below 150 even in
+  real storms. The guard is a size limit, calibrated on v3's repairs, plus the post-repair
+  repeated-value test.
+
+**The tail fit is an audit, not a rule.** The threshold-stability fit found the failures, but it
+cannot tell a failure from a real extreme day, is blind below u, and would make the screen
+circular (§20). It runs after every build; it never decides what is kept.
+
+Confidence: the three failures are verified by eye and by their exact dBZ values. That the
+rules catch them without removing real extremes is to be shown by the Phase-0 calibration and
+the §20 gate.
+
+---
+
+## 20. When the dataset is ready for training: a gate fixed before the results
+
+**Question.** Without labels, cleanliness cannot be measured, and §17 keeps imperfections on
+purpose. When do we stop cleaning and train?
+
+**Answer (researcher, 2026-10-06).** The dataset is ready when **one more cleaning step would
+not change any number we report**, not when it is clean.
+- *Why the bar is set by evaluation, not training.* 83% of the structural gradient comes from
+  thresholds <= 0.28 mm/h and >= 31 mm/h contributes ~0 (§5), so a backbone barely sees the top
+  of the tail (inference, not tested). The tail columns (exceedance ratio, RL bias, FSS at 89,
+  xi) are made of it: in v3 one ceiling was 12% of test pixels > 89 mm/h. The exception on the
+  training side is tail-sample selection by patch max, which picks artefacts first.
+
+**The gate** (all five, on the v4 build, before step 3 of the training plan):
+1. **Known failures caught.** Every failure ever identified is kept in a regression catalogue
+   (`configs/quality_v4.yaml`, `known_failures`) and must be absent from every build.
+2. **Residual contamination measured.** 100 test tiles drawn at random from those with max
+   >= 89 mm/h (not the top-ranked), looked at by eye. With 0 artefacts the 95% upper bound on
+   the rate is ~3% (3/n); otherwise report the rate with a binomial interval. This estimates
+   a rate, it tunes nothing, so it does not contradict §17's "no labelled set". Pass: upper
+   bound <= 5%.
+3. **The evaluation reference is stable.** Remove the 20 non-event days with the largest
+   share of exceedances; recompute the observation side of the tables (exceedance counts at
+   31 / 53 / 89 mm/h, truncated-GPD xi, observed return levels). Pass: every change is inside
+   its day-block bootstrap interval. This is the criterion with the most weight: it says
+   further cleaning cannot move the tables.
+4. **Real extremes survive.** Event tiles kept (rejection < 0.5% per event), no rule's
+   rejection rate rising steeply with intensity, and the radar / gauge exceedance ratio in
+   Germany and Switzerland no worse than v3's.
+5. **Residual drift in xi(u) is explained** by a named legitimate cause (truncation at
+   500 mm/h, regional / seasonal mixing, sub-asymptotic threshold), with the truncated-GPD fit.
+
+**Where we stop.** If the gate passes, v4 is the training set and what remains is accepted as
+imperfection. A v5 is built only if criterion 2 or 3 fails, and only for a failure type that
+can be named and seen in the images. If the gate fails and v5 is not worth its cost, train on
+v4 anyway and report the measured contamination rate as a limitation.
+
+**The rule that keeps this honest: no cleaning by tail fit.** Removing whatever makes xi(u)
+drift would select the data by its fit to the GPD and then use the GPD as the evaluation
+reference: circular, and it removes real extremes that do not fit (rare regimes, mixtures).
+The tail fit may point at candidates; every rule must key on an error signature (a ceiling
+value, a range-only field, a repeated value), never on "the fit gets better".
+
+**Truncation.** v3 / v4 hold no values above 500 mm/h (the > 500 cores are repaired), so the
+data are truncated, and a truncation alone makes xi fall at high u (synthetic GPD, xi = 0.35:
++0.33 at 31, +0.24 at 89, -0.32 at 250 after removing 0.08% of values). The audit fits a
+truncated GPD (density divided by its mass below 500). At u = 31 the effect is small
+(0.35 -> 0.33). Whether the evaluation protocol should also fit truncated is open.
+
+Confidence: the gate is a researcher decision. The circularity argument is derivable. The
+claim that training is insensitive to tail artefacts is an inference from §5, not tested.
+

@@ -375,6 +375,39 @@ isoperimetric scatter.
         radar-disk failure, repair guard, episodic radar ranking) under DECISIONS §17 (clear
         errors), rebuild, then rerun `pot_threshold.py --stage all` before choosing u. Keep
         the tail-fit audit as a standard post-build check.
+- [ ] **v4 screen and rebuild — started 2026-10-06.** Rules and their reasons: DECISIONS §19;
+      readiness gate for training: DECISIONS §20. Writes `quality_v4/`, `OPERA/v4/`,
+      `patches_v4/`, `configs/config_v4.yaml`, `configs/quality_v4.yaml`; v3 untouched.
+      - *Phase 1, code:* `src/data/radar_screen.py` (repeated value, ceiling table, ceiling
+        masking, radar-frame features), `cleaning.boundary_fill(max_size=...)` (default keeps
+        v3), v4 hooks in `DayCleaner`, tests; v4-off must reproduce the v3 tables on
+        2018-06-15.
+      - *Phase 0, calibration* on the known failures (Madrid 2018-04-29, ~10 Valjevo 2023
+        ceiling days, r640 c1408 Nov 2019), every day of the 27 events, and 100 random days.
+        Gates: every known failure caught; event-tile rejection < 0.5%; gallery of each
+        rule's strongest flags looked at. A failed gate stops the build; thresholds are not
+        loosened silently.
+      - *Phase 2, radar pass* over all days on the `clean_frame` output (before repairs, so a
+        repair cannot hide a failure): per radar-frame features and per radar-year value
+        histograms (~6-8 h). Then ceiling table, radar-frame thresholds, radar-day ranking and
+        gallery -> **review list for the researcher** (top 100 radar-days, cut-off stated).
+      - *Phase 3, tile scan* with the v4 chain (~12 h): clean_frame -> ceiling masking ->
+        guarded repair_static -> repair_unsupported -> post-repair repeated-value count; new
+        tile columns `n_ceiling`, `max_rep`, `rep_value`, `n_refused`, `radar_fail_frac`,
+        `excluded_day`; rejection decided in `make_splits.py`, reported per rule x intensity
+        bin x product and per event.
+      - *Phase 4, store + gamma + checks* (~20 h).
+      - *Phase 5, audit = the DECISIONS §20 gate:* (1) known failures absent; (2) 100 random
+        test tiles with max >= 89 looked at, 95% upper bound on the artefact rate <= 5%;
+        (3) dropping the 20 most influential non-event days moves no observation-side table
+        number outside its day-block bootstrap interval; (4) events survive (< 0.5% rejected
+        per event), no rule's rejection rate climbs steeply with intensity, gauge exceedance
+        ratio (DE/CH) no worse than v3 (also closes the ring-at-89 re-validation above);
+        (5) remaining xi(u) drift explained, with a truncated-GPD fit
+        (`pot_threshold.py --version v4`). **Step 3 (retraining) starts only after the gate.**
+      - *Decisions so far (2026-10-06):* ceiling tile-frame rejected at >= 5 pixels, 1-4
+        repaired like spikes; radar-day exclusions from a reviewed list; scope limited to the
+        five rules; no cleaning by tail fit (DECISIONS §20).
 
       Questions for Daniele Nerini and Lionel Moret are in RESEARCH_NOTES §7.4. Every tail
       column changes if u changes, so settle this before the v2 re-evaluation.
