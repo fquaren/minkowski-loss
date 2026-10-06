@@ -1,6 +1,6 @@
 # Experiment tracker
 
-Last updated: 2026-10-03
+Last updated: 2026-10-06
 
 **Read first:** `DECISIONS.md` (why things are the way they are, and what is already ruled
 out), then `CLAUDE.md` (operational traps), then this file (the compute node in §0, what exists and what's next).
@@ -586,10 +586,19 @@ isoperimetric scatter.
         - Presence numbers moved by ≤ 0.03.
       - *Then decide*, per rule: reject the tile, repair the pixel, weight, or drop the rule;
         and whether the 150-500 mm/h range is kept.
-- [ ] **v3 rebuild: repairs instead of tile rejection, fixed event set — launched
-      2026-10-04** (`logs/rebuild_v3.log`). `scripts/dataset_v2/rebuild_v3.sh` -> `quality_v3/`,
-      `OPERA/v3/`, `patches_v3/`, `configs/config_v3.yaml` (v2 untouched); ~15-16 h scan +
-      store + gamma + checks on 8 workers. Disk: v2 store 59 GB, so v3 fits (~1.55 of 2.3 TB).
+- [x] **v3 rebuild: repairs instead of tile rejection, fixed event set — done
+      2026-10-05** (`logs/rebuild_v3.log`, 2026-10-04 11:43 -> 10-05 20:28, 33 h on 8 workers:
+      scan 12 h, store 13.5 h, gamma 6.7 h). `scripts/dataset_v2/rebuild_v3.sh` ->
+      `quality_v3/`, `OPERA/v3/`, `patches_v3/`, `configs/config_v3.yaml` (v2 untouched).
+      - *Result:* train 1,962,057 / val 252,809 / test 297,460 / nimbus 487,673 patches;
+        `events_test` 36,166 (25 events), `events_nimbus` 5,249 (Boris, Valencia DANA);
+        `light_*` / `extremes_*` as in v2. DEM stats mean 296.70, std 410.33 (88 tiles); train
+        max 500 mm/h (log1p 6.2166).
+      - *Checks* (`check_datasets.py`): `ALL CHECKS PASSED`. Store verify 0 unwritten / max
+        mismatches in 402 sampled rows per split; subset == store, DEM, finiteness 60/60 per
+        subset; no day shared between any two splits, min gap 2 d.
+      - *Open:* the gauge validation below was run with ring repair from 31 mm/h, v3 uses 89.
+        Re-run `repair_pairs.py` / `compare_repair.py` at 89 before quoting the numbers.
       - *Cleaning* (`src/data/cleaning.py` `repair_static` / `repair_unsupported`, applied by
         `src/data/day_cleaner.py` in the scan, the store and the validation): footprints
         (regions >= 150 mm/h around a > 500 core), ray components, ring pixels >= 89 mm/h,
@@ -614,6 +623,8 @@ isoperimetric scatter.
       - *Events*: 2013 floods and Andreas added, IOP16 unavailable, Emilia-Romagna windows
         (`notes/events.md` §7).
 - [ ] **Fix the event set before training on v2** (`notes/events.md` §4–5, 2026-10-02).
+      **The first two items are done in v3** (2026-10-05); the tagging, the gallery check and
+      options B / C are still open.
       - The May–June 2013 Central European floods and the 27–28 July 2013 "Andreas"
         hailstorms are **training days in v2**: they were never added to
         `configs/prominent_events.yaml` after the 2013 download. Add them, rerun splits →
