@@ -74,6 +74,8 @@ REPAIR_RING_MIN = 89.0       # ring pixels repaired from this rate (mm/h); at 31
                              # saw >= 10 mm/h under 38% of ring pixels (2026-10-04)
 FOOTPRINT_MIN = 150.0        # region around a > UNPHYSICAL core that is repaired (mm/h)
 REPAIR_FOOTPRINT, REPAIR_RAY, REPAIR_RING, REPAIR_UNSUPPORTED = 1, 2, 4, 8   # bit codes
+REPAIR_CEILING, REPAIR_REFUSED = 16, 32     # v4: ceiling pixel repaired; component too large to
+                                            # repair, left as is (DECISIONS §19, rule 4)
 
 _RING = np.ones((3, 3), dtype=bool)
 _RING[1, 1] = False
@@ -288,19 +290,30 @@ def ring_flag(tile: np.ndarray, row0: int, col0: int, sites_rc: np.ndarray,
 _EIGHT = np.ones((3, 3), bool)
 
 
-def boundary_fill(z: np.ndarray, mask: np.ndarray) -> np.ndarray:
+def boundary_fill(z: np.ndarray, mask: np.ndarray, max_size: int | None = None,
+                  refused: np.ndarray | None = None) -> np.ndarray:
     """Lower each 8-connected component of `mask` to the median of the valid pixels on its
     outer 1-px ring (pixels already lower keep their value). In place; returns the boolean
     map of pixels that changed. NaN (no coverage) stays NaN and never enters a median.
-    Works per component on its bounding box (components are few and small)."""
+    Works per component on its bounding box (components are few and small).
+
+    v4 guard (`max_size`): the ring median stands in for the rain around a *small* artefact.
+    A component larger than `max_size` pixels is not repaired, because its ring is then
+    likely the same failure (the Madrid disk of 2018-04-29 became a flat 88.27 mm/h plateau);
+    its pixels are marked in `refused` instead. None keeps the v3 behaviour."""
     mask = mask & np.isfinite(z)
     changed = np.zeros(z.shape, bool)
     if not mask.any():
         return changed
     lab, n = ndimage.label(mask, structure=_EIGHT)
     H, W = z.shape
+    sizes = np.bincount(lab.ravel()) if max_size is not None else None
     for k, sl in enumerate(ndimage.find_objects(lab), 1):
         if sl is None:
+            continue
+        if sizes is not None and sizes[k] > max_size:
+            if refused is not None:
+                refused[sl] |= lab[sl] == k
             continue
         ys = slice(max(sl[0].start - 1, 0), min(sl[0].stop + 1, H))
         xs = slice(max(sl[1].start - 1, 0), min(sl[1].stop + 1, W))
@@ -355,20 +368,23 @@ def _ray_components_mask(tile: np.ndarray, row0: int, col0: int, sites_rc: np.nd
 
 def repair_static(z: np.ndarray, ring_mask: np.ndarray | None = None,
                   sites_rc: np.ndarray | None = None, row0: int = 0, col0: int = 0,
-                  patch: int = 128):
+                  patch: int = 128, max_size: int | None = None):
     """Footprint, ray and ring repairs of one `clean_frame` output (or a crop of it whose
     south-west pixel is (row0, col0) on the full grid). Returns (repaired copy, code map),
     code = OR of the REPAIR_* bits of the repairs that lowered each pixel. Rays are searched
-    per stride-`patch` tile of the FULL grid that lies inside the array, as in the scan."""
+    per stride-`patch` tile of the FULL grid that lies inside the array, as in the scan.
+    `max_size`: the v4 guard of `boundary_fill`; refused pixels get REPAIR_REFUSED."""
     z = z.copy()
     code = np.zeros(z.shape, np.uint8)
+    ref = np.zeros(z.shape, bool) if max_size is not None else None
+    kw = {"max_size": max_size, "refused": ref}
     # 1. footprints of > UNPHYSICAL cores
     core = np.nan_to_num(z, nan=0.0) > UNPHYSICAL
     if core.any():
         lab, n = ndimage.label(np.nan_to_num(z, nan=0.0) >= FOOTPRINT_MIN, structure=_EIGHT)
         hit = np.unique(lab[core])
         fp = np.isin(lab, hit[hit > 0])
-        code[boundary_fill(z, fp)] |= REPAIR_FOOTPRINT
+        code[boundary_fill(z, fp, **kw)] |= REPAIR_FOOTPRINT
     # 2. rays, per tile of the global stride grid
     if sites_rc is not None and len(sites_rc):
         H, W = z.shape
@@ -382,21 +398,28 @@ def repair_static(z: np.ndarray, ring_mask: np.ndarray | None = None,
                     continue
                 rmask[y:y + patch, x:x + patch] |= _ray_components_mask(t, g0, h0, sites_rc)
         if rmask.any():
-            code[boundary_fill(z, rmask)] |= REPAIR_RAY
+            code[boundary_fill(z, rmask, **kw)] |= REPAIR_RAY
     # 3. climatological range rings
     if ring_mask is not None:
         rm = ring_mask & (np.nan_to_num(z, nan=0.0) >= REPAIR_RING_MIN)
         if rm.any():
-            code[boundary_fill(z, rm)] |= REPAIR_RING
+            code[boundary_fill(z, rm, **kw)] |= REPAIR_RING
+    if ref is not None:
+        code[ref] |= REPAIR_REFUSED
     return z, code
 
 
-def repair_unsupported(z: np.ndarray, prev, nxt, code: np.ndarray | None = None):
+def repair_unsupported(z: np.ndarray, prev, nxt, code: np.ndarray | None = None,
+                       max_size: int | None = None):
     """Lower cells with no temporal support (`temporal_support` == 1). `prev` / `nxt` as in
-    `temporal_support` (frames, `support_maps` tuples or None). Returns (repaired copy, code)."""
+    `temporal_support` (frames, `support_maps` tuples or None). Returns (repaired copy, code).
+    `max_size`: the v4 guard of `boundary_fill`."""
     z = z.copy()
     code = np.zeros(z.shape, np.uint8) if code is None else code.copy()
     un = temporal_support(z, prev, nxt) == 1
     if un.any():
-        code[boundary_fill(z, un)] |= REPAIR_UNSUPPORTED
+        ref = np.zeros(z.shape, bool) if max_size is not None else None
+        code[boundary_fill(z, un, max_size=max_size, refused=ref)] |= REPAIR_UNSUPPORTED
+        if ref is not None:
+            code[ref] |= REPAIR_REFUSED
     return z, code

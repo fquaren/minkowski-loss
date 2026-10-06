@@ -1,0 +1,51 @@
+# v4 screen (DECISIONS §19, gate in §20). Every threshold the v4 build uses lives here, so a
+# change is one diff. "provisional" = set before the Phase-0 calibration, to be confirmed there.
+version: v4
+data_dir: /home/fquareng/work/data/extremes/OPERA/quality_v4
+
+ceiling:                      # rule 2
+  min_count: 50               # per radar-year
+  min_ratio: 50               # x the median count of occupied values within +-0.5 dB
+  table: ceilings.csv         # relative to data_dir; written by radar_screen_v4.py ceilings
+  reject_pixels: 5            # tile-frame rejected at >= 5 ceiling pixels; 1-4 repaired (researcher, 2026-10-06)
+
+repeat:                       # rule 1, per tile after all repairs
+  u: 31.0
+  min_count: 50               # ODYSSEY tail tiles: 99.9th percentile of the max count is 24
+  min_excess: 10              # provisional; vs occupied values within +-0.5 dB (NIMBUS ladder)
+
+guard:                        # rule 4
+  max_size: 500               # provisional; components above this are not ring-median repaired
+
+radar_frame:                  # rule 3, provisional until Phase 0
+  min_valid: 500
+  # flagged if (f31 >= f31_min and r2_range >= r2_min) or (max(ejump, bjump) >= jump_min and f10 >= f10_min)
+  f31_min: 0.10
+  r2_min: 0.5
+  jump_min: 2.0
+  f10_min: 0.2
+  reject_share: 0.10          # reject a tile when flagged radars own >= this share of it
+
+radar_day:                    # rule 5: reviewed by the researcher (DECISIONS §19)
+  review_top: 100
+  exclusions: []              # entries: {radar: <key>, day: YYYYMMDD, reason: ..., reviewed: YYYY-MM-DD}
+  reject_share: 0.10
+
+known_failures:               # regression catalogue (DECISIONS §20, criterion 1)
+  - name: madrid_20180429
+    radar: estjv
+    days: [20180429]
+    signature: radar-wide failure, range-only field to 340 mm/h, raw cores to 1e4 mm/h
+    check: no stored tile on these days with >= 10% owned by this radar and max >= 31
+  - name: valjevo_ceiling_2023
+    radar: rsval
+    year: 2023
+    value: 364.63
+    signature: reflectivity ceiling (64.0 dBZ), speckle inside rain, 80 rain days
+    check: no stored pixel equal to the value within 250 km of the radar that year
+  - name: ceiling_4862_201911
+    tile: [640, 1408]
+    days: [20191114, 20191115, 20191116, 20191118, 20191121]
+    value: 48.62
+    signature: reflectivity ceiling (50.0 dBZ), stationary speckled blob, 7 days
+    check: no stored tile with >= 5 pixels at the value on these days

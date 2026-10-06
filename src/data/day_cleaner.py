@@ -10,6 +10,11 @@ The neighbours of the first and last frames come from the adjacent day stores wh
 exist and are exactly 15 min away.
 
 `repair=False` stops after `clean_frame` (the v2 field), for comparisons.
+
+v4 (DECISIONS §19), both off by default so the v3 field is reproduced exactly:
+`ceilings` (a `radar_screen.CeilingTable`) repairs ceiling pixels right after `clean_frame`
+and marks them REPAIR_CEILING; `max_size` guards every ring-median repair (components larger
+than this are left as they are and marked REPAIR_REFUSED).
 """
 
 from __future__ import annotations
@@ -38,10 +43,11 @@ class DayCleaner:
     a window of the grid (all masks are sliced to it)."""
 
     def __init__(self, raw_dir, day, var, hot, ring=None, sites_rc=None, repair=True,
-                 crop=None, keep=4):
+                 crop=None, keep=4, ceilings=None, max_size=None):
         self.raw_dir, self.day, self.var = raw_dir, str(day), var     # str: may arrive as numpy.str_
         self.hot_fn, self.ring_fn, self.sites = hot, ring, sites_rc
         self.repair, self.keep = repair, keep
+        self.ceilings, self.max_size = ceilings, max_size
         self.ds = open_day(os.path.join(raw_dir, self.day))
         self.times = self.ds.time.values
         self.T = len(self.times)
@@ -66,8 +72,17 @@ class DayCleaner:
         c = cleaning.clean_frame(raw, self._slice(self.hot_fn(year)))[0]
         if not self.repair:
             return c, np.zeros(c.shape, np.uint8)
+        ceil = None
+        if self.ceilings is not None:
+            from src.data.radar_screen import repair_ceiling
+            ceil = self.ceilings.mask(c, year, self.crop)
+            repair_ceiling(c, ceil)
         ring = self._slice(self.ring_fn(year)) if self.ring_fn else None
-        return cleaning.repair_static(c, ring, self.sites, row0=self.crop[0], col0=self.crop[2])
+        z, code = cleaning.repair_static(c, ring, self.sites, row0=self.crop[0], col0=self.crop[2],
+                                         max_size=self.max_size)
+        if ceil is not None:
+            code[ceil] |= cleaning.REPAIR_CEILING
+        return z, code
 
     def _edge_frame(self, which):
         """Stage-1 frame of the previous day's last (which=-1) or next day's first (which=+1)
@@ -128,7 +143,7 @@ class DayCleaner:
         tn = self.times[k + 1] if k + 1 < self.T else t + STEP
         prev = self._support(k - 1) if t - tp == STEP else None
         nxt = self._support(k + 1) if tn - t == STEP else None
-        self._fin[k] = cleaning.repair_unsupported(s1, prev, nxt, code)
+        self._fin[k] = cleaning.repair_unsupported(s1, prev, nxt, code, max_size=self.max_size)
         return self._fin[k]
 
     def close(self):

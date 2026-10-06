@@ -13,6 +13,12 @@ raw_max, n_fixed (pixels changed by the cleaning), ray (RLAN ray pointing at a r
 unphysical (cleaned max > 500), q_mean_wet / has_qind, n_repaired (pixels lowered by the v3
 repairs; 0 with --no_repair).
 
+v4 (`--quality configs/quality_v4.yaml`, DECISIONS §19): ceiling pixels are repaired after
+`clean_frame` and every ring-median repair is guarded; extra columns n_ceiling, n_refused,
+rep_value, rep_count, rep_excess, max_rep (repeated-value test on the final tile) and owners
+('radar:share;...', for joining radar-frame flags and radar-day exclusions at split time).
+Without --quality the output is the v3 table, unchanged.
+
 Output: <out_dir>/tiles/YYYYMMDD.csv.gz. Restartable with --skip_existing; a day is written
 through a temporary file, so a partial file never looks complete.
 
@@ -38,6 +44,32 @@ _CLIM = None
 _HOT = {}
 _SITES = None
 _RING = None
+_Q = {}
+_GEOM = {}
+
+
+def _quality(path):
+    """(quality dict, CeilingTable) from a quality_v4.yaml, cached per worker."""
+    if path is None:
+        return None, None
+    if path not in _Q:
+        import yaml
+        from src.data.radar_screen import CeilingTable
+        q = yaml.safe_load(open(path))
+        tp = os.path.join(q["data_dir"], q["ceiling"]["table"])
+        rows = pd.read_csv(tp).to_dict("records") if os.path.exists(tp) else []
+        if not rows:
+            print(f"[scan] warning: no ceiling table at {tp}; ceilings not repaired", flush=True)
+        _Q[path] = (q, CeilingTable(rows))
+    return _Q[path]
+
+
+def _geometry(year):
+    from src.data.radar_screen import RadarGeometry
+    if year not in _GEOM:
+        _GEOM.clear()
+        _GEOM[year] = RadarGeometry(year)
+    return _GEOM[year]
 
 
 def _hot(clim_path, year):
@@ -70,15 +102,24 @@ def _sites():
     return _SITES
 
 
-def scan_day(day_dir, var, clim_path, patch, out_path, ring_path=None, repair=True):
+def scan_day(day_dir, var, clim_path, patch, out_path, ring_path=None, repair=True,
+             quality=None):
     import xarray as xr
     from src.data.cleaning import ray_flag, tile_stats, UNPHYSICAL
     from src.data.day_cleaner import DayCleaner
+    from src.data.cleaning import REPAIR_CEILING, REPAIR_REFUSED
+    from src.data.radar_screen import owner_shares, repeated_value
     day = os.path.basename(day_dir.rstrip("/"))
     sites = _sites()
+    qcfg, ceil = _quality(quality)
+    v4 = qcfg is not None
     dc = DayCleaner(os.path.dirname(day_dir.rstrip("/")), day, var,
                     hot=lambda y: _hot(clim_path, y), ring=lambda y: _ring(ring_path, y),
-                    sites_rc=sites, repair=repair)
+                    sites_rc=sites, repair=repair,
+                    ceilings=ceil if v4 else None,
+                    max_size=qcfg["guard"]["max_size"] if v4 else None)
+    g = _geometry(int(day[:4])) if v4 else None
+    owners = {}
     ds = dc.ds
     has_q = "QIND" in ds
     rows = []
@@ -112,12 +153,23 @@ def scan_day(day_dir, var, clim_path, patch, out_path, ring_path=None, repair=Tr
                     st["q_mean_wet"] = float(qt[wet].mean()) if wet.any() else np.nan
                 else:
                     st["q_mean_wet"] = np.nan
+                if v4:
+                    cd = rcode[r0:r0 + patch, c0:c0 + patch]
+                    st["n_ceiling"] = int(((cd & REPAIR_CEILING) > 0).sum())
+                    st["n_refused"] = int(((cd & REPAIR_REFUSED) > 0).sum())
+                    st.update(repeated_value(ct, qcfg["repeat"]["u"]))
+                    if (r0, c0) not in owners:
+                        owners[(r0, c0)] = owner_shares(g, r0, c0, patch)
+                    st["owners"] = owners[(r0, c0)]
                 rows.append(st)
     dc.close()
     df = pd.DataFrame(rows)
     cols = ["timestamp", "row", "col", "max", "mean", "wet_frac", "n_ge1", "n_ge10", "n_ge31",
             "n_ge53", "n_ge89", "n_ge150", "coarse_max", "raw_max", "n_fixed", "ray",
             "unphysical", "q_mean_wet", "has_qind", "n_repaired"]
+    if v4:
+        cols += ["n_ceiling", "n_refused", "rep_value", "rep_count", "rep_excess", "max_rep",
+                 "owners"]
     df = df[cols] if len(df) else pd.DataFrame(columns=cols)
     tmp = out_path + ".part"
     # %.7g: float32 round-trip. %.4g lost digits (486.25 -> 486.2), so the metadata max
@@ -134,6 +186,8 @@ def main():
     ap.add_argument("--climatology", default=None)
     ap.add_argument("--ring_mask", default=None, help="ring_mask.npz (ring_climatology.py)")
     ap.add_argument("--no_repair", action="store_true", help="v2 cleaning (clean_frame only)")
+    ap.add_argument("--quality", default=None, help="v4: configs/quality_v4.yaml")
+    ap.add_argument("--days_file", default=None, help="one YYYYMMDD per line")
     ap.add_argument("--raw_dir", default=None)
     ap.add_argument("--days", nargs="*", default=None)
     ap.add_argument("--workers", type=int, default=6)
@@ -146,8 +200,11 @@ def main():
     os.makedirs(out, exist_ok=True)
     days = sorted(d for d in glob.glob(os.path.join(raw_dir, "[0-9]" * 8))
                   if os.path.exists(os.path.join(d, ".zmetadata")))
-    if args.days:
-        days = [d for d in days if os.path.basename(d) in set(args.days)]
+    want = set(args.days or [])
+    if args.days_file:
+        want |= {l.strip() for l in open(args.days_file) if l.strip()}
+    if want:
+        days = [d for d in days if os.path.basename(d) in want]
     todo = [d for d in days if not (args.skip_existing and os.path.exists(
         os.path.join(out, os.path.basename(d) + ".csv.gz")))]
     print(f"[scan] {len(days)} complete day stores, {len(todo)} to scan -> {out}", flush=True)
@@ -155,7 +212,7 @@ def main():
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(scan_day, d, cfg["PRECIP_VAR_NAME"], args.climatology,
                           cfg["PATCH_SIZE"], os.path.join(out, os.path.basename(d) + ".csv.gz"),
-                          args.ring_mask, not args.no_repair): d
+                          args.ring_mask, not args.no_repair, args.quality): d
                 for d in todo}
         for k, f in enumerate(as_completed(futs), 1):
             try:
