@@ -1,6 +1,6 @@
 # Experiment tracker
 
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 
 **Read first:** `DECISIONS.md` (why things are the way they are, and what is already ruled
 out), then `CLAUDE.md` (operational traps), then this file (the compute node in §0, what exists and what's next).
@@ -387,6 +387,55 @@ isoperimetric scatter.
         Gates: every known failure caught; event-tile rejection < 0.5%; gallery of each
         rule's strongest flags looked at. A failed gate stops the build; thresholds are not
         loosened silently.
+        *Run 1 (2026-10-06, `logs/phase0_v4.log`):* known failures caught (364.63 and 48.62 in
+        the ceiling table, Madrid `estjv` 04-29 00-06 h flagged by rule 3), but the ceiling
+        table flagged every level of the coarse value ladders (3,256 rows). Event gate failed,
+        all through rule 2: valencia_dana 100%, ce_floods 93%, boris 93%, cannes 35%, andreas
+        17% of wet tiles; on random days rejection rose from 0.9% (max 1-10) to 14% (max
+        >= 150). Rule 1 rejected 1 event tile. Gate 1 partial: Madrid 96/101 tiles, r640 c1408
+        310/408 tile-frames with max >= 31. v4-off regression == v3: passed. Rule 2 now
+        compares with the largest count within +-4 dB (DECISIONS §19 status note); run-1
+        outputs in `quality_v4/calib/run1/`.
+        *Run 2 (2026-10-06, `logs/phase0_v4_run2.log`, `quality_v4/calib/report.md`):* 21
+        ceilings (364.63 on 17 radar-years, 48.62 Oradea 2019, and 11.53 = 40.0 dBZ on grthe,
+        rsfrg, itbri 2023, not yet explained). Gate 2 passed: worst event 0.14%
+        (chauxdefonds, 1 tile, rule 1); random-day rejection <= 0.014% below 150 mm/h, 0.74%
+        at >= 150 (Valjevo-area 364.63 tiles). Gate 1: 96/101 Madrid tiles and 310/411 r640
+        c1408 tile-frames rejected; the rest are, from the tile columns, outside the failure
+        (Madrid after 06 h, when its wet fraction is < 0.2; 48.62 frames with 0-4 ceiling
+        pixels, repaired, max_rep <= 2), not yet confirmed by eye. Regression passed.
+        *Gallery review (2026-10-07):* the `calib/fig/gallery_*` panels (top 12 by tile max)
+        are all 2023 Balkan 364.63 tiles, and their "random / event" panels fall inside that
+        failure's window (02-13..08-13), so they are true positives, not false-positive
+        candidates; every panel is visibly broken. All 110 tiles with max > 500 are rejected.
+        Targeted galleries `calib/fig/madrid_kept.png`, `c4862_kept.png`:
+        - *Madrid: closed.* All 96 gate tiles in 00-06 h rejected; the 5 kept are 10:30-13:30,
+          max 33-54, scattered convection.
+        - *48.62: ceiling handled, a second failure is not.* Kept frames carry 0-4 raw 48.62
+          pixels, repaired. Their maxima (138-342 mm/h) are clusters of 2-9 pixels whose 5x5
+          median is 0; the repair can copy them (11-18 08:45: 5,524.7 -> 153.4, from an
+          equally isolated neighbour).
+        - *11.53:* 398 pixels on grthe/rsfrg/itbri; its largest days are all 364.63 failure
+          days (weak evidence: the calibration set over-samples them). Repair only; kept
+          flagged, still unexplained.
+        - *Refused repairs:* 3 rejected tiles look like ordinary frontal bands (max 30-40);
+          rate <= 1.4e-4 per bin on random days. What the guard refused is not checked yet.
+        *Isolated-maxima count (2026-10-07, `scripts/dataset_v2/isolated_v4.py`,
+        `calib/isolated/report.md`, `logs/isolated_v4.log`):* 118,627 tiles with max >= 31,
+        v4-cleaned field; isolated = 5x5 median < 0.1 mm/h, window >= 50% covered. Kept tiles
+        whose max is isolated: 48.62 days 29-71% (71% at 150-500), random 14-23%, events
+        9-16%, in every bin. Strictest cut (11x11 wet fraction < 0.05) at max >= 89: 48.62
+        days 15.6%, random 2.7%, events 1.8%, above the 0.5% event gate. **No tile-level
+        rule.** The 48.62 days stand out by rate, a radar-day property: candidate feature for
+        rule 5 (share of isolated maxima per radar-day), to be decided before Phase 2 because
+        it must be computed in the radar pass. The isolated event maxima have not been looked
+        at (small real cells or artefacts inside event windows: unknown).
+        *By-product: 486.2 mm/h = 66.0 dBZ.* 55 tiles have exactly this max (36 event, 15
+        random, 4 Valjevo); no other value in 470-500 is the max of > 3 tiles. Also the v3 max
+        of Boris and Valencia DANA. Not in the ceiling table. A product-level cap would make
+        the tail censored near 486 rather than truncated at 500; unchecked, read from the
+        Phase-2 radar-year histograms.
+        Slides on the whole dataset work: `notes/dataset_v4_slides.pdf`.
       - *Phase 2, radar pass* over all days on the `clean_frame` output (before repairs, so a
         repair cannot hide a failure): per radar-frame features and per radar-year value
         histograms (~6-8 h). Then ceiling table, radar-frame thresholds, radar-day ranking and

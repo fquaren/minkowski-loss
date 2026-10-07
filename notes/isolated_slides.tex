@@ -1,0 +1,51 @@
+\begin{frame}{Isolated high values: how often, and where?}
+  \centering
+  \includegraphics[width=0.86\linewidth]{isolated.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  Phase-0 days, 118,627 tiles with max $\ge$ 31\mmh, v4-cleaned field
+  (\code{scripts/dataset\_v2/isolated\_v4.py}). A pixel is isolated when the median of its
+  $5\times5$ window (10\,km) is $<$ 0.1\mmh\ and the window is $\ge$ 50\% covered.
+\end{frame}
+
+\begin{frame}{Isolation alone is not a clear-error signature}
+  \small
+  \begin{itemize}
+    \item On the 48.62 days the max is isolated far more often: 71\% of kept tiles at
+      150--500\mmh, against 16\% on event days and 23\% on random days.
+    \item \textbf{But the event days show it too}: 9--16\% of kept event tiles have an
+      isolated max, in every intensity bin.
+    \item The strictest cut tried (wet fraction $<$ 0.05 in the $11\times11$ window, 22\,km)
+      still flags 1.8\% of event tiles with max $\ge$ 89\mmh, against 15.6\% on the 48.62 days
+      and 2.7\% on random days. Gate 2 allows $<$ 0.5\% per event.
+    \item Whether the isolated event maxima are small real cells or artefacts inside event
+      windows is not known; they have not been looked at.
+  \end{itemize}
+  \vspace{2mm}
+  \textbf{Reading:} a per-tile isolation rule would remove real storms at several times the
+  gate rate (DECISIONS §17, safeguard 1). The 48.62 days stand out by \emph{rate}, which is a
+  radar-day property. The natural home is rule 5 (radar-day ranking): the share of isolated
+  maxima per radar and day, against the radar's own level and its neighbours. That would have
+  to be added to the Phase-2 radar pass before it runs.
+\end{frame}
+
+\begin{frame}{A by-product: 486.2\mmh\ = 66.0\,dBZ}
+  \small
+  \begin{itemize}
+    \item 55 tiles have a max of exactly 486.2\mmh; no other value between 470 and 500\mmh\
+      is the max of more than 3 tiles.
+    \item 486.2\mmh\ is 66.0\,dBZ under $Z = 200R^{1.6}$, the same kind of round reflectivity
+      value as 364.63 (64.0\,dBZ) and 48.62 (50.0\,dBZ).
+    \item 36 of the 55 tiles are on event days, 15 random, 4 Valjevo; it is also the v3 maximum
+      of both NIMBUS events (Boris, Valencia DANA).
+    \item It is not in the ceiling table: per radar-year it is too rare for
+      \code{min\_count: 50} or does not pile up 5$\times$ above its neighbours.
+  \end{itemize}
+  \vspace{2mm}
+  \textbf{Interpretation open:} a product-level cap (values clipped at 66\,dBZ, i.e.\
+  censored hail cores) is consistent with this, but has not been checked. If it is a cap, the
+  pixels are real heavy rain with an unknown true value, and the tail above $\approx$486\mmh\
+  is censored, not truncated at 500. The Phase-2 radar-year histograms will show whether it
+  is radar-specific.
+\end{frame}
