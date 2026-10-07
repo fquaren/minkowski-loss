@@ -10,8 +10,13 @@ alone (DECISIONS §17 safeguard 1), and none is tuned on the tail fit (DECISIONS
                   The count is compared with the other occupied values within +-0.5 dB, so
                   the same test works on NIMBUS, whose values sit on a ladder (ratio 1.0593
                   between levels).
-  ceiling         a value a radar area produces far more often than its +-0.5 dB neighbours
-                  over a year (364.63 mm/h = 64.0 dBZ, 48.62 = 50.0 dBZ under Z = 200 R^1.6).
+  ceiling         a value a radar area produces far more often than any other value within
+                  +-4 dB over a year (364.63 mm/h = 64.0 dBZ, 48.62 = 50.0 dBZ under
+                  Z = 200 R^1.6). Not the +-0.5 dB median of the repeated-value test: a
+                  radar-year mixes coarse ladders (steps up to ~3 dB) with sparse off-ladder
+                  values, so that median is ~1 and every ladder level looks like a ceiling
+                  (Phase-0 calibration, DECISIONS §19). Rain counts fall with intensity, so on
+                  a ladder the next level is about as heavy; a ceiling piles up above it.
                   A ceiling pixel is censored, not measured: it is repaired like a spike, and a
                   tile-frame with >= 5 of them is rejected at split time.
   radar frame     per radar and frame, over the pixels it owns (nearest active radar within
@@ -33,6 +38,7 @@ from scipy import ndimage
 MP_B = 1.6                                   # Z = 200 R^1.6: dBZ = 23.01 + 16 log10(R)
 WINDOW_DB = 0.5
 WINDOW = 10 ** (WINDOW_DB / (10 * MP_B))     # +-0.5 dB as a rate factor, 1.0746
+CEIL_WINDOW_DB = 4.0                         # wider than the coarsest ladder step seen (~3 dB)
 REP_U = 31.0                                 # repeated-value test on values >= this (mm/h)
 VB0, VB1 = 1000, 50000                       # histogram bins: 10.00 .. 500.00 mm/h on the 0.01 grid
 RANGE_BIN_KM = 4.0
@@ -88,18 +94,33 @@ def repeated_value(t: np.ndarray, u: float = REP_U, min_count: int = 10) -> dict
             "max_rep": int(c.max())}
 
 
+def peak_ratio(vb: np.ndarray, c: np.ndarray, candidates, window_db: float = CEIL_WINDOW_DB) -> np.ndarray:
+    """Count of each candidate divided by the largest count of any *other* value within
+    +-window_db (sorted `vb`, value * 100). The max, not the median: on a ladder the
+    comparison is the adjacent level, whatever sparse off-ladder values sit between levels."""
+    idx = np.asarray(candidates)
+    w = 10 ** (window_db / (10 * MP_B))
+    lo = np.searchsorted(vb, vb[idx] / w, side="left")
+    hi = np.searchsorted(vb, vb[idx] * w, side="right")
+    out = np.empty(idx.size)
+    for j, i in enumerate(idx):
+        nb = np.r_[c[lo[j]:i], c[i + 1:hi[j]]]
+        out[j] = c[i] / max(float(nb.max()) if nb.size else 1.0, 1.0)
+    return out
+
+
 def ceiling_candidates(vb: np.ndarray, c: np.ndarray, min_count: int = 50,
-                       min_ratio: float = 50.0):
-    """Values of one radar-year histogram counted >= min_count and >= min_ratio times their
-    occupied +-0.5 dB neighbours. Returns (values mm/h, counts, ratios)."""
+                       min_ratio: float = 5.0, window_db: float = CEIL_WINDOW_DB):
+    """Values of one radar-year histogram counted >= min_count and >= min_ratio times the
+    largest other count within +-window_db. Returns (values mm/h, counts, ratios)."""
     o = np.argsort(vb)
     vb, c = vb[o], c[o]
     cand = np.nonzero(c >= min_count)[0]
     if not cand.size:
         return np.empty(0), np.empty(0, int), np.empty(0)
-    ex = excess(vb, c, cand)
-    k = cand[ex[cand] >= min_ratio]
-    return vb[k] / 100.0, c[k], ex[k]
+    r = peak_ratio(vb, c, cand, window_db)
+    k = r >= min_ratio
+    return vb[cand[k]] / 100.0, c[cand[k]], r[k]
 
 
 class CeilingTable:

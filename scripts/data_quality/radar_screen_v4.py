@@ -3,7 +3,7 @@
 radar-day ranking and the review gallery (DECISIONS §19, rules 2, 3 and 5).
 
   ceilings  per radar-year value histograms -> values counted >= min_count and >= min_ratio x
-            their occupied +-0.5 dB neighbours. Writes ceilings.csv (the table the v4 scan
+            the largest other count within +-window_db. Writes ceilings.csv (the table the v4 scan
             repairs) and ceilings_daily.csv (per radar, day and value).
   frames    rule 3 on every radar-frame with the thresholds of the quality config. Writes
             frame_flags.csv.gz (flagged radar-frames, joined onto tiles at split time) and
@@ -65,7 +65,8 @@ def cmd_ceilings(q, d):
         found = []
         for ri in np.nonzero(acc.sum(1))[0]:
             nz = np.nonzero(acc[ri])[0]
-            vals, cnt, ratio = ceiling_candidates(nz + VB0, acc[ri, nz], c["min_count"], c["min_ratio"])
+            vals, cnt, ratio = ceiling_candidates(nz + VB0, acc[ri, nz], c["min_count"], c["min_ratio"],
+                                                   c["window_db"])
             for v, n, r in zip(vals, cnt, ratio):
                 found.append((ri, int(round(v * 100)) - VB0))
                 rows.append({"year": year, "radar": keys[ri], "location": act["location"].iat[ri],

@@ -5,7 +5,9 @@ data_dir: /home/fquareng/work/data/extremes/OPERA/quality_v4
 
 ceiling:                      # rule 2
   min_count: 50               # per radar-year
-  min_ratio: 50               # x the median count of occupied values within +-0.5 dB
+  min_ratio: 5                # provisional; x the largest other count within +-window_db (Phase 0:
+                              # known ceilings 9.9-89, other values 99.9th pct 1.96, max 13.7)
+  window_db: 4.0              # > the coarsest ladder step in the data (~3 dB, IT 2026)
   table: ceilings.csv         # relative to data_dir; written by radar_screen_v4.py ceilings
   reject_pixels: 5            # tile-frame rejected at >= 5 ceiling pixels; 1-4 repaired (researcher, 2026-10-06)
 

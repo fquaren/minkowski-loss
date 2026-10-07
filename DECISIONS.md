@@ -626,6 +626,30 @@ Confidence: the three failures are verified by eye and by their exact dBZ values
 rules catch them without removing real extremes is to be shown by the Phase-0 calibration and
 the §20 gate.
 
+**Rule 2 changed after the first Phase-0 run (2026-10-06, researcher on Claude's proposal).**
+The first run found 3,256 radar-year "ceilings" (up to 43 for one radar-year, 2,044 in 2024
+alone) where a real ceiling is one value. Cause: a radar-year mixes values on coarse ladders
+(dBZ steps of 0.4-3 dB, rounded to 0.01 or 0.1 mm/h) with sparse off-ladder values (counts
+1-4). The median of the occupied values within +-0.5 dB is then ~1, so every ladder level
+passes 50x; e.g. Málaga 2024, 10.28 mm/h counted 8,059 times among neighbours counted 1-4. On
+the event days already scanned this rejected 16.5% of ce_floods_201305 tiles (72% of those
+with max >= 31) and 2.5% of andreas_20130728.
+- *New comparison:* the count of a value against the **largest** count of any other value
+  within **+-4 dB**. The max makes the comparison the adjacent ladder level, whatever sits
+  between levels; +-4 dB is wider than the coarsest ladder step in the data (~3 dB, IT 2026).
+  Rain counts fall with intensity, so on a ladder the ratio is ~1 or below; a ceiling piles up
+  above its neighbours.
+- *Calibration histograms (199 days, 23,868 values counted >= 50):* the 18 radar-year rows of
+  the two known ceilings score 9.9-89; all other values have 99.9th percentile 1.96. Threshold
+  `min_ratio: 5`, provisional until the rerun Phase 0. The 50 of the first proposal had no
+  calibration behind it.
+- *Not yet explained:* 11.53 mm/h (= 40.0 dBZ) in 2023 scores 3.0-13.7 on the same Balkan
+  radars that carry the 364.63 ceiling (itbri 13.7, rsfrg 5.1, grthe 5.1). It is flagged at 5
+  and goes to the gallery to be looked at; it may be a second fault of the same radars or a
+  ladder artefact.
+- Rule 1 is unchanged (+-0.5 dB median, `excess`). Whether mixed ladders inflate it too is
+  read from `rej_repeat` in the Phase-0 reports, not assumed.
+
 ---
 
 ## 20. When the dataset is ready for training: a gate fixed before the results

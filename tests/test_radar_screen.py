@@ -66,6 +66,21 @@ def test_ceiling_candidates_fine_grid_and_ladder():
     assert ceiling_candidates(lb, lc)[0].size == 0
 
 
+def test_ceiling_candidates_mixed_and_coarse_ladders():
+    """A radar-year mixes ladder levels with sparse off-ladder values, and some ladders step
+    ~3 dB: neither is a ceiling (the Phase-0 false positives); a ceiling on top of them is."""
+    rng = np.random.default_rng(1)
+    v = np.round(10 + rng.pareto(2.0, 200_000) * 8, 2); v = v[v <= 500]
+    mixed = np.r_[to_ladder(v), np.round(10 + rng.pareto(2.0, 3_000) * 8, 2)]
+    coarse = np.round(10 * 1.5 ** np.round(np.log(v / 10) / np.log(1.5)), 2)   # ~2.8 dB steps
+    for x in (mixed, coarse[coarse <= 500]):
+        vb, c = np.unique(np.rint(x * 100).astype(np.int64), return_counts=True)
+        assert ceiling_candidates(vb, c)[0].size == 0
+        i = np.searchsorted(vb, 36463)
+        vb2, c2 = np.insert(vb, i, 36463), np.insert(c, i, 2000)
+        assert list(ceiling_candidates(vb2, c2)[0]) == [364.63]
+
+
 def test_ceiling_table_masks_only_near_its_radar():
     t = CeilingTable([{"year": 2023, "value": 364.63, "site_row": 100, "site_col": 100}],
                      shape=(600, 600))
