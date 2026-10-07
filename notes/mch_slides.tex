@@ -1,5 +1,6 @@
 \documentclass[aspectratio=169,10pt]{beamer}
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{graphicx}
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta}
@@ -509,6 +510,66 @@
     \item \textbf{Validation covers Germany and Switzerland only}; the failures above were in
       Serbia, Spain and Romania.
   \end{itemize}
+\end{frame}
+
+% ===========================================================================
+\section{Next steps}
+
+\begin{frame}{What the dataset is for: the hypothesis}
+  \small
+  Minkowski functionals (area, perimeter, Euler characteristic of the excursion sets
+  $\{x \ge u\}$ across thresholds) describe the geometry of the rain field. If an extreme storm
+  has the geometry of an ordinary one at higher intensity, a model trained on these functionals
+  should carry that geometry beyond its training range.
+  \vspace{2mm}
+
+  \centering
+  \begin{tabular}{lp{7.2cm}l}
+    \toprule
+    & claim & tested by \\
+    \midrule
+    H1 & excursion-set geometry of extremes, suitably normalised, resembles that of ordinary events
+       & data analysis, no training \\
+    H2 & the structural loss ties geometry at high thresholds to geometry learned at lower ones
+       & gradient and residual analysis \\
+    H3 & beyond the training range, a model trained with it produces more realistic extreme
+       structure than one trained without & cut-off experiment \\
+    \bottomrule
+  \end{tabular}
+  \vspace{2mm}
+
+  \raggedright
+  So far: on the old data the loss helps the deterministic model's tail substantially
+  (exceedance ratio 0.12 $\to$ 0.24) for +3.8\% MAE. Those results used splits that leak
+  between train and test, so they are interpolation scores and must be redone on the new data.
+\end{frame}
+
+\begin{frame}{Next steps, once the dataset passes its gate}
+  \scriptsize
+  \centering
+  \renewcommand{\arraystretch}{1.15}
+  \begin{tabular}{l>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{7.6cm}l}
+    \toprule
+    & step & what it settles & needs \\
+    \midrule
+    1 & Retrain the baselines & deterministic models with and without the Minkowski loss;
+        flow matching on the best one, with the loss as a reward & dataset \\
+    2 & Fix the extreme threshold & the peaks-over-threshold level on screened data: stability of
+        $\xi(u)$, the bound, regional and seasonal levels & dataset \\
+    3 & Fair loss comparison & spectral, SSIM, wet-area, optical flow vs Minkowski at matched
+        gradient share, same budget, last checkpoint, 3 seeds & 1 \\
+    4 & H1: is extreme geometry ordinary? & do normalised functional curves of extremes collapse
+        onto those of ordinary storms, by region and season? & dataset \\
+    5 & H3: cut-off experiment & train without every space--time block above a cut, test on the
+        held-out extremes; i.i.d.\ to o.o.d.\ degradation with and without the loss; area only vs
+        all three functionals & 1, 2, 4 \\
+    6 & Regime-aware loss & should regimes, recognised from the coarse input, set the loss's
+        thresholds or weights? & 4 \\
+    7 & Robustness & NIMBUS product shift; possibly Switzerland held out, or NWP input & 5 \\
+    8 & Release & a Europe-wide benchmark: splits, event and product-shift test sets, quality
+        flags, code to regenerate & 1, 2 \\
+    \bottomrule
+  \end{tabular}
 \end{frame}
 
 % ===========================================================================
