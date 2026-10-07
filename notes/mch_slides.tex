@@ -3,7 +3,7 @@
 \usepackage{graphicx}
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta}
-\graphicspath{{figures/dataset_slides/}{figures/data_quality/}}
+\graphicspath{{figures/dataset_slides/}{figures/data_quality/}{figures/mch/}}
 \setbeamertemplate{navigation symbols}{}
 \setbeamertemplate{footline}[frame number]
 \newcommand{\mmh}{\,mm\,h$^{-1}$}
@@ -129,7 +129,7 @@
     \toprule
     rule & signature & action \\
     \midrule
-    static clutter & pixel $\ge$ 31\mmh\ in $>$ 1\% of a calendar year's frames & neighbourhood median \\
+    static clutter & pixel $\ge$ 31\mmh\ in $>$ 1\% of a calendar year's frames & median of non-hot $5\times5$ neighbours \\
     isolated spike & pixel $\ge$ 10\mmh, every neighbour $<$ 10\% of it & neighbour maximum \\
     unphysical core & pixel $>$ 500\mmh, with its connected region $\ge$ 150\mmh & median of the outer ring \\
     RLAN ray & thin component $\ge$ 80\,km aligned ($<$ 10°) with a radar within 250\,km & median of the outer ring \\
@@ -142,6 +142,84 @@
   \raggedright\small
   Nothing is zeroed. Tiles must be fully covered. The repair is guarded: a component above
   500 pixels is not repaired, and the tile is rejected instead.
+\end{frame}
+
+\begin{frame}{Example: static clutter}
+  \centering
+  \includegraphics[width=0.86\linewidth]{ex_static_clutter.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} the same pixels exceed 31\mmh\ in more than 1\% of a year's frames; here the
+  radial sectors of one radar in 2016 (left, blue: the hot mask).
+  \textbf{Rule:} every rainy pixel of the mask is lowered to the median of the non-hot pixels in its
+  $5\times5$ window, if that is lower. The rain band crossing the sector keeps its shape
+  (max 81 $\to$ 49\mmh).
+\end{frame}
+
+\begin{frame}{Example: isolated spike}
+  \centering
+  \includegraphics[width=0.62\linewidth]{ex_spike.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} single pixels far above everything around them (diamonds, 64\,km crop).
+  \textbf{Rule:} a pixel $\ge$ 10\mmh\ whose 8 neighbours are all below 10\% of it takes the
+  largest neighbour's value: 100 $\to$ 22\mmh.
+  \textbf{Limit:} two adjacent bad pixels protect each other, so small clusters survive
+  (the Oradea case, later).
+\end{frame}
+
+\begin{frame}{Example: unphysical values and their footprint}
+  \centering
+  \includegraphics[width=0.62\linewidth]{ex_footprint.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} values above 500\mmh\ on an arc at constant range from a radar (black).
+  \textbf{Rule:} each pixel $>$ 500\mmh, with the region $\ge$ 150\mmh\ connected to it, is
+  lowered to the median of the region's outer ring; the rain below is untouched.
+  \textbf{Left over:} 486.2, 452.5, 421.1, 391.8\mmh\ on the same arc, i.e.\ 66.0, 65.5, 65.0,
+  64.5\,dBZ: steps of 0.5\,dBZ, not connected to a pixel above 500.
+\end{frame}
+
+\begin{frame}{Example: RLAN ray}
+  \centering
+  \includegraphics[width=0.62\linewidth]{ex_ray.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} a radio emitter interfering with a radar draws a thin line pointing at the
+  radar; here inside the Elvira--Friederike storms, 30 May 2016 (black).
+  \textbf{Rule:} a thin component $\ge$ 80\,km long, aligned within 10° with the direction to a
+  radar within 250\,km, is lowered to its outer-ring median. The convective cells beside it are
+  untouched (max 112 $\to$ 56\mmh).
+\end{frame}
+
+\begin{frame}{Example: range ring}
+  \centering
+  \includegraphics[width=0.9\linewidth]{ex_ring.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} rings are invisible in most single frames but show up as circles in the yearly
+  frequency of $\ge$ 31\mmh\ around a radar (left, 2014; blue: the ring mask).
+  \textbf{Rule:} pixels $\ge$ 89\mmh\ on the mask are lowered to their outer-ring median
+  (365 $\to$ 6\mmh). Below 89\mmh\ the gauges see real rain under the rings, so those values
+  stay.
+\end{frame}
+
+\begin{frame}{Example: no temporal support}
+  \centering
+  \includegraphics[width=0.98\linewidth]{ex_unsupported.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} a 46\mmh\ line appears in one frame only: no echo $\ge$ 1\mmh\ within 30\,km at
+  $t-15$ or $t+15$\,min (outlined in all three frames).
+  \textbf{Rule:} a cell $\ge$ 10\mmh\ without such support is lowered to its outer-ring median.
+  30\,km in 15\,min is 33\,m\,s$^{-1}$, faster than any cell moves.
+  \textbf{Gauges:} about 1\% of such pixels have rain underneath, in every intensity bin.
 \end{frame}
 
 \begin{frame}{Failures that small, local or transient rules cannot see}
@@ -185,6 +263,72 @@
   \]
   on four signals: share $\ge$ 150\mmh, ceiling pixels, flagged frames, isolated high pixels.
   The top of the list is looked at; exclusions are decided by eye.
+\end{frame}
+
+\begin{frame}{Example: reflectivity ceiling}
+  \centering
+  \includegraphics[width=0.98\linewidth]{ex_ceiling.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} speckle at exactly 364.63\mmh\ (64.0\,dBZ) inside rain, Serbia 2023 (black).
+  \textbf{Rule:} per radar area and year, a value counted $\ge$ 5$\times$ more often than any other
+  value within $\pm$4\,dB. Valjevo: 74.5$\times$. Right: a radar that reports on a coarse
+  ladder; each level is about as frequent as the next (1.2$\times$), so it is not a ceiling.
+  Comparing with the median of the neighbouring values instead flagged it at 4,000$\times$.
+\end{frame}
+
+\begin{frame}{Example: repeated value}
+  \centering
+  \includegraphics[width=0.86\linewidth]{ex_repeat.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} 125 pixels at exactly 107.71\mmh\ inside a saturated sector (black).
+  \textbf{Rule:} on the 0.01\mmh\ grid real rain rarely repeats a value $\ge$ 31\mmh; on random and
+  event days the largest repeat count per tail tile is almost always below 25. A tile with
+  $\ge$ 50 pixels at one value is rejected. The test also runs after every repair, to catch
+  plateaus a repair creates.
+\end{frame}
+
+\begin{frame}{Example: radar-disk failure}
+  \centering
+  \includegraphics[width=0.98\linewidth]{ex_radar_disk.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} Madrid, 29 April 2018: the whole disk at a smooth, range-dependent rate up to
+  340\mmh, with a sharp edge at maximum range (blue). Black: the area this radar owns.
+  \textbf{Rule:} per radar and frame, the share of log-rate variance explained by range alone
+  (failure 0.87, rain 0.04), the share $\ge$ 31\mmh, and the jump at the area boundary and the
+  maximum-range circle. A flagged radar-frame rejects every tile it owns $\ge$ 10\% of.
+\end{frame}
+
+\begin{frame}{Example: guarded repair}
+  \centering
+  \includegraphics[width=0.9\linewidth]{ex_guard.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} the footprint repair lowers a region to the median of its outer ring. When the
+  ring belongs to the same failing radar, the repair produces a flat plateau (middle: 5,687
+  pixels at 88.27\mmh) and hides the failure.
+  \textbf{Rule:} a component above 500 pixels is not repaired (black) and the tile is rejected;
+  the repeated-value test after every repair is the second safeguard.
+\end{frame}
+
+\begin{frame}{Example: radar-day ranking}
+  \centering
+  \includegraphics[width=0.56\linewidth]{ex_iso31.png}
+  \vspace{1mm}
+
+  \raggedright\small
+  \textbf{Fails:} Oradea, November 2019: clusters of 2--9 pixels at 40--340\mmh\ in dry
+  surroundings, which the spike rule cannot see.
+  \textbf{Rule:} isolated pixels $\ge$ 31\mmh\ per radar-day against the 5 nearest radars on the
+  same day. Oradea (red): 1,286--8,636 against 0--3. Event radar-days whose neighbours have
+  almost none stay below a few hundred.
+  The top of the ranking is looked at before anything is excluded.
 \end{frame}
 
 \begin{frame}{Splits}
@@ -354,7 +498,9 @@
       surroundings survive on the Oradea days. A per-tile rule would also remove 9--16\% of
       event tiles, so they are handled per radar-day, against the radar's neighbours.
     \item \textbf{486.2\mmh\ = 66.0\,dBZ} is the maximum of 55 tiles; no nearby value is the
-      maximum of more than 3. A product-level cap would make the tail censored there.
+      maximum of more than 3. For data in 0.5\,dBZ steps it is the highest level below our
+      500\mmh\ bound (66.5\,dBZ = 522.6\mmh\ is repaired), so the bound censors these radars
+      at 66\,dBZ. At least one case sits on an artefact arc.
     \item \textbf{11.53\mmh\ = 40.0\,dBZ} piles up on three of the radars that carry the 64\,dBZ
       ceiling in 2023.
     \item \textbf{NIMBUS tail excess} over the gauges, untouched by any rule.
@@ -374,8 +520,8 @@
     \item Which artefact types does MeteoSwiss see in the OPERA composite that this screen
       misses? Which composite-level filters do you trust (texture, satellite cloud masks,
       others), and with which thresholds?
-    \item Are \textbf{reflectivity ceilings} at round dBZ values (64.0, 50.0, 40.0, and
-      possibly 66.0\,dBZ) known for OPERA, and is 66\,dBZ a cap applied by the compositing?
+    \item Are \textbf{reflectivity ceilings} at round dBZ values (64.0, 50.0, 40.0\,dBZ) known
+      for OPERA? Are they receiver saturation, a processing limit, or something else?
     \item How do you tell a \textbf{small intense core} from a \textbf{cluster of clutter
       pixels} without volume data? Is a radar-day comparison with neighbouring radars a
       sensible test?
@@ -397,7 +543,8 @@
       Instantaneous scan vs 10-min totals, hail, or the NIMBUS processing? This decides
       whether NIMBUS can serve as a test set.
     \item What is a defensible \textbf{upper plausibility bound} for a 15-min, 2\,km rate? We
-      use 500\mmh, with repair down to 150\mmh\ around such cores.
+      use 500\mmh, with repair down to 150\mmh\ around such cores. On data in 0.5\,dBZ steps
+      it acts at 66.0\,dBZ (486\mmh).
     \item Should a \textbf{hail cap} (e.g.\ above $\approx$55\,dBZ) be applied before any tail
       statistic?
     \item How should the \textbf{product breaks} (2015, 2017, 2024) be handled when pooling
@@ -446,9 +593,9 @@
 \begin{frame}{The three answers that unblock the most}
   \small
   \begin{enumerate}
-    \item \textbf{The plausibility bound and the 66\,dBZ question} (Q2, Q8, Q9): they decide
-      whether the tail above $\approx$490\mmh\ is truncated, censored or capped, and how the
-      tail fit is done.
+    \item \textbf{The plausibility bound and the hail cap} (Q8, Q9): with 0.5\,dBZ steps the
+      bound censors the tail at 486\mmh; together they decide where the tail ends and how it is
+      fitted.
     \item \textbf{The NIMBUS excess} (Q7): it decides whether the NIMBUS split is a product
       robustness test or a biased reference.
     \item \textbf{CombiPrecip and POH/MESHS access} (Q14): an independent truth over

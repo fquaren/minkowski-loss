@@ -77,9 +77,10 @@
       \code{min\_count: 50} or does not pile up 5$\times$ above its neighbours.
   \end{itemize}
   \vspace{2mm}
-  \textbf{Interpretation open:} a product-level cap (values clipped at 66\,dBZ, i.e.\
-  censored hail cores) is consistent with this, but has not been checked. If it is a cap, the
-  pixels are real heavy rain with an unknown true value, and the tail above $\approx$486\mmh\
-  is censored, not truncated at 500. The Phase-2 radar-year histograms will show whether it
-  is radar-specific.
+  \textbf{Likely explanation: our bound, not the product.} On data in 0.5\,dBZ steps the levels
+  are 65.0, 65.5, 66.0, 66.5\,dBZ = 421.1, 452.5, 486.3, 522.6\mmh: 66.0\,dBZ is the highest level
+  below 500\mmh, and 66.5 is repaired. So these radars are censored at 486\mmh\ by the bound,
+  and their maxima pile up there. Seen once directly: an artefact arc (2014-06-08 06:45) whose
+  leftovers after repair are exactly 486.2, 452.5, 421.1 and 391.8\mmh. Which of the 55 tiles
+  are artefacts and which are real cores is not checked.
 \end{frame}

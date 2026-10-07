@@ -435,6 +435,15 @@ isoperimetric scatter.
         of Boris and Valencia DANA. Not in the ceiling table. A product-level cap would make
         the tail censored near 486 rather than truncated at 500; unchecked, read from the
         Phase-2 radar-year histograms.
+        *Likely explanation (2026-10-07, while drawing the rule examples):* on data in 0.5 dBZ
+        steps the levels are 64.5, 65.0, 65.5, 66.0, 66.5 dBZ = 391.85, 421.09, 452.51,
+        486.27, 522.55 mm/h, so 66.0 dBZ is the highest level below our 500 mm/h bound and
+        66.5 is repaired: the pile-up follows from quantisation plus the bound (derivable), not
+        from a product cap. Seen once directly: 2014-06-08 06:45, r1152 c1024, an artefact arc
+        > 500 mm/h whose unconnected leftovers are exactly 486.2, 452.5, 421.1 and 391.8. Which
+        of the 55 tiles are artefacts and which are real cores is not checked.
+        Rule examples for the MCH deck: `notes/figures/make_rule_examples.py` ->
+        `notes/figures/mch/ex_*.png`.
         *Rule 5 + `iso31` (2026-10-07, DECISIONS §19 note):* new radar-pass features `n31`,
         `n_iso31` (`radar_frame_features`, `isolated_mask`), radar-day sums, fourth ranking
         signal (floor 10). Phase-0 check (`logs/phase0_iso.log`, radar pass + frames + rank
