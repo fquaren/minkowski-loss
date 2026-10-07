@@ -456,6 +456,52 @@ isoperimetric scatter.
         Slides on the whole dataset work: `notes/dataset_v4_slides.pdf`.
         **Phase 2 launched 2026-10-07 after this commit** (`logs/radar_pass_v4.log`, ~9 h,
         5,023 day stores).
+        *Per-rule gallery review (2026-10-07, `scripts/data_quality/rule_gallery.py`,
+        `calib/rule_gallery/rule_gallery.pdf`, `index.csv`; logs `logs/rule_gallery_*.log`):*
+        prompted by the slide-10 "RLAN ray" example for MCH, which is a front. The census
+        re-cleaned a frame sample of the 199 calibration days (9,689 candidate tile-frames;
+        tiles with >= 1 px per rule: hot 6,725, spike 4,135, unsupported 628, footprint 141,
+        ray 84, ceiling 63, ring 41, refused 14). Per rule, 4 strongest + 8 random flags
+        (radar rules: all 20 disk frames, top 12 iso31 radar-days), 144 examples as t-15 |
+        t outlined | after the screen | t+15. Provisional verdicts per example (Claude, to be
+        overruled by the researcher) in `index.csv`; blank copy `index_blank.csv`.
+        Artefact / real rain / mixed / unclear: hot 6/1/2/3, spike 11/1/0/0, footprint
+        9/0/3/0, ray 11/2/0/0, ring 9/1/0/2, unsupported 7/2/0/3, ceiling 7/8/0/0 (the 8 are
+        1-4 px flags, tile kept), repeated value 11/0/1/0, refused 10/2/0/0, radar-disk
+        15/4/0/1, iso31 ranking 10/0/0/2. Rule failures, all hitting real heavy rain:
+        - *Ray rule fires on rain bands.* The slide-10 front (2016-05-30 12:30, 112 -> 56
+          mm/h inside an event) and a N-S band (2021-11-18, harmless). Worse, the two real
+          bands among the refused-repair rejections (Poland derecho 2017-08-12 08:30 r1152
+          c896; 2023-06-20 14:15 r384 c512) are the ray mask: 1,098 and 549 px, all refused
+          (checked in code), so the guard rejected the whole tile. This answers the run-2
+          open point "what the guard refused". True rays are a few px wide, keep their
+          azimuth over t+-15 and often run through a site; fronts are wide and move.
+          Mechanism read from `cleaning.py:330` (own inference): no width limit in km; the
+          axis need only align within 10 deg with *any* radar within 250 km (P ~ 1-(8/9)^N,
+          ~50% for N = 6); the line need not reach the site. On most true rays the repair
+          lowers the line but leaves it visible.
+        - *Hot-pixel repair zeroes rain* (`cleaning.py:115-123`, checked): a hot pixel takes
+          the median of its non-hot 5x5 neighbours, falling back to 0 when there are none,
+          i.e. inside any hot band > ~4 px wide. 2016-06-05 17:00 r768 c1152 (Elvira event):
+          116 wet px up to 83 mm/h set to 0, 115 of them on the hot mask. This is in
+          `clean_frame`, so it is in v2/v3 and in the Phase-2 radar pass; its total effect is
+          not quantified.
+        - *Radar-disk rule flags real storms:* 4/20 flagged frames look like their t+-15
+          neighbours, incl. the Mediterranean derecho (itcro 2022-08-18 01:30) and rsbuk
+          2017-08-12 / 2023-07-19. For rssam (Valjevo) the owned polygon misses most of the
+          failing half-disk; those tiles are rejected by the tile rules instead.
+        - *Repeated value rejects a real extreme:* 2023-07-24 19:00 r640 c896 (N-Italy storm),
+          51 px of a repeated 4,412 in a core present in all three frames. The ceiling rule
+          carries the same risk: real Serbian convection reaches the ceiling value in 1-2 px,
+          so >= 5 in a stronger storm would reject it. Repair rather than reject is the
+          candidate fix.
+        Left untouched by every rule: Valjevo radial streaks (hot #10, 291 mm/h), the roopa
+        speckle disk (spike #3-4, iso31 #11-12), parallel rays at 311 mm/h (hot #12). A
+        500 mm/h band sits exactly at the footprint bound (ring #12). The slide-10 example in
+        `notes/mch_slides.pdf` is still labelled a ray. **Before Phase 3:** fix the ray test
+        (km width limit, azimuth fixed over t+-15), the hot-pixel fallback (changes the v3
+        reproduction, so needs a decision), and decide repair vs reject for repeated-value and
+        ceiling tiles inside events.
       - *Phase 2, radar pass* over all days on the `clean_frame` output (before repairs, so a
         repair cannot hide a failure): per radar-frame features and per radar-year value
         histograms (~6-8 h). Then ceiling table, radar-frame thresholds, radar-day ranking and
