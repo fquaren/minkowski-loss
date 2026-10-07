@@ -26,8 +26,42 @@
   \textbf{Reading:} a per-tile isolation rule would remove real storms at several times the
   gate rate (DECISIONS §17, safeguard 1). The 48.62 days stand out by \emph{rate}, which is a
   radar-day property. The natural home is rule 5 (radar-day ranking): the share of isolated
-  maxima per radar and day, against the radar's own level and its neighbours. That would have
-  to be added to the Phase-2 radar pass before it runs.
+  maxima per radar and day, against the radar's own level and its neighbours.
+\end{frame}
+
+\begin{frame}{Rule 5 gains a signal: isolated high pixels per radar-day}
+  \small
+  $\text{iso31}$ = owned pixels $\ge$ 31\mmh\ with an isolated $5\times5$ window, summed over the
+  day, on the field before the v3 repairs. Scored like the other signals:
+  \[
+    \text{score} = \log_{10}\frac{x + f}{\max\left(q_{99}^{\text{own, season}},\;
+      \text{median}_{\text{5 nearest radars}}\right) + f}, \qquad f = 10 \text{ pixels}
+  \]
+  A radar-day only enters the review list; nothing is removed without a look.
+  \vspace{2mm}
+
+  \footnotesize
+  \centering
+  \begin{tabular}{lrrrr}
+    \toprule
+    Oradea, Nov 2019 & iso31 & neighbour median & own autumn $q_{99}$ & score \\
+    \midrule
+    11-14 & 8,636 & 0 & 7,525 & +0.06 \\
+    11-18 & 6,500 & 2 & 7,525 & $-$0.06 \\
+    11-17 (weakest) & 1,286 & 2 & 7,525 & $-$0.76 \\
+    \bottomrule
+  \end{tabular}
+  \vspace{2mm}
+
+  \raggedright\small
+  Phase-0 check (199 days): the signal is strong against the neighbours, but 7 of Oradea's 53
+  autumn days in the calibration set are failure days, so its own $q_{99}$ is a failure day.
+  On the full archive they are $<$ 1\% of $\approx$1,180 days. Event radar-days: 232 of 15,897
+  score $>$ 0, none $\ge$ 0.5. Rule-3 flags unchanged.
+  \vspace{1mm}
+
+  \textbf{Open:} a radar failing on more than $\approx$1\% of its season-days hides behind its
+  own $q_{99}$. Own $q_{90}$ or neighbours only, decided on the full-archive ranking (no rescan).
 \end{frame}
 
 \begin{frame}{A by-product: 486.2\mmh\ = 66.0\,dBZ}

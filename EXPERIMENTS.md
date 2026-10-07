@@ -435,7 +435,18 @@ isoperimetric scatter.
         of Boris and Valencia DANA. Not in the ceiling table. A product-level cap would make
         the tail censored near 486 rather than truncated at 500; unchecked, read from the
         Phase-2 radar-year histograms.
+        *Rule 5 + `iso31` (2026-10-07, DECISIONS §19 note):* new radar-pass features `n31`,
+        `n_iso31` (`radar_frame_features`, `isolated_mask`), radar-day sums, fourth ranking
+        signal (floor 10). Phase-0 check (`logs/phase0_iso.log`, radar pass + frames + rank
+        on the 199 days, 21 min; run-2 radar outputs moved to `calib/run2_pre_iso/`): rule-3
+        flags (46) and f150 identical to run 2. Oradea Nov 2019: iso31 1,286-8,636 per day vs
+        neighbour median 0-3, but score < 0 on 6/7 days, since its own autumn q99 in the
+        calibration set (53 days, 7 failing) is 7,525. 761 of 40,435 radar-days score > 0
+        (232 event, 407 random), max 0.46; the top-100 review list gets 26 `iso31` rows.
+        Reference (q99 / q90 / neighbours only) to be decided on the full-archive ranking.
         Slides on the whole dataset work: `notes/dataset_v4_slides.pdf`.
+        **Phase 2 launched 2026-10-07 after this commit** (`logs/radar_pass_v4.log`, ~9 h,
+        5,023 day stores).
       - *Phase 2, radar pass* over all days on the `clean_frame` output (before repairs, so a
         repair cannot hide a failure): per radar-frame features and per radar-year value
         histograms (~6-8 h). Then ceiling table, radar-frame thresholds, radar-day ranking and

@@ -650,6 +650,27 @@ with max >= 31) and 2.5% of andreas_20130728.
 - Rule 1 is unchanged (+-0.5 dB median, `excess`). Whether mixed ladders inflate it too is
   read from `rej_repeat` in the Phase-0 reports, not assumed.
 
+**Rule 5 gains a fourth signal, isolated high pixels (2026-10-07, researcher on Claude's
+proposal).** The 48.62 tile keeps maxima of 138-342 mm/h made of 2-9 pixel clusters in dry
+surroundings; no rule sees them, and the clean-frame spike rule cannot (a pixel with any
+neighbour >= 10% of its value is not a spike, so cluster pixels protect each other).
+- *Not a tile rule:* a max with a dry 5x5 window occurs on 9-16% of kept event tiles >= 31
+  mm/h (EXPERIMENTS §5), so any tile threshold removes real storms (§17 safeguard 1).
+- *A radar-day signal instead:* `iso31` = owned pixels >= 31 mm/h whose 5x5 window has median
+  < 0.1 mm/h and is >= 50% covered, summed over the day's frames, on the `clean_frame` field.
+  Scored like the other signals (own seasonal q99, 5 nearest radars, floor 10 pixels). A
+  radar-day only enters the review list; nothing is removed without a look. Counts, not
+  shares: on radar-days with >= 50 pixels >= 31 the share's 99th percentile is 0.98 on random
+  days, i.e. noise.
+- *Phase-0 check:* Oradea's failure days have 1,286-8,636 isolated pixels against a
+  neighbour median of 0-3, but score < 0 on 6 of 7 days because the calibration set holds 7
+  failure days among Oradea's 53 autumn days, so its own q99 (7,525) is a failure day. On the
+  full archive they are < 1% of ~1,180 autumn days. Event radar-days: 232 of 15,897 score
+  > 0, none >= 0.5. Rule-3 flags and f150 unchanged.
+- *Open, decided on the full-archive ranking (rank re-runs in seconds, no rescan):* a radar
+  failing on more than ~1% of its season-days hides behind its own q99, for every signal.
+  Options: own q90 for `iso31`, or neighbours only.
+
 ---
 
 ## 20. When the dataset is ready for training: a gate fixed before the results

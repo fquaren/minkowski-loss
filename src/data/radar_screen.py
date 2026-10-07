@@ -44,8 +44,12 @@ VB0, VB1 = 1000, 50000                       # histogram bins: 10.00 .. 500.00 m
 RANGE_BIN_KM = 4.0
 MAX_KM = 250.0
 BAND_PX = 3                                  # width of the boundary / max-range bands (6 km)
+ISO_U = 31.0                                 # isolated high values: pixels >= this (mm/h) ...
+ISO_HALF = 2                                 # ... whose 5x5 window (10 km) ...
+ISO_DRY = 0.1                                # ... has a median below this (mm/h) ...
+ISO_COVER = 0.5                              # ... and is at least this share covered
 FEATURES = ("n_valid", "wet", "f10", "f31", "f89", "f150", "mean", "r2_range",
-            "bjump", "ejump", "n_band_in", "n_band_out")
+            "bjump", "ejump", "n_band_in", "n_band_out", "n31", "n_iso31")
 
 
 def dbz(rate):
@@ -283,6 +287,23 @@ def _band_mean(lz, valid, idx, rid, R, min_n=50):
         return np.where(n >= min_n, s / np.maximum(n, 1), np.nan), n
 
 
+def isolated_mask(z: np.ndarray, ys: np.ndarray, xs: np.ndarray, half: int = ISO_HALF,
+                  dry: float = ISO_DRY, min_cover: float = ISO_COVER) -> np.ndarray:
+    """True for each pixel (ys, xs) of `z` (NaN = no coverage) whose (2*half+1)^2 window has a
+    median < dry, no-data counted as dry, and is >= min_cover covered. The coverage condition
+    keeps pixels on a coverage edge from looking isolated (Phase-0 count, 2026-10-07: 48.62
+    days vs event days, EXPERIMENTS §5)."""
+    H, W = z.shape
+    d = np.arange(-half, half + 1)
+    yy = ys[:, None, None] + d[None, :, None]
+    xx = xs[:, None, None] + d[None, None, :]
+    inside = (yy >= 0) & (yy < H) & (xx >= 0) & (xx < W)
+    w = z[np.clip(yy, 0, H - 1), np.clip(xx, 0, W - 1)]
+    cov = (inside & np.isfinite(w)).reshape(len(ys), -1)
+    w = np.where(cov, w.reshape(len(ys), -1), 0.0)
+    return (np.median(w, 1) < dry) & (cov.mean(1) >= min_cover)
+
+
 def radar_frame_features(z: np.ndarray, g: RadarGeometry, min_wet: float = 0.2,
                          min_valid: int = 500) -> np.ndarray:
     """Per radar features of one full frame `z` (mm/h, NaN = no coverage), shape
@@ -322,6 +343,14 @@ def radar_frame_features(z: np.ndarray, g: RadarGeometry, min_wet: float = 0.2,
     out[:, 8] = bi - bo
     out[:, 9] = ei - eo
     out[:, 10], out[:, 11] = nbi, nbo
+    # isolated high values (rule 5 signal): counts, so radar-days can sum them
+    hi = v >= ISO_U
+    out[:, 12] = np.bincount(own, weights=hi.astype(float), minlength=R)
+    out[:, 13] = 0.0
+    if hi.any():
+        ys, xs = np.divmod(g.own_idx[ok][hi], z.shape[1])
+        iso = isolated_mask(z, ys, xs)
+        out[:, 13] = np.bincount(own[hi], weights=iso.astype(float), minlength=R)
     out[n < min_valid, 1:] = np.nan
     return out
 

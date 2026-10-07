@@ -6,8 +6,9 @@ import pandas as pd
 
 from src.data import geo
 from src.data.cleaning import boundary_fill
-from src.data.radar_screen import (CeilingTable, RadarGeometry, ceiling_candidates, dbz,
-                                   radar_frame_features, repair_ceiling, repeated_value)
+from src.data.radar_screen import (FEATURES, CeilingTable, RadarGeometry, ceiling_candidates, dbz,
+                                   isolated_mask, radar_frame_features, repair_ceiling,
+                                   repeated_value)
 
 LADDER = 1.0593                              # NIMBUS: constant ratio between value levels
 
@@ -137,3 +138,30 @@ def test_radar_disk_failure_vs_rain():
         rain += rng.uniform(5, 60) * np.exp(-((rr - cy) ** 2 + (cc - cx) ** 2) / (2 * s * s))
     f2 = radar_frame_features(rain, g)
     assert f2[0, 1] >= 0.2 and f2[0, 7] < 0.4 and abs(f2[0, 9]) < 1.0 and abs(f2[0, 8]) < 1.0
+
+
+def test_isolated_mask_cluster_vs_cell_vs_edge():
+    """A 3-pixel cluster in dry air is isolated; a real cell's core is not (its window is
+    wet), and neither is a pixel whose window is mostly outside coverage."""
+    z = np.zeros((60, 60), np.float32)
+    z[10, 10:13] = [200.0, 340.0, 150.0]                     # cluster, 5x5 median 0
+    yy, xx = np.indices(z.shape)
+    z += (60 * np.exp(-((yy - 40) ** 2 + (xx - 40) ** 2) / (2 * 4.0 ** 2))).astype(np.float32)
+    z[:, 55:] = np.nan                                       # no coverage
+    z[0, 54] = 80.0                                          # grid corner + no data: 36% covered
+    ys, xs = np.nonzero(np.nan_to_num(z) >= 31)
+    iso = isolated_mask(z, ys, xs)
+    got = {(int(y), int(x)) for y, x in zip(ys[iso], xs[iso])}
+    assert got == {(10, 10), (10, 11), (10, 12)}
+
+
+def test_radar_frame_counts_isolated_pixels_per_radar():
+    g = _two_radar_geometry()
+    z = np.zeros(g.shape, np.float32)
+    ys, xs = np.nonzero(g.owner == 0)
+    y0, x0 = int(np.median(ys)), int(np.median(xs))
+    z[y0, x0:x0 + 2] = [300.0, 280.0]
+    f = radar_frame_features(z, g)
+    i31, iiso = FEATURES.index("n31"), FEATURES.index("n_iso31")
+    assert f[0, i31] == 2 and f[0, iiso] == 2
+    assert np.nan_to_num(f[1, i31]) == 0

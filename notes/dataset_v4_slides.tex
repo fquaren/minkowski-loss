@@ -361,8 +361,8 @@
     phase & content & status \\
     \midrule
     1 & code: \code{src/data/radar\_screen.py}, guarded repair, tests & done \\
-    0 & calibration on known failures, 27 events, 100 random days & run 2 passed \\
-    2 & radar pass over all days, ceiling table, radar-day review list & next ($\sim$9\,h) \\
+    0 & calibration on known failures, 27 events, 100 random days & passed; iso31 checked \\
+    2 & radar pass over all days, ceiling table, radar-day review list & running ($\sim$9\,h) \\
     3 & tile scan with the v4 chain & ($\sim$12\,h) \\
     4 & store, gamma targets, checks & ($\sim$20\,h) \\
     5 & audit = the §20 gate & \\
@@ -516,10 +516,10 @@
 \begin{frame}{Open items}
   \small
   \begin{itemize}
-    \item \textbf{Isolated maxima}: no tile-level rule. Decide whether to add the share of
-      isolated maxima per radar-day to rule 5; it must go into the radar pass before Phase 2.
+    \item \textbf{Rule-5 reference for iso31}: own $q_{99}$, own $q_{90}$ or neighbours only,
+      from the full-archive ranking.
     \item \textbf{486.2\mmh}: product cap or radar fault? Read from the Phase-2 histograms.
-    \item Commit the rule-2 change; launch Phase 2 (radar pass, $\sim$9\,h, all 8 cores).
+    \item Phase 2 running since 7 October (radar pass, $\sim$9\,h, all 8 cores).
     \item Review the radar-day list by eye; record exclusions in \code{quality\_v4.yaml}.
     \item Phases 3--5 ($\sim$32\,h of compute), then the §20 gate.
     \item Re-derive the POT threshold on v4 (\code{pot\_threshold.py --version v4}), with a

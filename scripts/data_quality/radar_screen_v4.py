@@ -11,7 +11,7 @@ radar-day ranking and the review gallery (DECISIONS §19, rules 2, 3 and 5).
             radar-frame (calibration only; large on the full archive).
   rank      radar-days scored against the radar's own 99th percentile in that season and
             its 5 nearest radars on the same day, per signal (share of owned pixel-frames
-            >= 150 mm/h, ceiling pixels, flagged frames):
+            >= 150 mm/h, ceiling pixels, flagged frames, isolated pixels >= 31 mm/h):
                 score_s = log10((x + floor) / (max(q99_own, median_neighbours) + floor))
             i.e. decades above both references. Writes review.csv (top N, for the
             researcher's exclude / keep decision) and ranking.csv.gz (all).
@@ -38,7 +38,8 @@ from src.data.radar_screen import (FEATURES, VB0, VB1, active_sites, ceiling_can
 NB = VB1 - VB0 + 1
 SEASON = {12: "DJF", 1: "DJF", 2: "DJF", 3: "MAM", 4: "MAM", 5: "MAM",
           6: "JJA", 7: "JJA", 8: "JJA", 9: "SON", 10: "SON", 11: "SON"}
-FLOORS = {"f150": 1e-5, "ceil_px": 1.0, "n_flag": 0.5}
+FLOORS = {"f150": 1e-5, "ceil_px": 1.0, "n_flag": 0.5, "iso31": 10.0}
+I31, IISO = FEATURES.index("n31"), FEATURES.index("n_iso31")
 
 
 def day_files(d):
@@ -114,7 +115,8 @@ def _frames_day(args):
                          "f150": float(np.nanmean(F[:, 5])), "max_f150": float(np.nanmax(F[:, 5])),
                          "max_f31": float(np.nanmax(F[:, 3])), "max_wet": float(np.nanmax(F[:, 1])),
                          "max_mean": float(np.nanmax(F[:, 6])), "max_r2": float(np.nanmax(F[:, 7])),
-                         "max_ejump": float(np.nanmax(F[:, 9])), "max_bjump": float(np.nanmax(F[:, 8]))})
+                         "max_ejump": float(np.nanmax(F[:, 9])), "max_bjump": float(np.nanmax(F[:, 8])),
+                         "n31": float(np.nansum(F[:, I31])), "iso31": float(np.nansum(F[:, IISO]))})
     ti, ri = np.nonzero(fl)
     flags = pd.DataFrame({"radar": keys[ri], "timestamp": times[ti]})
     kept = None
@@ -206,7 +208,7 @@ def cmd_rank(q, d, events_path="configs/prominent_events.yaml"):
     top["decision"] = ""
     top["note"] = ""
     cols = ["rank", "radar", "location", "country", "day", "score", "reason", "f150", "ceil_px",
-            "n_flag", "max_f31", "max_r2", "max_ejump", "max_bjump", "event_day", "image",
+            "n_flag", "iso31", "n31", "max_f31", "max_r2", "max_ejump", "max_bjump", "event_day", "image",
             "decision", "note"]
     top[cols].to_csv(os.path.join(d, "review.csv"), index=False)
     n1 = int((rd.score >= 1).sum())

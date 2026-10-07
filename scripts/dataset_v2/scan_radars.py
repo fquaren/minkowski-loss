@@ -57,14 +57,14 @@ def geometry(year):
 def scan_day(day_dir, var, clim_path, out_path):
     from src.data.cleaning import clean_frame
     from src.data.day_cleaner import open_day
-    from src.data.radar_screen import radar_frame_features, value_histogram
+    from src.data.radar_screen import FEATURES, radar_frame_features, value_histogram
     day = os.path.basename(day_dir.rstrip("/"))
     year = int(day[:4])
     g = geometry(year)
     hot = _hot(clim_path, year)
     ds = open_day(day_dir)
     T = ds.sizes["time"]
-    feats = np.full((T, g.R, 12), np.nan, np.float32)
+    feats = np.full((T, g.R, len(FEATURES)), np.nan, np.float32)
     hk, hn = [], []
     for t in range(T):
         raw = ds[var].isel(time=t).values.astype(np.float32)
