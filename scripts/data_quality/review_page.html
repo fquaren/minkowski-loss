@@ -1,0 +1,377 @@
+<title>OPERA Screen Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: work-queue tool. Sticky top bar; list rail on the left, the case under review on the right. */
+:root {
+  --bg: #f3f5f6; --panel: #ffffff; --fg: #1b2328; --muted: #5d6b73; --line: #d9e0e3;
+  --accent: #1f6f8b; --accent-ink: #ffffff;
+  --bad: #b3372b; --bad-bg: #f9e4e1; --good: #2f7d4f; --good-bg: #e2f2e8;
+  --warn: #9a6b00; --warn-bg: #fbf0d4; --mix: #6a4c9c; --mix-bg: #ece6f6;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12171a; --panel: #1a2125; --fg: #e3e9ec; --muted: #94a3ab; --line: #2b353a;
+  --accent: #5fb3d1; --accent-ink: #0d1417;
+  --bad: #f08a7e; --bad-bg: #3a1f1c; --good: #7fd19f; --good-bg: #1b3326;
+  --warn: #e9bf5a; --warn-bg: #36301a; --mix: #b79ae6; --mix-bg: #2c2440; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12171a; --panel: #1a2125; --fg: #e3e9ec; --muted: #94a3ab; --line: #2b353a;
+  --accent: #5fb3d1; --accent-ink: #0d1417;
+  --bad: #f08a7e; --bad-bg: #3a1f1c; --good: #7fd19f; --good-bg: #1b3326;
+  --warn: #e9bf5a; --warn-bg: #36301a; --mix: #b79ae6; --mix-bg: #2c2440; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.45 }
+.wrap { padding-inline: 16px; padding-block: 0 32px; max-width: 1500px; margin: 0 auto }
+header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding-block: 12px }
+h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: .01em }
+h1 small { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 6px }
+.tabs { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px }
+.tabs button { border: 0; background: transparent; color: var(--fg); font: inherit; padding: 6px 12px; border-radius: 6px; cursor: pointer }
+.tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink) }
+.prog { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+.bar { width: 140px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden }
+.bar i { display: block; height: 100%; background: var(--accent); width: 0 }
+.status { font-size: 12px; color: var(--muted); margin-left: auto }
+.status.err { color: var(--bad) }
+.grid { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 18px; margin-top: 16px }
+@media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr) } .rail { max-height: 260px } }
+.rail { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; max-height: calc(100vh - 120px); position: sticky; top: 70px; min-width: 0 }
+@media (max-width: 860px) { .rail { position: static } }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line) }
+.filters select { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); max-width: 100% }
+.list { overflow-y: auto; flex: 1 }
+.item { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 12.5px }
+.item:hover { background: var(--bg) }
+.item[aria-current="true"] { background: var(--bg); box-shadow: inset 3px 0 0 var(--accent) }
+.item .k { font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.item .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.chip { font-family: var(--mono); font-size: 11px; padding: 1px 7px; border-radius: 10px; white-space: nowrap; border: 1px solid transparent }
+.chip.todo { color: var(--muted); border-color: var(--line) }
+.chip.prov { color: var(--muted); border: 1px dashed var(--line) }
+.c-exclude, .c-artefact { background: var(--bad-bg); color: var(--bad) }
+.c-keep, .c-real { background: var(--good-bg); color: var(--good) }
+.c-unsure, .c-unclear { background: var(--warn-bg); color: var(--warn) }
+.c-mixed { background: var(--mix-bg); color: var(--mix) }
+main { min-width: 0; display: flex; flex-direction: column; gap: 14px }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px }
+.titlebar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px }
+.titlebar h2 { font-size: 16px; margin: 0; font-weight: 600; text-wrap: balance }
+.titlebar .sub { color: var(--muted); font-size: 13px }
+.flag { font-size: 12px; font-weight: 500; color: var(--warn); background: var(--warn-bg); padding: 2px 8px; border-radius: 4px }
+.imgbox { overflow-x: auto; background: #ffffff; border-radius: 6px; border: 1px solid var(--line) }
+.imgbox img { display: block; width: 100%; height: auto; cursor: zoom-in }
+.imgbox.zoom img { width: auto; max-width: none; cursor: zoom-out }
+.hint { color: var(--muted); font-size: 12px }
+dl.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 16px; margin: 0 }
+dl.facts div { min-width: 0 }
+dt { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted) }
+dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere }
+dd.hl { color: var(--accent); font-weight: 500 }
+.decide { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+.decide button { font: inherit; font-weight: 500; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; display: inline-flex; gap: 8px; align-items: center }
+.decide button kbd { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px }
+.decide button[aria-pressed="true"].v-exclude, .decide button[aria-pressed="true"].v-artefact { background: var(--bad-bg); color: var(--bad); border-color: var(--bad) }
+.decide button[aria-pressed="true"].v-keep, .decide button[aria-pressed="true"].v-real { background: var(--good-bg); color: var(--good); border-color: var(--good) }
+.decide button[aria-pressed="true"].v-unsure, .decide button[aria-pressed="true"].v-unclear { background: var(--warn-bg); color: var(--warn); border-color: var(--warn) }
+.decide button[aria-pressed="true"].v-mixed { background: var(--mix-bg); color: var(--mix); border-color: var(--mix) }
+.decide button:disabled { opacity: .5; cursor: not-allowed }
+.decide .sep { flex: 1 }
+button:focus-visible, select:focus-visible, textarea:focus-visible, .item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.prov { font-size: 13px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 6px; color: var(--muted) }
+.prov b { color: var(--fg); font-weight: 500 }
+textarea { width: 100%; min-height: 64px; font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); resize: vertical }
+.nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+.nav button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer }
+.nav label { display: inline-flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); margin-left: auto }
+details.guide { font-size: 13px; color: var(--fg) }
+details.guide summary { cursor: pointer; color: var(--accent); font-weight: 500 }
+details.guide ul { margin: 8px 0 0; padding-left: 18px; max-width: 75ch }
+details.guide li { margin-bottom: 4px }
+@media (prefers-reduced-motion: no-preference) { .bar i { transition: width .3s ease } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>OPERA screen review <small>v4 · hourly targets</small></h1>
+    <div class="tabs" role="tablist">
+      <button id="tab-R" role="tab" aria-selected="true">Radar-days</button>
+      <button id="tab-G" role="tab" aria-selected="false">Rule gallery</button>
+    </div>
+    <div class="prog"><span id="prog-txt">0 / 0</span><div class="bar"><i id="prog-bar"></i></div></div>
+    <div id="status" class="status">Connecting to saved decisions…</div>
+  </header>
+
+  <div class="grid">
+    <aside class="rail">
+      <div class="filters">
+        <select id="f-state" aria-label="Show">
+          <option value="all">All</option><option value="todo">To decide</option><option value="done">Decided</option>
+        </select>
+        <select id="f-group" aria-label="Group"></select>
+      </div>
+      <div class="list" id="list" role="listbox" aria-label="Cases"></div>
+    </aside>
+
+    <main>
+      <section class="card">
+        <div class="titlebar"><h2 id="c-title">Loading…</h2><span class="sub" id="c-sub"></span><span id="c-flag"></span></div>
+      </section>
+      <div class="imgbox" id="imgbox"><img id="c-img" alt=""></div>
+      <div class="hint">Click the image to switch between fit-to-width and full size. Arrow keys move between cases.</div>
+      <section class="card" id="c-provbox" hidden><div class="prov" id="c-prov"></div></section>
+      <section class="card"><dl class="facts" id="c-facts"></dl></section>
+      <section class="card" style="display:flex;flex-direction:column;gap:10px">
+        <div class="decide" id="c-decide"></div>
+        <textarea id="c-note" placeholder="Note (optional): what you see, and why"></textarea>
+        <div class="nav">
+          <button id="prev">← Previous</button><button id="next">Next →</button>
+          <label><input type="checkbox" id="auto"> Jump to the next undecided case after a decision</label>
+        </div>
+      </section>
+      <section class="card"><details class="guide" id="guide"></details></section>
+    </main>
+  </div>
+</div>
+
+<script id="items" type="application/json">__DATA__</script>
+<script>
+const DATA = JSON.parse(document.getElementById("items").textContent);
+const SETS = {
+  R: { items: DATA.R, coll: "review", field: "decision",
+       opts: [["exclude","Exclude","x"],["keep","Keep","k"],["unsure","Unsure: show me more frames","u"]],
+       chip: v => ({exclude:"c-exclude",keep:"c-keep",unsure:"c-unsure"})[v],
+       group: it => it.reason, groupLabel: "Signal",
+       reasonName: {f150:"share of pixels ≥ 150 mm/h", ceil_px:"ceiling pixels", iso31:"isolated pixels ≥ 31 mm/h", n_flag:"radar-disk flags"} },
+  G: { items: DATA.G, coll: "gallery", field: "verdict",
+       opts: [["artefact","Artefact","a"],["real rain","Real rain","r"],["mixed","Mixed","m"],["unclear","Unclear","c"]],
+       chip: v => ({"artefact":"c-artefact","real rain":"c-real","mixed":"c-mixed","unclear":"c-unclear"})[v],
+       group: it => it.rule, groupLabel: "Rule" },
+};
+const state = { tab: "R", idx: { R: 0, G: 0 }, saved: { R: {}, G: {} }, db: null, writable: true, pending: {} };
+const $ = id => document.getElementById(id);
+const fmt = (v, d) => v === null || v === undefined || v === "" ? "–" : (typeof v === "number" ? (d !== undefined ? v.toFixed(d) : v.toLocaleString("en")) : v);
+const fmtDay = d => d ? `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}` : "";
+const fmtTs = t => t ? `${fmtDay(t.slice(0,8))} ${t.slice(8,10)}:${t.slice(10,12)}` : "";
+
+try { $("auto").checked = localStorage.getItem("auto") !== "0" } catch (e) { $("auto").checked = true }
+$("auto").addEventListener("change", () => { try { localStorage.setItem("auto", $("auto").checked ? "1" : "0") } catch (e) {} });
+
+function decisionOf(tab, it) { const s = state.saved[tab][it.id]; return s ? s[SETS[tab].field] : "" }
+function visible(tab) {
+  const S = SETS[tab], fs = $("f-state").value, fg = $("f-group").value;
+  return S.items.filter(it => (fg === "all" || S.group(it) === fg) &&
+    (fs === "all" || (fs === "todo" ? !decisionOf(tab, it) : !!decisionOf(tab, it))));
+}
+function current() { return SETS[state.tab].items[state.idx[state.tab]] }
+
+function renderGroups() {
+  const S = SETS[state.tab], groups = [...new Set(S.items.map(S.group))];
+  $("f-group").innerHTML = "";
+  const all = new Option(`${S.groupLabel}: all`, "all"); $("f-group").add(all);
+  groups.forEach(g => $("f-group").add(new Option(state.tab === "R" ? `${S.reasonName[g] || g}` : g, g)));
+}
+function renderProgress() {
+  const S = SETS[state.tab], n = S.items.length, d = S.items.filter(it => decisionOf(state.tab, it)).length;
+  $("prog-txt").textContent = `${d} / ${n} decided`;
+  $("prog-bar").style.width = `${(100 * d / n).toFixed(1)}%`;
+}
+function renderList() {
+  const tab = state.tab, S = SETS[tab], list = $("list"), cur = current();
+  list.innerHTML = "";
+  for (const it of visible(tab)) {
+    const row = document.createElement("div");
+    row.className = "item"; row.tabIndex = 0; row.setAttribute("role", "option");
+    if (it === cur) row.setAttribute("aria-current", "true");
+    const k = document.createElement("span"); k.className = "k";
+    const t = document.createElement("span"); t.className = "t";
+    const c = document.createElement("span"); const dv = decisionOf(tab, it);
+    if (tab === "R") { k.textContent = `#${it.rank}`; t.textContent = `${it.loc} · ${fmtDay(it.day)}`; t.title = `${it.radar} ${it.loc}, ${it.country}` }
+    else { k.textContent = `${it.n}`; t.textContent = `${it.rule.split(" (")[0]} · ${it.draw}`; t.title = it.rule }
+    if (dv) { c.className = "chip " + S.chip(dv); c.textContent = dv }
+    else if (tab === "G") { c.className = "chip prov"; c.textContent = it.pv }
+    else { c.className = "chip todo"; c.textContent = "to do" }
+    row.append(k, t, c);
+    const go = () => { state.idx[tab] = S.items.indexOf(it); render() };
+    row.addEventListener("click", go);
+    row.addEventListener("keydown", e => { if (e.key === "Enter") go() });
+    list.append(row);
+  }
+  const sel = list.querySelector('[aria-current="true"]'); if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+function fact(dl, label, value, hl) {
+  const d = document.createElement("div"), t = document.createElement("dt"), v = document.createElement("dd");
+  t.textContent = label; v.textContent = value; if (hl) v.className = "hl"; d.append(t, v); dl.append(d);
+}
+function renderCase() {
+  const tab = state.tab, S = SETS[tab], it = current(), saved = state.saved[tab][it.id] || {};
+  const img = $("c-img"); img.src = it.img; $("imgbox").classList.remove("zoom");
+  const dl = $("c-facts"); dl.innerHTML = ""; $("c-flag").innerHTML = "";
+  if (tab === "R") {
+    $("c-title").textContent = `#${it.rank} ${it.loc} (${it.radar}), ${it.country}`;
+    $("c-sub").textContent = `${fmtDay(it.day)} · score ${fmt(it.score, 2)} · driven by ${S.reasonName[it.reason] || it.reason}`;
+    img.alt = `Three frames of radar ${it.radar} on ${fmtDay(it.day)}`;
+    if (it.event) { const f = document.createElement("span"); f.className = "flag"; f.textContent = `Event day: ${it.event}`; $("c-flag").append(f) }
+    fact(dl, "score (orders above ref.)", fmt(it.score, 2), true);
+    fact(dl, "share ≥ 150 mm/h", it.f150 === null ? "–" : (it.f150 * 100).toFixed(3) + " %", it.reason === "f150");
+    fact(dl, "ceiling pixels", fmt(it.ceil), it.reason === "ceil_px");
+    fact(dl, "radar-disk flags", fmt(it.nflag), it.reason === "n_flag");
+    fact(dl, "isolated px ≥ 31", fmt(it.iso31), it.reason === "iso31");
+    fact(dl, "pixels ≥ 31 (day)", fmt(it.n31));
+    fact(dl, "max range-only R²", fmt(it.maxr2, 2));
+    fact(dl, "max jump: edge / range", `${fmt(it.ej, 2)} / ${fmt(it.bj, 2)}`);
+    $("c-provbox").hidden = true;
+  } else {
+    $("c-title").textContent = `${it.rule}`;
+    $("c-sub").textContent = `#${it.n} · ${it.draw} · ${fmtTs(it.ts)}`;
+    img.alt = `${it.rule}, example ${it.n}`;
+    fact(dl, "time (UTC)", fmtTs(it.ts));
+    fact(dl, "tile", it.row >= 0 ? `r${it.row} c${it.col}` : "radar-wide");
+    fact(dl, "category / radar", it.cat || "–");
+    fact(dl, "pixels flagged", fmt(it.px));
+    $("c-provbox").hidden = false;
+    const p = $("c-prov"); p.innerHTML = "";
+    const b = document.createElement("b"); b.textContent = it.pv;
+    p.append("Claude's provisional call: ", b, it.pnote ? ` — ${it.pnote}` : "", ". Press Enter to agree.");
+  }
+  const box = $("c-decide"); box.innerHTML = "";
+  const cur = saved[S.field] || "";
+  for (const [v, label, key] of S.opts) {
+    const bt = document.createElement("button");
+    bt.className = "v-" + v.split(" ")[0]; bt.setAttribute("aria-pressed", String(cur === v));
+    bt.disabled = !state.db || !state.writable;
+    const kb = document.createElement("kbd"); kb.textContent = key;
+    bt.append(label, kb); bt.addEventListener("click", () => decide(v)); box.append(bt);
+  }
+  if (tab === "G") {
+    const sp = document.createElement("span"); sp.className = "sep"; box.append(sp);
+    const ag = document.createElement("button"); ag.disabled = !state.db || !state.writable;
+    const kb = document.createElement("kbd"); kb.textContent = "Enter";
+    ag.append(`Agree with Claude (${it.pv})`, kb); ag.addEventListener("click", () => decide(it.pv)); box.append(ag);
+  }
+  $("c-note").value = saved.note || "";
+  $("c-note").disabled = !state.db || !state.writable;
+  renderGuide();
+}
+function renderGuide() {
+  const g = $("guide"); const open = g.open;
+  g.innerHTML = "";
+  const s = document.createElement("summary"); s.textContent = state.tab === "R" ? "How to judge a radar-day" : "How to judge a rule example";
+  const ul = document.createElement("ul");
+  const lines = state.tab === "R" ? [
+    "Exclude removes every tile that this radar owns ≥ 10 % of, for the whole UTC day (24 tile-hours), from all splits.",
+    "Exclude when the radar itself fails for much of the day: a constant or ceiling-filled disk, range-only patterns, garbage across its area (e.g. Oradea in Nov 2019, the Spanish radars on 2018-04-29).",
+    "Keep when the score comes from real heavy rain (structure that moves between the three frames) or from a few bad frames the per-frame rules already handle.",
+    "Be careful on event days: excluding one removes that storm's tiles under the radar, and the gate allows < 0.5 % of an event's tiles to be rejected.",
+    "Unsure asks for a 12-frame strip across the day, which Claude renders on request.",
+    "Score = orders of magnitude above both the radar's own seasonal 99th percentile and the median of its 5 nearest radars that day.",
+  ] : [
+    "Panels: t−15 | t with the rule's pixels outlined | t after the screen | t+15. The neighbouring frames separate rain from artefacts: rain moves and evolves, artefacts stay fixed and often point at a radar.",
+    "Artefact: the rule hit a clear error. Real rain: the rule hit meteorological echo, i.e. a false positive. Mixed: both inside the flagged pixels.",
+    "Under hourly targets, persistence matters most: an echo that stays on the same pixels across frames adds up in the hourly sum.",
+    "Rules already known to misfire: the ray rule on fronts, the hot-pixel fallback zeroing rain, the radar-disk rule on storms, the repeated-value rule on one Italian storm.",
+  ];
+  for (const l of lines) { const li = document.createElement("li"); li.textContent = l; ul.append(li) }
+  g.append(s, ul); g.open = open;
+}
+function render() { renderProgress(); renderList(); renderCase() }
+
+function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err) }
+function write(tab, id, body) {
+  const key = tab + id;
+  const run = state.db.local
+    ? () => fetch(window.REVIEW_API + "/decide", { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tab, id, body }) }).then(r => { if (!r.ok) return r.text().then(t => { throw { code: "server", message: t } }) })
+    : () => state.db.collection(SETS[tab].coll).doc(id).set(body);
+  const p = (state.pending[key] || Promise.resolve()).then(run, run);
+  state.pending[key] = p.catch(() => {});
+  setStatus("Saving…");
+  p.then(() => setStatus(state.db.local ? "Saved to the CSV" : "All decisions saved")).catch(e => {
+    if (e && e.code === "invalid_argument") { state.writable = false; setStatus("This view can read but not save decisions.", true); renderCase() }
+    else setStatus(`Could not save (${e && e.code || "error"}). Try again in a moment.`, true);
+  });
+}
+function decide(v) {
+  if (!state.db || !state.writable) return;
+  const tab = state.tab, it = current(), S = SETS[tab];
+  const body = { [S.field]: v, note: $("c-note").value.trim(), at: new Date().toISOString() };
+  if (tab === "G") { body.provisional = it.pv; body.rule = it.rule; body.n = it.n }
+  else { body.rank = it.rank; body.radar = it.radar; body.day = it.day }
+  state.saved[tab][it.id] = body; write(tab, it.id, body);
+  if ($("auto").checked) {
+    const order = S.items, start = state.idx[tab];
+    for (let j = 1; j <= order.length; j++) {
+      const k = (start + j) % order.length;
+      if (!decisionOf(tab, order[k]) && visible(tab).includes(order[k])) { state.idx[tab] = k; break }
+    }
+  }
+  render();
+}
+let noteTimer = null;
+$("c-note").addEventListener("input", () => {
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(saveNote, 900);
+});
+$("c-note").addEventListener("blur", () => { clearTimeout(noteTimer); saveNote() });
+function saveNote() {
+  if (!state.db || !state.writable) return;
+  const tab = state.tab, it = current(), S = SETS[tab], prev = state.saved[tab][it.id] || {};
+  const note = $("c-note").value.trim();
+  if ((prev.note || "") === note) return;
+  const body = { ...prev, [S.field]: prev[S.field] || "", note, at: new Date().toISOString() };
+  if (tab === "G") { body.provisional = it.pv; body.rule = it.rule; body.n = it.n } else { body.rank = it.rank; body.radar = it.radar; body.day = it.day }
+  state.saved[tab][it.id] = body; write(tab, it.id, body); renderList();
+}
+function move(d) {
+  const vis = visible(state.tab), S = SETS[state.tab];
+  if (!vis.length) return;
+  let p = vis.indexOf(current());
+  p = p < 0 ? 0 : Math.min(vis.length - 1, Math.max(0, p + d));
+  state.idx[state.tab] = S.items.indexOf(vis[p]); render();
+}
+$("prev").addEventListener("click", () => move(-1));
+$("next").addEventListener("click", () => move(1));
+$("imgbox").addEventListener("click", () => $("imgbox").classList.toggle("zoom"));
+for (const t of ["R", "G"]) $("tab-" + t).addEventListener("click", () => {
+  state.tab = t; $("tab-R").setAttribute("aria-selected", String(t === "R")); $("tab-G").setAttribute("aria-selected", String(t === "G"));
+  $("f-state").value = "all"; renderGroups(); render();
+});
+$("f-state").addEventListener("change", renderList);
+$("f-group").addEventListener("change", renderList);
+document.addEventListener("keydown", e => {
+  if (e.target.matches("textarea, input, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "ArrowRight") { move(1); e.preventDefault(); return }
+  if (e.key === "ArrowLeft") { move(-1); e.preventDefault(); return }
+  if (state.tab === "G" && e.key === "Enter" && !e.target.matches(".item, button")) { decide(current().pv); return }
+  const hit = SETS[state.tab].opts.find(o => o[2] === e.key.toLowerCase());
+  if (hit) decide(hit[0]);
+});
+
+renderGroups(); render();
+
+(async () => {
+  if (window.REVIEW_API) {                      // served by scripts/data_quality/review_server.py
+    try {
+      const st = await (await fetch(window.REVIEW_API + "/state")).json();
+      state.saved.R = st.R; state.saved.G = st.G; state.db = { local: true };
+      setStatus("Decisions are written to review.csv and index.csv"); render();
+    } catch (e) { setStatus("Cannot reach the review server. Is it still running?", true); renderCase() }
+    return;
+  }
+  const db = await (window.claude && window.claude.use ? window.claude.use("db") : Promise.resolve(null));
+  if (!db) { setStatus("Saving is unavailable here. Open this page on claude.ai while signed in.", true); renderCase(); return }
+  state.db = db;
+  for (const t of ["R", "G"]) {
+    db.collection(SETS[t].coll).onSnapshot(snap => {
+      const m = {};
+      for (const d of snap.docs) m[d.id] = d.data();
+      state.saved[t] = m;
+      if (t === state.tab) { renderProgress(); renderList(); if (document.activeElement !== $("c-note")) renderCase() }
+      setStatus("All decisions saved");
+    }, e => setStatus(`Lost connection to saved decisions (${e.code}). Reload the page.`, true));
+  }
+  renderCase();
+})();
+</script>
