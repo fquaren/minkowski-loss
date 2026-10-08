@@ -83,6 +83,9 @@ hypothesis speaks to them differently.
 - **Unit of extremeness.** Another orthogonal choice: the pixel rate (15-min, 2 km), the
   patch or tile maximum, or an event total. The current tail protocol uses pixel exceedances
   (POT) and patch maxima. An event-based cut needs an event definition (below).
+  *Update 2026-10-08:* the pixel quantity is now the **1-h accumulation** at 2 km
+  (DECISIONS §21), so E1-E3 thresholds are re-derived on hourly sums. The max 15-min rate
+  within each hour is kept as an attribute for rate-type extremes (hail, short bursts).
 
 **A natural reading of the stated hypothesis:** E1 as the primary experiment, possibly on
 an E3-normalised scale, with E2 as a secondary stress test reported whatever the outcome.
@@ -443,6 +446,9 @@ To ask:
   extremes, or should the tail be defined on 1-h accumulations (impact-relevant, comparable
   with gauges)? 15-min snapshots miss short peaks (Valencia: 28.6 mm/h radar pixel vs
   184.6 mm/h gauge-hour).
+  *Answered 2026-10-08:* 1-h accumulation, decided with Daniele Nerini (DECISIONS §21).
+  What remains to ask is how MCH forms hourly sums from 5-min data: plain sum or
+  advection-corrected.
 - **POT practice:**
   - threshold selection (mean-residual-life, parameter-stability plots);
   - declustering of radar exceedances in space and time;
@@ -679,6 +685,238 @@ extreme day (an event like Elvira/Friederike is just as influential), it is blin
 failures below u or ones with a smooth tail, and the images decide. Run it after every
 build, alongside the rejection rates per intensity bin.
 
+### 7.4e The screen reviewed for hourly targets (2026-10-08)
+
+The target is now the 1-h accumulation (DECISIONS §21), and a filter is judged by how much it
+raises agreement with independent data (DECISIONS §22). This section reviews every rule of
+the v4 chain in that light. It also covers what MLCast and EURADCLIM do, and how the 15-min
+sequence can make the hourly field better than a plain sum. It is a proposal; the open
+decisions are listed at the end and in EXPERIMENTS §5.
+
+**What MLCast does: no artefact screen.** Daniele Nerini suggested checking our rules against
+MLCast. MLCast is the community for machine-learning nowcasting and EUMETNET E-AI Working
+Group 6 (https://mlcast.org; repos at https://github.com/mlcast-community, all 16 read
+2026-10-08, `mlcast` at commit 85f92b7).
+- *No artefact screen.* There is no clutter filter, rate cap, QIND use, spike / ring / ray /
+  persistence test, or radar exclusion anywhere in its code.
+- *What it does have:*
+  - a NaN budget per training cube (`max_nan` 10,000 per 24x256x256);
+  - no time gaps inside a cube;
+  - a loss mask over non-finite pixels;
+  - importance sampling by mean rain (`selection.py`).
+- *It relies on the providers.* Data quality is left to the national products upstream. Its
+  catalogue holds national composites at <= 1 km (the validator requires it), not OPERA:
+  RADKLIM (5 min and 1 h), DMI, IT-DPC SRI, Nimrod, RMI RADCLIM, Météo-France. A MeteoSwiss
+  converter (RZC, CPC 5 and 60 min) exists outside the catalogue. OPERA appears only in open
+  issues (#2, #48; the latter lists `RATE`, `ACRR`, `DBZH` with quality groups).
+- *Our problem, unsolved there.* In PR #17 the highest-weight sample of the importance
+  sampler may be "bad data/clutter", and the fix is only a renormalisation. That is our
+  tail-sample-selection problem (EXPERIMENTS §5), unsolved there too.
+- *A small inconsistency.* The MCH converter maps ODIM `undetect` to NaN, the BE converter
+  to 0.
+
+So MLCast can neither confirm nor refute our rules. Its relevance is twofold:
+- *Supply.* It is a convenient source of the national products in one format, i.e.
+  references for DECISIONS §22.
+- *A point of comparison.* Its choice to trust national processing tells us what the
+  community considers clean enough, which OPERA composites are not.
+
+**EURADCLIM: the published screen of the same OPERA input** (Overeem et al. 2023; the steps
+below are from the ESSD paper text, read 2026-10-08).
+- *Hourly totals.* A 1-h total is formed only when all four 15-min frames exist. 24-h totals
+  need >= 83.3% of the hours.
+- *Gabella filter* (wradlib), on dBZ:
+  - gradient part: fewer than 6 of the 5x5 neighbours within 6 dB of the centre;
+  - shape part: area / perimeter of the echo region < 1.3.
+  Flagged cells are set to 0.
+- *Satellite veto:* set the cell to 0 if the whole 7x7 window is cloud-free in the MSG
+  cloud type.
+- *Static clutter:* `histo_cut` on the annual accumulation; flagged cells in the 1-h fields
+  are replaced by inverse-distance interpolation, only where that is lower.
+- *Gauge adjustment* with ~7,700 ECA&D gauges.
+- *v3.0 and the tail* (per the KNMI dataset page as read by a search agent, not re-checked):
+  v3.0 also sets 15-min rates > 150 mm/h to 0 and caps 1-h totals at 300 mm. We keep 150-500
+  mm/h (EXPERIMENTS §5), so the two products differ in the tail by construction.
+- *Their own caveat.* The authors say the remaining outliers limit EURADCLIM "especially for
+  use in extreme value modeling".
+
+Compared with v4:
+- Their Gabella gradient test is our spike rule with a softer criterion.
+- Their satellite veto is the "rain under a clear sky" item of DECISIONS §17, which we lack.
+- Their static clutter is defined on the annual accumulation, where ours is defined on the
+  frequency of >= 31 mm/h.
+- They have nothing on persistence, rays, rings, ceilings or radar-wide failures.
+
+**The principle for hourly targets: decide with a long window, repair per frame, then sum.**
+An error adds amplitude x frames / 4 to the hour. Two classes of error matter:
+- *Transient, high-amplitude errors* (spikes, footprints, unsupported cells). The 15-min
+  rules catch these, and the hour dilutes them by 4.
+- *Persistent, moderate errors* (rays, clutter stars, anaprop, fixed blocks at 20-80 mm/h).
+  The current rules miss these, and the hour adds them up.
+
+Judging persistence needs a window longer than the hour, because a stationary cell is the
+local peak in 4 of 4 frames of a single hour. So signals are computed over the day, or over
++-6 h, and the repair is applied to the 15-min frames in which a pixel is flagged. The hour
+is then summed from the repaired frames. The 15-min and hourly products stay consistent, and
+the value-ladder rules (ceiling, repeated value), which only work on rates, keep their input.
+
+**Rain persists along its motion, clutter persists in place.** This one distinction carries
+most of the screen. Track a pixel across frames in two ways:
+- *Eulerian*: at a fixed location.
+- *Lagrangian*: following the motion field.
+
+Each class of echo has a signature:
+
+| echo | Eulerian persistence | Lagrangian persistence |
+|---|---|---|
+| moving rain | low | high |
+| static clutter, RLAN rays, anaprop | high | low (when the rain moves) |
+| transient errors (spikes, single-frame cells) | low | low |
+
+The existing temporal-support rule is the "low in both" test with a 30-km tolerance in
+place of a motion field.
+
+The test loses its power when the motion is near zero. Then the two frames coincide, which is
+exactly the risk class already named: orographically locked rain (Alex, Maggia/Valais, Boris)
+and back-building convection (Münster, Valencia DANA). The risk is therefore predictable.
+Report every persistence rule's flag rate against local motion speed, and look at the
+low-speed flags.
+
+**Rule by rule.** Verdict for hourly targets, and the proposed change.
+
+| rule (where) | keys on | for hourly | proposed change |
+|---|---|---|---|
+| drizzle < 0.1 mm/h | noise floor | harmless (<= 0.1 mm/h per frame) | none |
+| static clutter (`clean_frame`, hot mask) | >= 31 mm/h in > 1% of a year's frames | misses clutter at 20-80 mm/h or switching on and off with propagation; the fallback to 0 zeroes real rain inside wide hot bands (Elvira 2016-06-05) | fallback: leave the pixel and code it, or use a wider window, never 0 (breaks exact v3 reproduction; accept). Add a time-local signal: P1 below |
+| spike | isolated pixel >= 10 mm/h | still needed; a 100 mm/h spike adds 25 mm to the hour | none |
+| footprint (> 500 core, region >= 150) | physical impossibility | still needed | none |
+| ray (per frame, `repair_static`) | elongated component aligned within 10 deg of any radar within 250 km | fires on fronts (slide 10, Poland derecho, 2023-06-20) and feeds the guard's rejections; misses rays inside rain. Persistent rays are what sums up | replace with a multi-frame ray test: line through (within a few px of) a site, width <= ~3 px, same azimuth in most frames of +-1 h, computed on the persistence map. Fronts move and are wide, so they are spared |
+| ring (>= 89 mm/h on a climatological ring) | range-ring geometry | right above 89; a persistent ring echo at 31-89 mm/h now adds up | add: ring pixels at 31-89 repaired only where they are also persistent local peaks (the gauges saw real rain under 38% of ring pixels in single frames) |
+| unsupported (no echo >= 1 mm/h within 30 km at t +- 15) | transient in both frames | still needed; keep | later: replace the 30-km box by the advected neighbour frame once motion fields exist |
+| ceiling (rule 2) | value ladder per radar-year | must stay on 15-min rates (sums destroy the ladder) | inside contiguous rain, repair instead of rejecting at >= 5 px. A rejected frame now costs the whole tile-hour |
+| repeated value (rule 1) | one value repeated >= 50x in a tile | same; rejected a real N-Italy storm (2023-07-24) | repair the repeated pixels instead of rejecting the tile, then re-test |
+| guard (`max_size` 500) | refuses large ring-median repairs | right, but most of its rejections in the gallery were ray false positives | none once the ray test is fixed |
+| radar-disk failure (rule 3) | wet fraction, range-only field, jumps | 4/20 flags were real storms that match their t +- 15 frames | require the wet fraction to jump against both neighbour frames, unless the flag lasts (DECISIONS §23). The length of the flag run alone does not separate them (checked 2026-10-08) |
+| radar-day exclusion (rule 5) | reviewed ranking | unchanged; one day = 24 tile-hours | the review in `review.csv` stays valid |
+| completeness | — | new | a tile-hour needs 4/4 valid frames (EURADCLIM's rule). Test filling a single missing or rejected frame by motion interpolation against the gauges |
+| QIND | — | stays out (§7.1) | none |
+
+**New rules: the accumulation screen** (plan of 2026-10-07 in EXPERIMENTS §5). Per pixel, over
+the day, from the v4-cleaned frames:
+- P1, local-peak persistence. Artefacts 38-74 frames, real cells 4-12, event-day rays 20-39.
+- P2, radar-anchored lines on the P1 map.
+- P3, all-day flicker.
+- P4, contrast of the daily total, used only as a shape filter.
+- P5 (new): the Lagrangian residual. How far a frame departs from its neighbours advected to
+  its time.
+
+Flagged pixels are repaired in the frames where they are local peaks, before summing.
+
+**Using the 15-min information for a better hourly field.** In order of value:
+1. *The screen above.* Long-window evidence, per-frame action.
+2. *Advection-corrected accumulation.* Estimate the motion between consecutive frames, build
+   1-min intermediate fields by shifting the earlier frame forward and the later one back,
+   weighted linearly in time, and sum those. This is the pysteps advection-correction example
+   (Lucas-Kanade motion on log rates;
+   https://pysteps.readthedocs.io/en/stable/auto_examples/advection_correction.html, which
+   cites Anagnostou & Krajewski 1999, *J. Atmos. Oceanic Technol.* 16, 189-197, Appendix A
+   [CITE?: open the paper's DOI before citing it directly]).
+   - *Why here.* At 2 km and 15 min a core moves 4-9 px between frames, so a plain sum gives
+     beads. The residual decorrelation of 0.29 at one frame (DECISIONS §21) says the same.
+   - *Why it matters for us.* Beads add components and perimeter, so they change exactly
+     what the Minkowski functionals measure.
+   - *Risks.* Growth and decay are not advection, and motion is wrong at the edges of a rain
+     area.
+   - *Test.* The §22 gain against gauges at 1 h, plus the Euler characteristic of event
+     hours, plain vs corrected. pysteps is not installed in `dl-stable`.
+3. *Gap filling.* A single missing or rejected frame can be interpolated along the motion.
+   Without that, the tile-hour is lost.
+4. *Sub-hourly attributes stored with each tile-hour.* For example the max 15-min rate and
+   the number of wet frames. These are cheap, they keep the rate-based tail available, and
+   they help the event analysis.
+5. *The motion field itself.* It serves 2, 3 and P5 at once, so compute it once per frame
+   pair in the Phase-3 loop, on a coarse grid if cost demands.
+
+**Hourly references for DECISIONS §22** (search agent, 2026-10-08; URLs and DOIs in the
+EXPERIMENTS §5 to-do; independence is from the sensor's point of view).
+
+| reference | res. | period | independent of OPERA? | use |
+|---|---|---|---|---|
+| DE/CH gauges (in hand) | point, 10 min | archive | yes | main test |
+| DWD RADKLIM RW (open) | 1 km, 1 h | 2001-2025 | same radars, own artefact correction, gauge-adjusted | false-negative test over DE |
+| Météo-France COMEPHORE (open) | 1 km, 1 h | 1997-2026 | same radars plus gauges | false-negative test over FR |
+| MeteoSwiss CombiPrecip (archive on request; CPC 60 min via the MLCast converter) | 1 km, 1 h | 2005- | same radars plus gauges | CH, Alpine cores |
+| EURADCLIM v3.0 (KNMI, open) | 2 km, 1 h | 2013-2023 | no: same OPERA input | agreement with another cleaning; not truth |
+| MTG-I Lightning Imager (free) | 2 km, 30 s | Jul 2024- | yes | is an intense echo convection? NIMBUS period only |
+| GPM IMERG Final | 0.1 deg, 30 min | 1998-2025 | yes | rain / no rain over sea, Balkans, Iberia |
+| CML (NL 2011-2015; OpenRainER, Emilia-Romagna 2021-22) | path, 1-15 min | short | yes | spot checks |
+
+Not useful at 1 h:
+- ERA5-Land and CERRA (model precipitation);
+- E-OBS and EMO-1 (daily and 6-hourly);
+- OPERA's own `ACRR`, which is the plain sum of RATE (DECISIONS §21) and serves only as a
+  regression test.
+
+**How to get it right once.** The point is to avoid rescanning when a threshold turns out to
+be wrong.
+1. *Store evidence, decide at split time.* This is already the v4 principle; extend it to the
+   pixel-day signals (P1-P5 and the multi-frame ray test). Store them sparsely, as flagged
+   components with their scores, so that any threshold can change without a rescan.
+2. *Keep the raw day stores.* The hourly product can then always be regenerated from them.
+3. *Calibrate before Phase 3.* Each rule needs a gallery and a marginal gain against gauges
+   (and RADKLIM / COMEPHORE).
+4. *Freeze the result in a versioned config.*
+
+What cannot be deferred to split time:
+- how the hour is formed (plain or advection-corrected);
+- which frames a pixel repair applies to.
+
+Both change the stored values, so they are decided before Phase 4.
+
+### 7.4f Km-scale hourly datasets beyond OPERA, for training and validation (2026-10-08)
+
+Survey by three search agents, restricted to targets at <= ~2.5 km and >= hourly. Facts come
+from pages they opened; items they saw only in search snippets are marked "snippet". The
+ranking is Claude's inference.
+
+| product | grid / step | period | type | access | caveat for extremes |
+|---|---|---|---|---|---|
+| **DWD RADKLIM RW / YW** (DE) | 1 km / 1 h (YW 5 min) | 2001-2025 | radar + gauge, climatological reprocessing with artefact correction | open, ~8 GB of monthly tars; MLCast zarr | peaks smoothed, underestimation at high intensity (snippet); 2021 NetCDF faulty, binaries fine |
+| **Météo-France COMEPHORE** (FR) | 1 km / 1 h | 1997-2026 | radar + gauge reanalysis, per-pixel ERR and QUALIF | Licence Ouverte 2.0, ~73 GB | method break 2007; grid change Aug 2024 |
+| **NOAA MRMS v12** (US + S Canada) | 0.01 deg / 1 h | 2020-10 on (AWS `noaa-mrms-pds`) | radar-only (no QC), multi-sensor Pass1/2 (gauge and HRRR filling), RQI | open, ~6.5 GB/yr/product (estimate) | filled pixels are not observations (mask with RQI); pre-v12 (IEM, 2014-2020) is a different algorithm |
+| **MeteoSwiss CombiPrecip** (CH) | 1 km / 1 h | 2005- | radar + gauge co-kriging, quality flag 0-9 | archive on request (open data: 14 days) | radar-only outside CH; RZC input saturates at 118 mm/h |
+| **BoM Rainfields3** (AU) | 500 m per radar / 15 min | 2019- | radar, gauge-calibrated | CC BY-NC 4.0, NCI THREDDS | per-radar, no archived mosaic; documented peak underestimation |
+| EURADCLIM v3 (EU) | 2 km / 1 h | 2013-2023 | cleaned OPERA + ECA&D gauges | CC BY 4.0 | rates > 150 mm/h set to 0, 1-h capped at 300 mm; authors exclude grid-cell extreme-value use |
+| ECMWF RODEO-ML OPERA | 2 km / 1 h | 2013-2024 | raw ACRR, "artefacts retained" | public S3 | **native store clipped at 12.5 mm/h**: no tail |
+| JMA Radar/Raingauge (JP) | 1 km / 1 h every 30 min | 2006- | radar + ~10,000 gauges | paid (JMBSC) | gauge values overwrite the gauge pixel and its 8 neighbours: point imprints in the tail |
+| AORC (US) | 800 m / 1 h | 1979- | daily Stage IV/NLDAS + PRISM pattern, split into hours | open | **not km-scale**: storm structure at best 4 km (methods document §4.1.2) |
+| KNMI RAC MFBS (NL), Nimrod (UK), IT-DPC-SRI (IT), RMI RADCLIM (BE), INCA (AT) | 1 km | various | various | open | tiny domain / radar-only with method changes / ~7 years / v1 being discontinued |
+
+Not open as historical km-scale hourly archives: CHMI, DMI, AEMET, IMGW, KMA, CMPAS,
+Canada (HRDPA is 6-hourly), QPESUMS (archive start unknown).
+
+**Standard practice in generative downscaling.**
+- Most papers use daily targets or model output: WassDiff (MRMS daily), CPMGEM (UKCP 8.8 km
+  daily), Rampal et al. (NZ, daily) and Wetherell (flow matching 8 -> 2 km daily, which
+  underestimates the upper tail).
+- Hourly km-scale observational targets are rare. The closest is spateGAN-ERA5: ERA5 ->
+  RADKLIM-YW 2 km / 10 min, validated on MRMS and Australian radar.
+- CorrDiff's Taiwan "precipitation" is a reflectivity surrogate from a radar-assimilating
+  WRF, not mm/h.
+- Convection-permitting model output (UKCP Local 2.2 km, CORDEX FPS Alps, the 1 km ICON with
+  radar nudging) is the perfect-model complement. It offers long records and future climates,
+  but its structure is model-specific.
+
+**What this means for the project** (inference):
+- *A gap worth filling.* No public pan-European, uncapped, cleaned hourly km-scale dataset
+  exists: RODEO clips the tail, EURADCLIM zeroes it. The v4 hourly OPERA product fills that
+  gap.
+- *Two products over the same region.* Over Germany, RADKLIM and OPERA observe the same
+  storms through different processing, so their difference isolates the product shift from
+  the climate shift.
+- *A multi-region design* (RADKLIM, COMEPHORE, MRMS v12, OPERA v4) turns the held-out-region
+  o.o.d. option (O3) into a concrete experiment.
+
 ### 7.5 References for §7
 
 Verified 2026-09-28 by search (authors, year, venue). † = from memory, re-verify before citing.
@@ -719,6 +957,45 @@ Cleaning of the OPERA composite and European climate datasets
 - Overeem, A., Holleman, I. & Buishand, A. (2009). Derivation of a 10-year radar-based
   climatology of rainfall. *J. Appl. Meteor. Climatol.* 48. †
 
+Unsupervised / ML cleaning of radar data and analogues (search 2026-10-08; URL opened unless
+marked; "Crossref" = DOI metadata record opened)
+- Scovell, R. W. et al. (2013). Recent improvements to the quality control of radar data for the
+  OPERA Data Centre (Odyssey). 36th AMS Conf. Radar Meteorology.
+  https://ams.confex.com/ams/36Radar/webprogram/Paper229061.html
+- Lepetit, P. et al. (2022). Using deep learning for restoration of precipitation echoes in
+  radar data. *IEEE TGRS* 60. doi:10.1109/TGRS.2021.3052582 (Crossref; Météo-France library page)
+- Bölz, R. et al. (2026). Enhancing weather radar data by removing non-meteorological echoes,
+  using neural networks trained on synthetic weather data. EGUsphere preprint egusphere-2026-992.
+- Bøvith, T. (2008). Detection of Weather Radar Clutter. PhD thesis, DTU, IMM-PHD-2008-201.
+- Wagner, A., Seltmann, J. & Kunstmann, H. (2012). Joint statistical correction of clutters,
+  spokes and beam height for a radar derived precipitation climatology in southern Germany.
+  *HESS* 16, 4101-4117.
+- Grazioli, J., Tuia, D. & Berne, A. (2015). Hydrometeor classification from polarimetric radar
+  measurements: a clustering approach. *AMT* 8, 149-170.
+- Candès, E. J., Li, X., Ma, Y. & Wright, J. (2011). Robust principal component analysis?
+  *J. ACM* 58(3), 11. arXiv:0912.3599
+- Zhou, X., Yang, C. & Yu, W. (2013). Moving object detection by detecting contiguous outliers in
+  the low-rank representation. *IEEE TPAMI* 35, 597-610. arXiv:1109.0882
+- Chang, Y. et al. (2016). Remote sensing image stripe noise removal: from image decomposition
+  perspective. *IEEE TGRS* 54, 7018-7031. (Crossref only; content not read, check before citing)
+- Zhu, Z. & Woodcock, C. E. (2014). Automated cloud, cloud shadow, and snow detection in
+  multitemporal Landsat data. *Remote Sens. Environ.* 152, 217-234. (Crossref only; method from
+  search snippets, check before citing)
+- Lehtinen, J. et al. (2018). Noise2Noise. arXiv:1803.04189. Krull, A., Buchholz, T.-O. &
+  Jug, F. (2019). Noise2Void. CVPR. arXiv:1811.10980
+- Broaddus, C. et al. (2020). Removing structured noise with self-supervised blind-spot
+  networks. ISBI 2020, 159-163.
+- Birnie, C. et al. (2021). The potential of self-supervised networks for random noise
+  suppression in seismic data. arXiv:2109.07344
+- Mesarcik, M. et al. (2022). Learning to detect radio frequency interference in radio astronomy
+  without seeing it. *MNRAS* 516, 5367-5378. arXiv:2207.00351
+- El Hachem, A. et al. (2022). Technical Note: Space-time statistical quality control of extreme
+  precipitation observations. *HESS* 26, 6137-6146.
+- Dunn, R. J. H. et al. (2012). HadISD. *Clim. Past* 8, 1649-1679.
+- Lochner, M. & Bassett, B. A. (2021). Astronomaly. *Astron. Comput.* 36, 100481. arXiv:2010.11202
+- Behrendt, F. et al. (2022). Unsupervised anomaly detection in 3D brain MRI using deep learning
+  with impured training data. ISBI 2022. arXiv:2204.05778
+
 National services
 - Germann, U., Galli, G., Boscacci, M. & Bolliger, M. (2006). Radar precipitation measurement
   in a mountainous region. *QJRMS* 132, 1669–1692. doi:10.1256/qj.05.190 (MeteoSwiss)
@@ -751,6 +1028,12 @@ General reviews and methods
   radar data (wradlib). *HESS* 17. †
 - Pulkkinen, S. et al. (2019). Pysteps: an open-source Python library for probabilistic
   precipitation nowcasting (v1.0). *GMD* 12. † (MCH co-authors, incl. D. Nerini)
+- MLCast community (EUMETNET E-AI WG6): https://mlcast.org,
+  https://github.com/mlcast-community (code read 2026-10-08; see §7.4e).
+- pysteps advection-correction example (opened 2026-10-08):
+  https://pysteps.readthedocs.io/en/stable/auto_examples/advection_correction.html — cites
+  Anagnostou, E. N. & Krajewski, W. F. (1999). Real-time radar rainfall estimation. Part I:
+  Algorithm formulation. *J. Atmos. Oceanic Technol.* 16, 189–197. † (paper itself not opened)
 - Michelson, D. et al. (2020). Monitoring the impacts of weather radar data quality control for
   quantitative application at the continental scale. *Meteorol. Appl.* 27.
   doi:10.1002/met.1929 (ECCC, North America; a method for scoring a QC chain objectively)

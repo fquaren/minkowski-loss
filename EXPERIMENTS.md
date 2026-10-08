@@ -1,6 +1,6 @@
 # Experiment tracker
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 **Read first:** `DECISIONS.md` (why things are the way they are, and what is already ruled
 out), then `CLAUDE.md` (operational traps), then this file (the compute node in §0, what exists and what's next).
@@ -10,6 +10,9 @@ framework, the definition-of-extreme question and the regime-aware design notes.
 Conventions: paths relative to repo root. Deterministic evals on the full test set
 (n = 285,383). Generative evals on 4,096 patches, M = 16, heun-16 unless noted.
 **All tail columns at POT u = 31 mm/h**, so rows at other levels are not comparable.
+**From v4 on, the target is the 1-h accumulation (DECISIONS §21, 2026-10-08).** Every
+number below is on 15-min rates and is not comparable with hourly results; u = 31 is a rate
+level and is re-derived for hourly data.
 
 **Two caveats that apply to every number below** (details in §5 and DECISIONS §15):
 - **The test split is not independent of train.** Splits are random at patch level over
@@ -255,6 +258,107 @@ isoperimetric scatter.
 ## 5. TODO
 
 ### Highest value
+- [ ] **Switch to hourly targets and finish the screen before Phase 3 (decided 2026-10-08).**
+      The target is the 1-h accumulation (DECISIONS §21). A rule is kept only if it raises
+      agreement with independent data (DECISIONS §22). The rule-by-rule review, the MLCast /
+      EURADCLIM comparison and the hourly references are in RESEARCH_NOTES §7.4e. This is
+      the last pass on the screen, so everything below is calibrated before Phase 3, and
+      every threshold that can stay a split-time decision does. In order:
+      *Progress 2026-10-08:*
+      - Decided: the ACRR hour convention.
+      - The rule set is defined in DECISIONS §23 and implemented:
+        - `src/data/hourly.py`;
+        - `cleaning.anchored_lines` and `clean_frame(hot_fallback=)`;
+        - `radar_screen.frame_flagged_temporal`, `repeat_context` and `decide_hourly`;
+        - the `hourly:` block in `configs/quality_v4.yaml`.
+      - Tests: `tests/test_hourly.py`, 9 tests, all pass. The 6 failures elsewhere in the suite
+        fail on HEAD too.
+      - The other references (RADKLIM, COMEPHORE, lightning, IMERG, EURADCLIM) are banked for a
+        later stage. Validation uses the DE/CH gauges only.
+      - Launched 2026-10-08 ~14:10, detached:
+        - hourly Phase 0 on the 199 days (`scripts/dataset_v2/scan_hours.py` ->
+          `quality_v4/calib/hourly/`, `logs/phase0_hourly.log`);
+        - the per-rule gauge ablation on the 63 gauge days
+          (`scripts/data_quality/gauge_hourly.py` -> `calib/gauge_hourly/`,
+          `logs/gauge_hourly.log`). Summarise with
+          `gauge_hourly.py summary --out .../calib/gauge_hourly`.
+      - Review page for items 1a/1b: `scripts/data_quality/review_server.py` on node34, port
+        8765, reached through an ssh tunnel. It writes straight into `review.csv` / `index.csv`,
+        keeping backups and Claude's calls in `index_provisional.csv`.
+        - The claude.ai copy (https://claude.ai/artifact/8nXWJKv1M2ffWTQwmRbVRN, synced with
+          `sync_review.py`) is not reachable from the cluster.
+      - Before/after filtering: `scripts/data_quality/hourly_effect.py` (distributions, per-rule
+        share lowered by intensity, hourly series). It is chained after the scan
+        (`logs/chain_hourly_effect.sh` -> `calib/hourly_effect/`, `logs/hourly_effect.log`).
+      - Next:
+        - per-signal galleries from `calib/hourly/signals/`, including n_peak / n_wet;
+        - set the provisional thresholds of §23 from the galleries and the ablation;
+        - an hourly `make_splits` / `build_store`.
+      1. ~~Researcher reviews~~ **Dropped 2026-10-08 (DECISIONS §24): no dataset decision
+         rests on the researcher's eye.** The 144 gallery verdicts (done 2026-10-08, 100/144
+         agree with Claude's) and `review.csv` (0/100) are kept only as a record. To do
+         instead:
+         - automatic radar-day / radar-year exclusion from a pre-stated score;
+         - `min_wet_jump` from the normal-operation distribution;
+         - the §20 criterion 2 replaced by gauge false-alarm and miss rates.
+      2. **Decisions** (proposals in RESEARCH_NOTES §7.4e):
+         - (a) hour convention: frames H-45..H, as OPERA `ACRR`;
+         - (b) completeness: 4/4 frames, or fill one frame by motion interpolation;
+         - (c) plain or advection-corrected accumulation;
+         - (d) hot-pixel fallback: leave the pixel and code it, never 0 (breaks the exact v3
+           reproduction);
+         - (e) multi-frame ray test replacing the per-frame one;
+         - (f) repair instead of reject for ceiling and repeated-value pixels inside rain;
+         - (g) radar-disk flag only when the frame breaks from both t +- 15;
+         - (h) accumulation-screen signals P1-P5, and the repair applied per frame before
+           summing.
+      3. **Validation harness first.** Turn `scripts/data_quality/gauge_agg.py` (copied
+         2026-10-08) into a module that reports, per rule:
+         - the marginal gain in log-correlation on a fixed pair set;
+         - day-block bootstrap intervals;
+         - the false-alarm and miss strata separately;
+         - the agreement of rejected pairs.
+         Fix the 1-h gauge window to the ACRR convention, then re-check the alignment.
+         Baseline already measured (fixed pairs): 1 h +0.108 [0.064, 0.145].
+      4. **Add RADKLIM RW (DE) and COMEPHORE (FR)** as hourly references for the
+         false-negative test.
+         - RADKLIM RW, DOI 10.5676/DWD/RADKLIM_RW_V2017.002, opendata.dwd.de; the 2021
+           NetCDF is faulty, use the `supplement` folder.
+         - COMEPHORE: data.gouv.fr; the grid changes from Aug 2024.
+         Fetch only the 199 calibration days and the 63 gauge days.
+         Later:
+         - MTG lightning, for the NIMBUS period;
+         - IMERG presence over the sea and the Balkans;
+         - EURADCLIM v3.0 (DOI 10.21944/7ypj-wn68) as the comparison of cleaning methods.
+         Mind the quota.
+      5. **Motion fields.**
+         - Install pysteps in `dl-stable` (ask first).
+         - Lucas-Kanade on log rates per frame pair, on a coarse grid if needed. Time it on
+           one day to cost Phase 3.
+         - Test advection-corrected vs plain hourly sums on the 63 gauge days: the §22 gain,
+           plus the Euler characteristic of event hours.
+      6. **Implement the changes from step 2,** plus the sparse pixel-day signal store (P1-P5,
+           multi-frame rays, flagged components with scores).
+      7. **Re-run Phase 0** on the 199 days.
+         - Per-rule galleries (strongest + random).
+         - Marginal gains against the gauges, RADKLIM and COMEPHORE.
+         - Flag rate against intensity and against local motion speed.
+         - Explicit check of the stationary cores: Alex, Maggia/Valais, Boris, Münster,
+           Valencia.
+         - Decide thresholds, and freeze them in `configs/quality_v4.yaml`.
+      8. **Phase 3** tile scan with per-frame codes and pixel-day signals. **Phase 4** hourly
+         store, with the max 15-min rate and the wet-frame count per tile-hour, and hourly
+         coarse inputs. Then a **raw-sum regression** against OPERA `ACRR` on sample hours.
+      9. **Re-derive the tail on hourly data before any evaluation.** This covers POT u, FSS
+         levels, `extremes_*` subsets, the §20 gate thresholds and the event tags
+         (rate / accumulation). u = 31 applies to 15-min rates only.
+      10. **Phase 5 gate** (DECISIONS §20) on hourly data, then retraining.
+      Small items:
+      - Fix slide 10 of `notes/mch_slides.pdf` (a front, not a ray).
+      - Lagrangian version of the decorrelation table (DECISIONS §21 caveat).
+      - ACRR identity checked 2026-10-08 on one ODYSSEY and one NIMBUS hour (DECISIONS §21:
+        plain sum, no filtering, 4/4 frames per pixel, undetect handled differently per
+        generation). Still to see: an hour with a whole frame missing from the archive.
 - [ ] **The DEM channel of every patch is from the wrong place (bug, found 2026-09-28).** The
       DEM GeoTIFF is north-first (row 0 = north) and the precipitation stores are
       south-first (row 0 = south; checked against radar-site geography, IoU 0.878 vs 0.554
@@ -502,6 +606,107 @@ isoperimetric scatter.
         (km width limit, azimuth fixed over t+-15), the hot-pixel fallback (changes the v3
         reproduction, so needs a decision), and decide repair vs reject for repeated-value and
         ceiling tiles inside events.
+        *Persistent artefacts dominate daily accumulations (2026-10-07).* Prompted by MCH's
+        suggestion (Nerini) to work with daily aggregates. 16 whole days, v4 chain (`DayCleaner`
+        with ceilings and guard): 8 event days (Muenster 2014-07-28, Braunsbach 2016-05-29,
+        Poland derecho 2017-08-11, Hodonin 2021-06-24, Bernd 2021-07-14, Med derecho
+        2022-08-18, Emilia 2023-05-16, S Germany 2024-06-01) and 8 random ODYSSEY days. Figures
+        and scripts: `quality_v4/calib/daily_check/` (`random_daymax.png`,
+        `event_daymax_signals.png`).
+        - *The daily maximum tile is an artefact on 5/8 random days and >= 6/8 event days*
+          (by eye). Random days: stationary flickering spots (2016-11-06, 343 mm), an all-day
+          ray plus spokes (2017-02-03, 355 mm), near-radar spokes / anaprop wet in 93/96 frames
+          (2017-09-27, 758 mm), a point inside winter rain (2022-02-17), a rectangular block
+          (2023-06-18, 325 mm). Event days: radial rays and spokes (Poland, Med derecho,
+          Emilia, S Germany), a clutter star around a site (Braunsbach), an isolated 401 mm
+          pixel (Bernd). Real: Hodonin, and 3 random-day convective cells.
+        - *Mechanism:* these echoes run at 20-80 mm/h, below every v4 trigger (spike, > 500,
+          ring >= 89, unsupported), and persist, so temporal support cannot catch them;
+          30 mm/h for 20 h is 600 mm. In 15-min fields they are a minor nuisance; summed, they
+          set the tail. The random-day q99.9 of daily tile max (500 mm) is theirs, so on this
+          sample no event day exceeds it. Raw/cleaned max > 2x: 5% of top-1% tiles at 15 min,
+          15% at 1 h, 27% at 24 h: summing amplifies artefacts, it does not dilute them.
+        - *Rays inside rain:* in the S Germany and Med derecho peak hours, straight streaks sit
+          inside rain at 15 min. The ray rule cannot isolate them, since the >= 1 mm/h
+          component is the whole rain area and is not elongated.
+        - *Daily alone cannot separate them from real tracks:* the real Hodonin swaths are
+          long, straight and narrow too. The 15-min sequence separates them: a cell's peak
+          moves, an artefact's peak stays on the same pixel.
+        - *Candidate per-pixel-day signals*, at the peak pixel of the 16 daily-max tiles
+          (`persist_signals.csv`): S4 = frames in which the pixel is >= 1 mm/h and >= 2x its 5x5
+          median ("local-peak persistence"): artefacts 38-74 frames (anaprop 7, but 66
+          elsewhere in its tile), real cells 4-12, event-day rays 20-39. S3 = daily total /
+          median of a 3-8 px ring: separates points and lines but also fires on real swaths
+          (Hodonin, real cells 5-12). S1 (wet fraction) and S2 (relative total variation)
+          catch flicker clutter, not steady anaprop. S4 maps light up rays and stars and stay
+          dark on real swaths.
+        - *Does the v4 filtering improve radar-gauge agreement?* Yes, at every aggregation
+          (DE/CH, 1,200-1,500 gauges/day, 63 days: 15 DE/CH event days + 48 random; v4 chain
+          incl. tile rejection; `daily_check/gauge_agg.py`). Pearson on log1p, wet pairs,
+          raw -> filtered: 15 min 0.63 -> 0.70, 1 h 0.66 -> 0.77, 24 h 0.86 -> 0.89. Radar
+          values above 31 mm/h / 20 mm/h / 50 mm/d confirmed by the gauge (gauge >= 20% of
+          the radar value): 0.49 -> 0.78, 0.35 -> 0.84, 0.78 -> 0.95. Aggregation alone also
+          raises agreement (filtered 0.70 -> 0.77 -> 0.89), but it does not remove the
+          amplitude bias in heavy rain: Bernd 2021-07-14, radar daily max 81 mm vs gauge
+          162 mm. The persistent-echo class above
+          is rare at DE/CH gauges, so this test barely sees it.
+          *Recomputed 2026-10-08 on a fixed pair set* (pairs wet in the raw radar, the filtered
+          radar or the gauge). The numbers above select pairs on the filtered field, so a
+          repaired false echo leaves the sample. Raw -> filtered, with the 95% day-block
+          bootstrap interval of the gain:
+          - 15 min: 0.628 -> 0.698 (+0.070 [0.041, 0.099]);
+          - 1 h: 0.664 -> 0.771 (+0.108 [0.064, 0.145]);
+          - 24 h: 0.864 -> 0.887 (+0.022 [0.017, 0.030]).
+          Rejection touched < 0.1% of the pairs.
+          **Correction (later on 2026-10-08):** the gain is one gauge. DWD 01346 sits on a
+          static-clutter pixel (2023), with raw values up to 2.2e5 mm/h.
+          - Without it: 15 min 0.699 -> 0.698; 1 h 0.769 -> 0.772; 24 h 0.880 -> 0.887.
+          - At DE/CH gauges, filtering barely moves the pooled correlation. The per-rule
+            affected-pair test is the informative one (DECISIONS §22).
+          Scripts are now
+          in the repo: `scripts/data_quality/{gauge_agg,agg_compare,agg_summarize}.py`;
+          outputs are in `quality_v4/calib/daily_check/{gout,out}/`.
+        Earlier in the day the Muenster/Bernd/Emilia daily maxima (370-400 mm) were read as
+        real event totals; they are artefacts. The daily geometry statistics of that run are
+        contaminated by these artefacts at the top, so they are not quoted.
+      - [ ] **Accumulation screen: clean daily (and hourly) fields with the 15-min sequence**
+        (plan, 2026-10-07; researcher: "use the information I have at 15 min to clean the
+        data at daily aggregation the best I can"). Needed whether or not the project moves
+        to daily targets: the same echoes contaminate hourly sums and the 15-min tail.
+        - *Principle:* the daily field cannot tell a ray from a track; the sequence can. All
+          signals are computed per pixel-day from the v4-cleaned 15-min stack, keyed on
+          persistence and geometry (DECISIONS §17 safeguard 1), never on the daily total alone.
+        - *Signals:* (P1) local-peak persistence S4; (P2) radar-anchored lines: the ray test
+          run on the S4 map, requiring the axis to pass within a few px of a site, which a
+          storm track does not; (P3) persistent flicker: wet in >= ~75% of frames with high
+          relative total variation (S1, S2); (P4) daily contrast S3 only as a size/shape filter
+          (points, 1-3 px lines, blocks), never alone.
+        - *Action (to decide):* daily product: replace small flagged components by the ring
+          median of the daily total, refuse large ones (v4 guard), and count the pixel as
+          missing; 15-min product: optionally repair the pixel in the frames where it is a
+          local peak, which would also fix the rays inside rain. Completeness: a pixel-day
+          needs >= N valid frames (EURADCLIM: >= 83.3% availability per cell), with v4-rejected
+          tile-frames counted as missing.
+        - *Main risk:* real stationary rain is persistent too: orographically locked
+          enhancement (Alex, Maggia/Valais, Boris), back-building convection (Muenster core,
+          Valencia DANA). P1 should spare them because their peak still wanders by several
+          pixels and they are wide, but an orographic maximum fixed to a ridge may not. Check
+          those cores explicitly before any threshold is set.
+        - *Calibration:* on the 199 Phase-0 days, compute P1-P4 maps; per-signal galleries
+          (strongest + random, as `rule_gallery.py`) with the 16 tiles above included; flag
+          rate per daily-total bin and per event; DE/CH gauges: daily gauge totals under
+          flagged vs unflagged pixel-days.
+        - *Where:* per-pixel accumulators (sum, wet count, local-peak count, sum |dx|) cost
+          little inside the Phase-3 day loop, which already runs `DayCleaner` over every
+          frame; store per-day signal maps or flagged components so that thresholds are set
+          at split time, as for v4. Decide before Phase 3 starts. Phase 2 is unaffected.
+        *Update 2026-10-08: the target is hourly* (DECISIONS §21). The screen now has to serve
+        1-h sums. Its design changes accordingly:
+        - signals are computed over a long window (the day);
+        - repairs are applied per 15-min frame, and the hour is summed after;
+        - a fifth signal, P5, the Lagrangian residual, needs motion fields.
+        Full review and ordered steps: RESEARCH_NOTES §7.4e and the first item of
+        "Highest value" above.
       - *Phase 2, radar pass* over all days on the `clean_frame` output (before repairs, so a
         repair cannot hide a failure): per radar-frame features and per radar-year value
         histograms (~6-8 h). Then ceiling table, radar-frame thresholds, radar-day ranking and
@@ -1108,6 +1313,20 @@ isoperimetric scatter.
       rejection rate per intensity bin, and spot-check each rule's gallery by eye.
 
 ### To explore
+- [ ] **Train and validate on more than one km-scale hourly dataset** (survey RESEARCH_NOTES
+      §7.4f, 2026-10-08). Proposal: RADKLIM (DE), COMEPHORE (FR), MRMS v12 (US) and OPERA v4
+      (EU), all on a common 2 km grid with one coarsening operator, plus a real-ERA5-input run.
+      To decide:
+      - which datasets;
+      - 2 km or native 1 km;
+      - coarsened target or real ERA5 as input.
+      RADKLIM first: the fetcher and reader already exist (`scripts/data/fetch_radklim.py`,
+      `src/data/radklim.py`).
+      **Agreed 2026-10-08 (researcher):** RADKLIM, MRMS v12, COMEPHORE, then CombiPrecip
+      (MeteoSwiss archive on request). Banked for now; the researcher will reopen it.
+      **Open: which dataset is the main one.** Decided after the RADKLIM removal test
+      (DECISIONS §24 addendum) and an OPERA-vs-RADKLIM comparison over Germany of both the
+      tail and the geometry (Minkowski functionals, peak ratio) on matched hours.
 - [ ] **Temporal consistency of the downscaled fields** (ties in with another project of the
       researcher; details to add).
       - *Why it's open:* every model downscales each 15-min frame independently, with no
@@ -1149,6 +1368,103 @@ isoperimetric scatter.
 - [ ] **Reading on precipitation systems as seen on radar**: RESEARCH_NOTES §8 (textbooks,
       conceptual models, European climatologies, orographic, rain-field geometry, weather
       types).
+- [ ] **Unsupervised segmentation of radar artefacts** (idea 2026-10-07; **banked as a separate
+      later project 2026-10-08**, self-contained write-up in
+      `notes/future_project_radar_cleaning.md`). Learn a per-pixel
+      artefact mask from the raw 15-min archive, with no labels. This is consistent with
+      DECISIONS §17, which rules out a labelled set. The aim is to replace or back up the
+      hand-written rules (ray, ring, hot, spike, disk), which the 10-07 gallery showed fail on
+      real rain bands and storms (§5, v4 "Per-rule gallery review").
+      - *Signal to use: time.* The gallery review found that the t±15 frames are what
+        separates rain from artefacts. Rain advects and evolves, while artefacts stay fixed to
+        the grid or a radar (rays keep their azimuth, clutter its position) or last a single
+        frame. So the input should be a short sequence plus static context: distance and
+        azimuth to each radar site, the clutter climatology, and the DEM.
+      - *Candidate approaches:*
+        - (a) A self-supervised predictor of frame t from t±15 (advection-aware). Large
+          residuals are candidate artefacts.
+        - (b) Decomposition into a moving rain component and a component that is static or
+          radar-anchored, e.g. in polar coordinates around each site.
+        - (c) Anomaly scores from a generative model of clean-looking fields.
+      - *Main risk:* real extremes are anomalous too. Any anomaly-based mask will flag the
+        tail we want to keep, which is the same failure the ray and disk rules showed. So
+        report the flag rate per intensity bin, and check the masks against independent data
+        (gauges, RADKLIM; DECISIONS §22, §24). The 144-example gallery is an illustration
+        only, not ground truth.
+      - *Scope:* this is a methods project in its own right, possibly a separate paper or a
+        contribution to the benchmark release. It should not block the v4 build. The rule
+        fixes listed "before Phase 3" still come first.
+      - **Future project, supervised or weakly supervised (researcher, 2026-10-08).** A
+        segmentation / classification model (CNN, U-Net, or a spatio-temporal 3-D U-Net or
+        video transformer over t-k..t+k) that outputs a per-pixel artefact probability for
+        OPERA. On the images the task looks well suited to a CNN: the artefacts have
+        stereotyped shapes (rays, rings, spokes, speckle disks, rectangular blocks) and
+        stereotyped timing. Defensibility (DECISIONS §24) comes from where the labels come
+        from: never from eye judgement. Candidate objective sources, combined as noisy weak
+        labels:
+        1. *Disagreement with a curated product where one exists:* OPERA high and RADKLIM
+           (DE), COMEPHORE (FR) or CombiPrecip (CH) low marks an artefact; agreement marks
+           rain. This gives dense pixel labels over those countries.
+        2. *The rule screen's high-confidence decisions:* values > 500 mm/h, ceiling values,
+           radar-disk failures, persistent radar-anchored lines. Used only where independent
+           data (step 1) did not contradict the rule.
+        3. *Physical vetoes:* a satellite clear-sky mask (EURADCLIM uses MSG cloud type),
+           and lightning for convective echoes (MTG-LI from 2024).
+        - *Inputs:* the 15-min sequence, distance and azimuth to the radar sites, the clutter
+          and ring climatologies, the DEM, QIND.
+        - *Generalisation test:* train with labels from countries that have a curated product,
+          test on held-out ones. A model that generalises would extend curated-product quality
+          to the rest of the OPERA domain. That is the gap the rule screen cannot close by
+          design: it is validated only where independent data exist, ~31% of its tail
+          removals.
+        - *Evaluation:* the same §22 / §24 tests as the rules (affected pixels moved towards
+          the reference, flag rate by intensity bin), on held-out countries and years.
+        - *Literature (search 2026-10-08, references in RESEARCH_NOTES §7.5).* No paper found
+          that does the exact combination: a label-free decomposition of a composite archive,
+          with an advection prior for rain and a grid/polar persistence prior for artefacts,
+          evaluated only against independent gauge-adjusted products. This is an inference from
+          a search, not proof. Prior work to cite and differ from:
+          - EURADCLIM, Overeem et al. 2023: same data and gauge evaluation; rule-based; its
+            yearly static-clutter mask is a crude persistence prior;
+          - Lepetit et al. 2022: U-Net restoration of single radars, weakly supervised by
+            gauges;
+          - Bøvith 2008: separates clutter from rain by the difference in motion field;
+            supervised, single radar;
+          - Odyssey QC, Scovell et al. 2013: already applied to the input, so gains are on top
+            of it;
+          - Bölz et al. 2026, preprint: label-free via synthetic mixing of cluttered and clean
+            scans;
+          - method: robust PCA (Candès et al. 2011) and DECOLOR (Zhou et al. 2013: low-rank +
+            contiguous outliers + motion).
+          Cautions:
+          - Self-supervised predictors reproduce any structure they can predict
+            (structured Noise2Void, Broaddus et al. 2020; seismic, Birnie et al. 2021). A
+            next-frame model learns static clutter and rays as signal, so it catches transient
+            errors only.
+          - Rare-but-real extremes flagged by anomaly detectors: El Hachem et al. 2022 (check
+            flagged extremes against independent data before removal), HadISD (Dunn et al.
+            2012), Astronomaly (Lochner & Bassett 2021).
+        - **Preferred: unsupervised (discussion 2026-10-08).** Separate by structure, not by
+          rarity: "artefact = anomaly" removes the tail, because extremes are anomalous too.
+          - *Model:* x_t = r_t + a_t.
+            - Rain r_t is advection-predictable: r_t ~ r_{t-1} shifted along the motion field,
+              plus smooth growth and decay.
+            - Artefact a_t is sparse, and persistent in the grid frame or in polar coordinates
+              around each radar (clutter, rays, rings, range patterns).
+            - Train only to reconstruct x_t; the clean field is r_t.
+          - *Add self-supervised next-frame prediction* for the transient class (spikes,
+            single-frame failures).
+          - *Baseline:* robust PCA (low-rank + sparse) on a day of frames per radar in polar
+            coordinates, compared with the persistence rule.
+          - *Hard limits, not separable by structure:*
+            - stationary real rain (orographic, back-building) when the motion is ~0;
+            - calibration and gain errors;
+            - value-level errors (ceilings), which stay with the rules.
+          - *Use of independent data:* RADKLIM, COMEPHORE and gauges are used only for model
+            selection and evaluation, never for training, so training and test stay separate.
+            The test: does a label-free model fitted on all of Europe agree with RADKLIM in
+            DE and COMEPHORE in FR?
+          - *What is left to defend:* the priors, which are a stated physical symmetry.
 
 ### Data hygiene
 - [x] Rerun bicubic and `FM + Minkowski reward` at u=31 (done in the 09-16 re-eval).

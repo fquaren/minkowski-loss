@@ -75,7 +75,8 @@ produced a 53x reconstruction error that looked like a catastrophic model failur
 
 **POT level must be identical across every row of a table.** `gpd_xi_err` and `rl_bias` are
 computed against a fit whose observed reference depends on it. Use `--pot_threshold 31`
-everywhere. Sanity check: `gpd_xi_obs` depends only on the data, so it must be the same in
+everywhere for the 15-min-rate tables. Hourly (v4) tables get their own single level, to be
+re-derived (DECISIONS §21). Sanity check: `gpd_xi_obs` depends only on the data, so it must be the same in
 every summary (u=31 -> +0.176; u=53 -> -0.190).
 
 **Evaluate `fm_mink_latest.pth`, not `fm_mink_best.pth`.** "Best" is selected on validation
@@ -148,6 +149,14 @@ Check in this order:
   artefact detector (RESEARCH_NOTES §7.1).
 - **The competing-loss rows are not a fair trial** (DECISIONS §8 status, §16): three were
   never active, SSIM is buggy, and the budgets were unmatched.
+- **From v4 on, the target is the 1-h accumulation** (DECISIONS §21, 2026-10-08).
+  - *Screening stays on the 15-min frames:* repair per frame, then sum frames H-45..H, the
+    convention of OPERA's `ACRR`.
+  - *Rules are judged by the gain in agreement with independent data* on a fixed pair set
+    (DECISIONS §22), not by the absolute correlation. Check the most influential station
+    (one clutter gauge once faked a +0.10 gain), and use the per-rule affected-pair test.
+  - *u = 31 mm/h is a 15-min rate level*, so hourly tables need a re-derived threshold.
+  - *Pre-v4 results are on 15-min rates* and are not comparable with hourly ones.
 - **DDPM is dropped** (DECISIONS §14). Do not add DDPM rows or fix DDPM code unless asked.
 
 ## Conventions
