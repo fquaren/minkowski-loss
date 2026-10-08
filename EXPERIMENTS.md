@@ -1324,6 +1324,38 @@ isoperimetric scatter.
       `src/data/radklim.py`).
       **Agreed 2026-10-08 (researcher):** RADKLIM, MRMS v12, COMEPHORE, then CombiPrecip
       (MeteoSwiss archive on request). Banked for now; the researcher will reopen it.
+      **OPERA vs RADKLIM over Germany (2026-10-08, `scripts/data_quality/radklim_geometry.py`,
+      `calib/radklim_geometry/summary.txt`).** Sample: two 128 x 128 tiles in central Germany,
+      >= 98% RADKLIM-valid, 194 days; 1,185 random and 1,784 event tile-hours with max >= 5 mm.
+      - *RADKLIM is much smoother than OPERA at 2 km.*
+        - unresolved variance of log1p w.r.t. the 25 km mean: 0.37 vs 0.50-0.61;
+        - peak ratio: 3.1-3.4 vs 4.7-6.2;
+        - perimeter per area at 1-10 mm: 25-35% lower;
+        - median Euler characteristic chi at 1 mm: 12 vs 23 (random), 13 vs 23 (event),
+          i.e. half as many fragments;
+        - at 20-30 mm the products converge.
+      - *chi agrees only moderately:* Spearman 0.58-0.67 across tile-hours at 1-10 mm,
+        0.23-0.53 at 20-30 mm.
+      - *The screen does not change the geometry:* raw and screened OPERA have the same
+        perimeter, chi and U. It acts on the extreme tail, not on the structure of the
+        body.
+      - *The open question for the main-dataset choice:* is OPERA's extra fine structure
+        real, or noise (speckle, drizzle fragments)? Proposed objective tests:
+        - cross-spectral coherence of OPERA and RADKLIM by wavelength, with each product's
+          spectrum;
+        - Lagrangian persistence of the sub-25 km residual in each product: noise does not
+          survive advection over 15 min, structure does.
+      **The event-day heavy tail** (screened pixel-hours vs RADKLIM within +-2 px and +-1 h):
+      - 30-75 mm: mostly real. Confirmed in 59-75% (event) and 50-70% (random); RADKLIM
+        displaces or smooths them.
+      - >= 75 mm: mostly residual artefacts. Event days: 75-100 mm confirmed 19%, dry in
+        RADKLIM 66%; >= 100 mm confirmed 0/36, dry 83%. Random days n = 16, same picture.
+      - So the screen still leaves artefacts at the very top: in Germany ~130 pixel-hours
+        >= 75 mm on 79 event days. To find their signature before any new rule.
+      **Static clutter vs spikes** (100 random days, from the static-clutter-off run): static
+      clutter is 5-17% of the tail removal (5.4% at >= 100 mm, 16.9% at >= 10 mm). The
+      `clean_frame` group's tail effect is mostly the spike rule, which RADKLIM classes as
+      artefact removal (0-1% confirmed vs 27-56% for kept values).
       **Open: which dataset is the main one.** Decided after the RADKLIM removal test
       (DECISIONS §24 addendum) and an OPERA-vs-RADKLIM comparison over Germany of both the
       tail and the geometry (Minkowski functionals, peak ratio) on matched hours.
