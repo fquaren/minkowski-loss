@@ -396,6 +396,81 @@ def frame_flagged(feats: np.ndarray, q: dict) -> np.ndarray:
     return ok & (a | b)
 
 
+def frame_flagged_temporal(feats: np.ndarray, q: dict) -> np.ndarray:
+    """Rule 3 with the hourly-chain check (DECISIONS §23) on a (T, R, len(FEATURES)) day of
+    radar-frames: a flag stands if the radar is also flagged in a neighbouring frame (a
+    lasting failure, Madrid 2018-04-29), or if its wet fraction exceeds that of both
+    neighbouring frames by >= `radar_frame.temporal.min_wet_jump` (a failure switches on: the
+    Valjevo frames jump from ~0 to ~0.35 and back). Real storms flagged by the rule match
+    their neighbours (wet within 0.13 of them on all four gallery cases). A frame with no
+    neighbour keeps its flag. Without a `temporal` block this is `frame_flagged`."""
+    fl = frame_flagged(feats, q)
+    p = q["radar_frame"].get("temporal")
+    if not p or fl.shape[0] < 2:
+        return fl
+    wet = feats[..., FEATURES.index("wet")].astype(float)
+    pad = np.full((1, wet.shape[1]), np.nan)
+    with np.errstate(invalid="ignore"), __import__("warnings").catch_warnings():
+        __import__("warnings").simplefilter("ignore", RuntimeWarning)
+        nb = np.fmax(np.vstack([pad, wet[:-1]]), np.vstack([wet[1:], pad]))
+        jump = wet - nb
+    fz = np.zeros((1, fl.shape[1]), bool)
+    lasting = np.vstack([fz, fl[:-1]]) | np.vstack([fl[1:], fz])
+    return fl & (lasting | ~(jump < p["min_wet_jump"]))
+
+
+def repeat_context(t: np.ndarray, value: float) -> float:
+    """Median of the valid pixels on the outer 1-px ring of the pixels equal to `value` in tile
+    `t`, divided by `value` (DECISIONS §23). Near 1: a plateau inside rain of the same
+    intensity, i.e. a saturated or quantised core (the N-Italy storm of 2023-07-24); well
+    below 1: a value standing above its surroundings (speckle, a repair plateau). NaN when
+    the value is absent."""
+    if not np.isfinite(value) or value <= 0:
+        return float("nan")
+    m = np.rint(np.nan_to_num(t, nan=-1.0) * 100) == np.rint(value * 100)
+    if not m.any():
+        return float("nan")
+    ring = ndimage.binary_dilation(m, np.ones((3, 3), bool)) & ~m & np.isfinite(t)
+    return float(np.median(t[ring]) / value) if ring.any() else float("nan")
+
+
+def _owned_share_frames(owners: str, flagged: set, keys) -> float:
+    """Largest owned share over several frame (or day) keys."""
+    return max((_owned_share(owners, flagged, k) for k in keys), default=0.0)
+
+
+def decide_hourly(hours, q: dict, frame_flags: set = frozenset(), day_excl: set = frozenset()):
+    """Per tile-hour rejection columns for a `scan_hours.py` table (DECISIONS §23). A tile-hour
+    is rejected when any of its four tile-frames would be (v4 `decide`), except that a
+    repeated value inside rain of the same intensity (`rep_context` >= repeat.max_context) is
+    kept as a saturated core. `frames`: the four frame timestamps, ';'-joined."""
+    import pandas as pd
+    t = hours
+    fr = [s.split(";") for s in t["frames"].astype(str).values]
+    own = t["owners"].values
+    rf = np.array([_owned_share_frames(o, frame_flags, f) for o, f in zip(own, fr)]) \
+        if frame_flags else np.zeros(len(t))
+    rd = np.array([_owned_share_frames(o, day_excl, {s[:8] for s in f}) for o, f in zip(own, fr)]) \
+        if day_excl else np.zeros(len(t))
+    r = q["repeat"]
+    ctx = t["rep_context"].values if "rep_context" in t else np.full(len(t), np.nan)
+    with np.errstate(invalid="ignore"):
+        in_rain = ctx >= r.get("max_context", np.inf)
+    out = pd.DataFrame({
+        "rej_ceiling": t["n_ceiling_max"].values >= q["ceiling"]["reject_pixels"],
+        "rej_repeat": (t["rep_count"].values >= r["min_count"]) & (t["rep_excess"].values >= r["min_excess"])
+                      & ~in_rain,
+        "rej_refused": t["n_refused"].values > 0,
+        "radar_fail_frac": rf,
+        "rej_radar_frame": rf >= q["radar_frame"]["reject_share"],
+        "radar_day_frac": rd,
+        "rej_radar_day": rd >= q["radar_day"]["reject_share"],
+    }, index=t.index)
+    out["rej_v4"] = out[["rej_ceiling", "rej_repeat", "rej_refused", "rej_radar_frame",
+                         "rej_radar_day"]].any(axis=1)
+    return out
+
+
 def _owned_share(owners: str, flagged: set, ts=None) -> float:
     if not isinstance(owners, str) or not owners:
         return 0.0

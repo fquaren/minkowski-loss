@@ -33,7 +33,7 @@ import pandas as pd
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from scripts.data_quality._md import md_table  # noqa: E402
 from src.data.radar_screen import (FEATURES, VB0, VB1, active_sites, ceiling_candidates,  # noqa: E402
-                                   dbz, frame_flagged)
+                                   dbz, frame_flagged, frame_flagged_temporal)
 
 NB = VB1 - VB0 + 1
 SEASON = {12: "DJF", 1: "DJF", 2: "DJF", 3: "MAM", 4: "MAM", 5: "MAM",
@@ -102,7 +102,8 @@ def _frames_day(args):
     z = np.load(f)
     feats, times, keys = z["feats"], z["times"].astype(str), z["keys"].astype(str)
     day = os.path.basename(f)[:8]
-    fl = frame_flagged(feats, q)                                   # (T, R)
+    fl = frame_flagged_temporal(feats, q)                          # (T, R); = frame_flagged
+                                                                   # without radar_frame.temporal
     valid = feats[..., 0] >= q["radar_frame"]["min_valid"]
     rows = []
     with np.errstate(invalid="ignore"), __import__("warnings").catch_warnings():

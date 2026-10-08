@@ -15,6 +15,8 @@ repeat:                       # rule 1, per tile after all repairs
   u: 31.0
   min_count: 50               # ODYSSEY tail tiles: 99.9th percentile of the max count is 24
   min_excess: 10              # provisional; vs occupied values within +-0.5 dB (NIMBUS ladder)
+  max_context: 0.5            # hourly (DECISIONS §23): not rejected when the ring around the repeated
+                              # pixels is >= this x the value (a saturated core inside rain); provisional
 
 guard:                        # rule 4
   max_size: 500               # provisional; components above this are not ring-median repaired
@@ -27,6 +29,10 @@ radar_frame:                  # rule 3, provisional until Phase 0
   jump_min: 2.0
   f10_min: 0.2
   reject_share: 0.10          # reject a tile when flagged radars own >= this share of it
+  temporal:                   # hourly (DECISIONS §23): a flag stands only if the radar is flagged in a
+    min_wet_jump: 0.15        # neighbouring frame too, or its wet fraction exceeds both neighbours' by
+                              # >= this. Provisional: 20 gallery cases (15/15 failures kept, 4/4 storms
+                              # dropped; closest storm 0.13). Changes frame_flags on a rerun of `frames`.
 
 radar_day:                    # rule 5: reviewed by the researcher (DECISIONS §19)
   review_top: 100
@@ -51,3 +57,18 @@ known_failures:               # regression catalogue (DECISIONS §20, criterion 
     value: 48.62
     signature: reflectivity ceiling (50.0 dBZ), stationary speckled blob, 7 days
     check: no stored tile with >= 5 pixels at the value on these days
+
+hourly:                       # target = 1-h accumulation, ACRR convention (DECISIONS §21, §23; src/data/hourly.py)
+  hot_fallback: keep          # hot pixel with no clean 5x5 neighbour: left as is and coded (v3: set to 0)
+  max_size: 500               # guard, as guard.max_size
+  ray_u: 1.0                  # multi-frame rays: thin (<= 3 px) lines >= 80 km through a radar site ...
+  ray_half_window: 4          # ... at the same pixels (+-1 px) in >= ray_min_frames of t +- 4 frames
+  ray_min_frames: 3           # provisional
+  peak_u: 1.0                 # local peak: >= peak_u mm/h and >= peak_ratio x its 5x5 median
+  peak_ratio: 2.0
+  p1_min: 24                  # provisional: flagged when a local peak in >= 24 of 96 frames
+                              # (16 daily-max tiles: artefacts 38-74, real cells 4-12, event rays 20-39)
+  p1_ring_min: 12             # provisional: lower on climatological range rings
+  p2_min: 12                  # provisional: rays inside rain = site-anchored lines of n_peak >= 12
+  rules: {hot: true, spike: true, ceiling: true, footprint: true, ring: true, ray: true,
+          persist: true, unsupported: true}

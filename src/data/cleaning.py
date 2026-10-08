@@ -76,6 +76,11 @@ FOOTPRINT_MIN = 150.0        # region around a > UNPHYSICAL core that is repaire
 REPAIR_FOOTPRINT, REPAIR_RAY, REPAIR_RING, REPAIR_UNSUPPORTED = 1, 2, 4, 8   # bit codes
 REPAIR_CEILING, REPAIR_REFUSED = 16, 32     # v4: ceiling pixel repaired; component too large to
                                             # repair, left as is (DECISIONS §19, rule 4)
+REPAIR_HOT_KEPT, REPAIR_PERSIST = 64, 128   # hourly chain (DECISIONS §23): hot pixel with no clean
+                                            # neighbour, left as is; persistent local peak lowered
+RAY_MAX_WIDTH_PX = 3.0       # hourly ray test: a ray is a few px wide (a front is not)
+RAY_SITE_OFFSET_PX = 5.0     # the ray's axis passes within this + RAY_SITE_OFFSET_SLOPE x distance
+RAY_SITE_OFFSET_SLOPE = 0.03 # of a radar site (~1.7 deg), instead of only pointing near it
 
 _RING = np.ones((3, 3), dtype=bool)
 _RING[1, 1] = False
@@ -101,16 +106,23 @@ def hot_mask_from_climatology(clim, year: int, min_valid: int = 200,
     return f > freq
 
 
-def clean_frame(frame: np.ndarray, hot: np.ndarray | None = None):
+def clean_frame(frame: np.ndarray, hot: np.ndarray | None = None, hot_fallback: str = "zero",
+                spikes: bool = True):
     """Repair one full frame. Returns (cleaned, info).
 
     `frame`: rain rate (mm/h), NaN where there is no radar coverage (kept NaN).
     `hot`: boolean static-clutter mask of the same shape, or None.
+    `hot_fallback`: what a hot pixel with no valid non-hot pixel in its 5x5 window becomes.
+    "zero" (v2/v3) sets it to 0, which zeroes real rain inside hot bands > ~4 px wide
+    (EXPERIMENTS §5, rule gallery); "keep" leaves it and returns its map as info["hot_kept"].
+    `spikes=False` skips the spike repair (per-rule ablation only, DECISIONS §22).
     """
     valid = np.isfinite(frame)
     z = np.where(valid, frame, 0.0).astype(np.float32)
     z[z < DRIZZLE] = 0.0
     info = {"n_hot_fixed": 0, "n_spikes_fixed": 0}
+    if hot_fallback == "keep":
+        info["hot_kept"] = np.zeros(z.shape, bool)
 
     if hot is not None:
         cand = hot & valid & (z > 0)
@@ -120,13 +132,16 @@ def clean_frame(frame: np.ndarray, hot: np.ndarray | None = None):
             for y, x in zip(*np.nonzero(cand)):
                 win = src[max(0, y - 2):y + 3, max(0, x - 2):x + 3]
                 fin = win[np.isfinite(win)]
+                if not fin.size and hot_fallback == "keep":
+                    info["hot_kept"][y, x] = True
+                    continue
                 rep = float(np.median(fin)) if fin.size else 0.0
                 if rep < z[y, x]:
                     z[y, x] = rep
                     info["n_hot_fixed"] += 1
 
     nbmax = ndimage.maximum_filter(z, footprint=_RING, mode="constant", cval=0.0)
-    spike = (z >= SPIKE_MIN) & (nbmax < SPIKE_RATIO * z)
+    spike = (z >= SPIKE_MIN) & (nbmax < SPIKE_RATIO * z) if spikes else np.zeros(z.shape, bool)
     if spike.any():
         z[spike] = nbmax[spike]
         info["n_spikes_fixed"] = int(spike.sum())
@@ -363,6 +378,62 @@ def _ray_components_mask(tile: np.ndarray, row0: int, col0: int, sites_rc: np.nd
         diff = np.abs(((dirs - ang) + np.pi / 2) % np.pi - np.pi / 2)
         if np.degrees(diff.min()) <= RAY_MAX_ANGLE_DEG:
             out[sl] |= comp
+    return out
+
+
+def anchored_lines(z: np.ndarray, sites_rc: np.ndarray, u: float = 1.0, row0: int = 0,
+                   col0: int = 0, min_px: int = 30, min_len: float = RAY_MIN_LEN_PX,
+                   max_width: float = RAY_MAX_WIDTH_PX, offset: float = RAY_SITE_OFFSET_PX,
+                   slope: float = RAY_SITE_OFFSET_SLOPE) -> np.ndarray:
+    """Pixels of thin straight components of `z >= u` whose axis passes through a radar site.
+
+    The hourly replacement for `_ray_components_mask` (DECISIONS §23). The per-frame rule
+    fired on fronts because it had no width limit and only asked the axis to point within
+    10 deg of any radar within 250 km. Here a component must be at most `max_width` px wide
+    (sqrt(12 x minor variance)), at least `min_len` long, and its axis line must pass within
+    `offset + slope x distance` px of a site within RAY_MAX_DIST_KM of its centroid. Works on
+    a full frame or on a crop whose south-west pixel is (row0, col0), and on any 2-D field:
+    the hourly chain also runs it on the map of local-peak counts, where rays inside rain are
+    separate components. Returns a boolean mask."""
+    out = np.zeros(z.shape, bool)
+    if sites_rc is None or not len(sites_rc):
+        return out
+    lab, n = ndimage.label(np.nan_to_num(z, nan=0.0) >= u, structure=_EIGHT)
+    if not n:
+        return out
+    idx = np.arange(1, n + 1)
+    size = np.bincount(lab.ravel(), minlength=n + 1)[1:].astype(float)
+    keep = size >= min_px
+    if not keep.any():
+        return out
+    idx, size = idx[keep], size[keep]
+    yy, xx = np.indices(z.shape, dtype=float)
+    my = ndimage.sum(yy, lab, idx) / size
+    mx = ndimage.sum(xx, lab, idx) / size
+    cyy = ndimage.sum(yy * yy, lab, idx) / size - my ** 2
+    cxx = ndimage.sum(xx * xx, lab, idx) / size - mx ** 2
+    cxy = ndimage.sum(xx * yy, lab, idx) / size - mx * my
+    tr, det = cyy + cxx, cyy * cxx - cxy ** 2
+    disc = np.sqrt(np.maximum(tr ** 2 / 4 - det, 0))
+    lmax, lmin = tr / 2 + disc, np.maximum(tr / 2 - disc, 0)
+    thin = (np.sqrt(12 * lmax) >= min_len) & (np.sqrt(12 * lmin) <= max_width)
+    if not thin.any():
+        return out
+    ang = 0.5 * np.arctan2(2 * cxy, cxx - cyy)               # axis direction in (x, y)
+    max_px = RAY_MAX_DIST_KM / 2.0
+    hit = []
+    for k in np.nonzero(thin)[0]:
+        dy = sites_rc[:, 0] - (row0 + my[k])
+        dx = sites_rc[:, 1] - (col0 + mx[k])
+        dist = np.hypot(dy, dx)
+        near = dist <= max_px
+        if not near.any():
+            continue
+        perp = np.abs(dx[near] * np.sin(ang[k]) - dy[near] * np.cos(ang[k]))
+        if (perp <= offset + slope * dist[near]).any():
+            hit.append(idx[k])
+    if hit:
+        out = np.isin(lab, hit)
     return out
 
 
