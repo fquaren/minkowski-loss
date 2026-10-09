@@ -181,6 +181,9 @@ Acceptance (`calib/mask_validate`):
   rest on their signatures.
 - *Italian radars are not in OPERA.* Italy is outside the dataset; FBK's `srt1_adj`
   (2018 on) could add it.
+- *Austria never contributes, and Switzerland and Hungary only from 2014.* Those areas have
+  valid composite data from distant foreign radars, with beam overshoot over the Alps.
+  Ownership follows the radars listed in each composite's `how/nodes` (DECISIONS §27).
 - *Residual contamination at >= 75 mm* after the burst rule: about a third of kept values
   over Germany are RADKLIM-dry.
 - *The plain hourly sum beads fast-moving cells.*
@@ -194,7 +197,8 @@ Acceptance (`calib/mask_validate`):
 - *Detection ideas not yet implemented:* satellite cloud-top veto for candidate extremes,
   lightning, Lagrangian consistency, storm-object plausibility, regional curated products.
 - *Before the full-archive build:*
-  - radar-ownership geometry without Italian sites (rerun the radar pass);
+  - radar-ownership geometry from the contributing radars (DECISIONS §27; radar pass
+    rerun launched 2026-10-09, `logs/radar_pass_v4_contrib.log`);
   - automatic radar-day exclusion from a pre-stated score;
   - the readiness gate with gauge false-alarm and miss rates (DECISIONS §20, §24);
   - hourly split and store scripts;

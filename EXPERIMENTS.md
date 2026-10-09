@@ -560,6 +560,12 @@ isoperimetric scatter.
         Slides on the whole dataset work: `notes/dataset_v4_slides.pdf`.
         **Phase 2 launched 2026-10-07 after this commit** (`logs/radar_pass_v4.log`, ~9 h,
         5,023 day stores).
+        *Phase 2 rerun (2026-10-09, DECISIONS §27):* the ownership geometry now uses only the
+        radars listed in each composite's `how/nodes` (`scripts/data/opera_nodes.py`, 167 of
+        170 months). No Italian, Austrian or Balkan radar is ever listed; CH and HU only from 2014.
+        The 2026-10-07 outputs, incl. `review.csv`, are in `quality_v4/phase2_db_geometry/`.
+        The rerun runs the radar pass, then ceilings, frames and rank
+        (`logs/chain_phase2_contrib.sh`, `logs/radar_pass_v4_contrib.log`, ~9-10 h).
         *Per-rule gallery review (2026-10-07, `scripts/data_quality/rule_gallery.py`,
         `calib/rule_gallery/rule_gallery.pdf`, `index.csv`; logs `logs/rule_gallery_*.log`):*
         prompted by the slide-10 "RLAN ray" example for MCH, which is a front. The census

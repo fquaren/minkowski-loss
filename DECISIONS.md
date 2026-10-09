@@ -1537,3 +1537,29 @@ researcher's `review.csv` record stays there unchanged.
 Confidence: the node lists are authoritative for which radars contributed in the sampled
 months. The union over months may miss a radar that was down at every sampled time (one
 composite per month).
+
+**Check after launch (2026-10-09).** On the first rerun day (2012-09-10), 93 radars are kept
+out of 175 database-active ones.
+- *All 14 Spanish radars are kept; no Italian radar is.*
+- *Several radars over which the composite has valid data are dropped in 2012-13:* CH, HU,
+  Jabbeke, Serbia, Oslo and Riga. Their countries enter the node lists later:
+
+  | country | first year listed | last year listed |
+  |---|---|---|
+  | be (Wideumont) | 2013 | 2026 |
+  | ch | 2014 | 2026 |
+  | hu | 2014 | 2026 |
+  | lv | 2015 | 2026 |
+  | rs | 2017 | 2024 |
+  | gr | 2021 | 2026 |
+  | lt | 2025 | 2026 |
+
+  Never listed: at, it, cy, tr, ba, me, mk, al, bg, md, ua.
+- *Valid data is not evidence that a radar contributes.* The composite's valid mask also
+  covers areas that neighbouring radars reach, including "undetect". Over Switzerland in
+  2012 and over Austria in every year, the valid fraction is 1.0 although no national radar
+  contributes. The node lists stay the criterion. Those areas are owned by the nearest
+  contributing radar, which is the one actually measuring them.
+- *Consequence for the data, a limitation to state:* Austria (never), Switzerland and
+  Hungary (before 2014) are observed only by distant foreign radars, with beam overshoot over
+  the Alps. Extremes there are likely underestimated. Kept, not screened.
