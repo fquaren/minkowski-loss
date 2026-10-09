@@ -222,3 +222,53 @@ def test_hourly_day_adds_sum_adv_only_when_asked(tmp_path):
     assert sum(h["sum_adv"] is not None for h in on.hours) >= 23
     for a, b in zip(off.hours, on.hours):
         np.testing.assert_array_equal(a["sum"], b["sum"])      # the plain sum is unchanged
+
+
+# ---------------------------------------------------------------- isolated single-frame bursts (§26)
+def _burst_days(tmp_path, embedded=False, frames_hit=(5,)):
+    """A 2x2 burst of 250 mm/h at (40, 40) in the given frames; optionally embedded in a
+    stationary rain area of 20 mm/h."""
+    for d, day in enumerate(("20200101", "20200102")):
+        fr = []
+        for k in range(96):
+            f = np.zeros((H, W), np.float32)
+            if embedded:
+                f += blob(H, W, 40, 40, 20.0, 8.0)
+            if d == 0 and k in frames_hit:
+                f[40:42, 40:42] = 250.0
+            fr.append(f)
+        _write_day(tmp_path, day, fr)
+
+
+def _run_burst(tmp_path, on=True):
+    return HourlyDay(str(tmp_path), "20200101", "TOT_PREC", hot=lambda y: None, sites_rc=SITE,
+                     cfg={"rules": {"burst": on, "unsupported": False, "spike": False, "persist": False}}).run()
+
+
+def test_isolated_single_frame_burst_is_repaired(tmp_path):
+    _burst_days(tmp_path)                                    # frame 5 = 01:15, hour ending 02:00
+    on, off = _run_burst(tmp_path, True), _run_burst(tmp_path, False)
+    h_on = [h for h in on.hours if str(h["end"])[11:16] == "02:00"][0]
+    h_off = [h for h in off.hours if str(h["end"])[11:16] == "02:00"][0]
+    assert h_off["sum"][40, 40] > 50 and h_on["sum"][40, 40] < 1
+    assert (on.code[:, 40, 40] & C.REPAIR_BURST).any()
+
+
+def test_burst_inside_rain_is_kept(tmp_path):
+    _burst_days(tmp_path, embedded=True)                     # a core with rain around it
+    on, off = _run_burst(tmp_path, True), _run_burst(tmp_path, False)
+    for a, b in zip(on.hours, off.hours):
+        np.testing.assert_array_equal(a["sum"], b["sum"])
+
+
+def test_burst_over_several_frames_is_kept(tmp_path):
+    _burst_days(tmp_path, frames_hit=(5, 6, 7, 8))           # high in every frame of the hour
+    on, off = _run_burst(tmp_path, True), _run_burst(tmp_path, False)
+    for a, b in zip(on.hours, off.hours):
+        np.testing.assert_array_equal(a["sum"], b["sum"])
+
+
+def test_burst_rule_off_by_default(tmp_path):
+    _burst_days(tmp_path)
+    hd = HourlyDay(str(tmp_path), "20200101", "TOT_PREC", hot=lambda y: None, sites_rc=SITE).run()
+    assert not (hd.code & C.REPAIR_BURST).any()

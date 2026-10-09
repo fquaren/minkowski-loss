@@ -8,8 +8,8 @@ RADKLIM as in the §24 removal test.
   run      writes per day the pixel-hours with max(raw, RADKLIM) >= 1 mm: raw A, no-mask Cn,
            and per threshold Ct, plus RADKLIM K
   summary  per threshold, separately on the even and odd halves of the day list:
-             removed  Ct <= 0.5 Cn (the mask lowered it to at most half),
-             kept     Ct >= 0.95 Cn and the pixel not masked,
+             removed  Cn >= 1 mm and Ct <= 0.5 Cn (the mask lowered something that was left),
+             kept     Cn >= 1 mm and Ct >= 0.95 Cn,
            share confirmed by RADKLIM (K >= 0.5 A) in raw bins 10-20 / 20-50 / 50-100 mm.
            Pass in a bin with n >= 30: removed confirmed < 0.5 x kept. The threshold is chosen
            on the even half by the rule of DECISIONS §25 and reported on the odd half. Also
@@ -32,6 +32,7 @@ import pandas as pd
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path[:0] = [REPO, os.path.join(REPO, "scripts", "dataset_v2"), os.path.dirname(__file__)]
 from pixel_outliers import D2_THRS, OUT as PO_DIR  # noqa: E402
+from radklim_presence import k_tolerant  # noqa: E402
 
 D = "/home/fquareng/work/data/extremes/OPERA"
 CAL = f"{D}/quality_v4/calib"
@@ -71,7 +72,8 @@ def run_day(day):
                                cfg=cfg, crop=(y0, y1, x0, x1)).run()
     base = runs["Cn"]
     d0 = np.datetime64(pd.Timestamp(day))
-    cols = {k: [] for k in ["A", "K", "hour", "masked_any"] + list(runs)}
+    Kt = k_tolerant(K24)
+    cols = {k: [] for k in ["A", "K", "K_tol", "hour", "row", "col", "masked_any"] + list(runs)}
     for j, h in enumerate(base.hours):
         i = int((h["end"] - d0) / np.timedelta64(1, "h")) - 1
         if not 0 <= i < 24:
@@ -81,7 +83,10 @@ def run_day(day):
         m = np.isfinite(k) & np.isfinite(a) & ~unphys & (np.maximum(a, np.nan_to_num(k)) >= 1.0)
         if not m.any():
             continue
-        cols["A"].append(a[m]); cols["K"].append(k[m]); cols["hour"].append(np.full(m.sum(), i, np.int8))
+        yy, xx = np.nonzero(m)
+        cols["A"].append(a[m]); cols["K"].append(k[m]); cols["K_tol"].append(Kt[i][m])
+        cols["row"].append((yy + y0).astype(np.int16)); cols["col"].append((xx + x0).astype(np.int16))
+        cols["hour"].append(np.full(m.sum(), i, np.int8))
         anym = np.zeros(m.sum(), bool)
         for name, hd in runs.items():
             hh = [x for x in hd.hours if x["end"] == h["end"]][0]
@@ -104,15 +109,17 @@ def evaluate(X, thr):
     rows, ok = [], True
     for lo, hi in ((10, 20), (20, 50), (50, 100)):
         b = X[(X.A >= lo) & (X.A < hi) & X[col].notna()]
-        removed = b[b[col] <= 0.5 * b.Cn]
-        kept = b[b[col] >= 0.95 * b.Cn]
-        conf = lambda s: float((s.K >= 0.5 * s.A).mean()) if len(s) else np.nan
+        removed = b[(b.Cn >= 1.0) & (b[col] <= 0.5 * b.Cn)]          # Cn >= 1: something left to remove
+        kept = b[(b.Cn >= 1.0) & (b[col] >= 0.95 * b.Cn)]
+        conf = lambda s: float((s.K >= 0.5 * s.A).mean()) if len(s) else np.nan          # pre-stated (§25)
+        dry = lambda s: float((s.K_tol < 5).mean()) if len(s) and "K_tol" in s else np.nan  # presence (§25 result)
         ck, cr = conf(kept), conf(removed)
         passed = None if len(removed) < 30 else bool(cr < 0.5 * ck)
         ok &= passed is not False
         rows.append({"bin": f"{lo}-{hi}", "n": len(b), "n_removed": len(removed), "share_removed": len(removed) / max(len(b), 1),
-                     "confirm_kept": ck, "confirm_removed": cr, "pass": passed})
-    n10 = int(((X.A >= 10) & (X[col] <= 0.5 * X.Cn)).sum())
+                     "confirm_kept": ck, "confirm_removed": cr, "pass": passed,
+                     "kept RADKLIM-dry": dry(kept), "removed RADKLIM-dry": dry(removed)})
+    n10 = int(((X.A >= 10) & (X.Cn >= 1.0) & (X[col] <= 0.5 * X.Cn)).sum())
     return pd.DataFrame(rows), ok, n10
 
 

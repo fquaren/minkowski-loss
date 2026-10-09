@@ -71,4 +71,8 @@ hourly:                       # target = 1-h accumulation, ACRR convention (DECI
   p1_ring_min: 12             # provisional: lower on climatological range rings
   p2_min: 12                  # provisional: rays inside rain = site-anchored lines of n_peak >= 12
   rules: {hot: true, spike: true, ceiling: true, footprint: true, ring: true, ray: true,
-          persist: true, unsupported: true}
+          persist: true, unsupported: true, burst: true}
+  burst:                      # isolated single-frame bursts (DECISIONS §26; accepted 2026-10-09)
+    min_share: 0.8            # one frame carries > 80% of the pixel-hour
+    min_rate: 100.0           # ... at >= 100 mm/h
+    iso_median: 1.0           # ... and the hour's 5x5 median is < 1 mm (5 mm fails the test)

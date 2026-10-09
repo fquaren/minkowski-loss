@@ -1291,3 +1291,142 @@ within +-2 px and +-1 h" (dry = < 5 mm).
 - *Candidate rule, proposed and not yet implemented:* an isolated single-frame burst. One
   frame carries most of the hour at a high rate, with no rain in the immediate 4-6 km that
   hour. The isolation condition protects real cores embedded in rain.
+
+---
+
+## 26. Isolated single-frame bursts: a rule for the remaining contamination (2026-10-09)
+
+Written before any result of the rule (researcher approved implementing it, 2026-10-09).
+
+**The problem it targets.** After the hourly screen, over Germany, RADKLIM is dry (< 5 mm within
++-2 px and +-1 h) under 31% of the kept screened pixel-hours >= 50 mm, 68% >= 75 mm and 86%
+>= 100 mm, against a 5-6% disagreement floor for ordinary 10-50 mm values (§25,
+"RADKLIM as a presence test"). Those pixel-hours set the tail statistics.
+
+Signature of the 228 such pixel-hours >= 50 mm:
+- *single frame:* one 15-min frame carries > 80% of the hour in 88% (median 100%), at a
+  median rate of 294 mm/h (q10-q90: 170-440);
+- *isolated:* 92% have essentially no rain around them that hour (5x5 median of the hourly
+  sum < 5 mm; median 0.04 mm);
+- *not clutter:* not persistent (median 2 local-peak frames in the day) and not near radars
+  (median 59 km);
+- *on convective days:* concentrated on big ones (2014-06-08..10, 2013-07-28,
+  2014-07-27..29, 2023-07-29).
+
+They survive because the temporal-support rule accepts any echo >= 1 mm/h within 30 km in a
+neighbouring frame, which the surrounding storms provide on convective days. The spike rule
+misses them because they are clusters of a few pixels that protect each other.
+
+**The rule** (`src/data/hourly.py`, `burst`; per pixel-hour, after the temporal-support repair
+and before the hour is summed):
+- *Single frame:* within the hour's four frames, one frame carries > 80% of the pixel's sum.
+- *High rate:* that frame's value at the pixel is >= 100 mm/h.
+- *Isolated:* the median of the hour's screened sum over the 5x5 window around the pixel
+  (10 km) is < 1 mm.
+- *Action:* in the dominant frame, the pixel takes the median of the valid values of its
+  5x5 window in that frame, if lower. Coded REPAIR_BURST (256; the repair codes become
+  uint16).
+- *Protection of real cores:* a real convective or hail core has rain around it in that
+  hour, so it fails the isolation condition. The threshold is set low (1 mm) to keep that
+  protection wide.
+
+**Acceptance** (RADKLIM presence test over Germany on the calibration days; same definitions as
+§25):
+1. *Its removals are RADKLIM-dry:* the burst-repaired pixel-hours (screened <= 0.5 x the
+   value without the rule) are dry in >= 85% of cases in every raw bin with n >= 30 (the
+   range of the existing rules).
+2. *It reduces the contamination:* the RADKLIM-dry share of the kept screened values
+   >= 50 mm falls.
+3. *Real cores:* the number of removed pixel-hours with RADKLIM >= 0.5 x raw within tolerance
+   is reported, with their days, together with the flag rate by raw intensity (§17
+   safeguard 2).
+
+If 1 fails, the rule is not adopted. The 1 mm / 100 mm/h / 80% thresholds are reported as they
+are, not tuned on the result. The sensitivity to an isolation threshold of 5 mm is reported
+separately.
+
+**Result (2026-10-09; `scripts/data_quality/burst_validate.py`,
+`calib/burst_validate/summary.txt`; 192 days with RADKLIM, 2.6 M pixel-hours with max(raw,
+RADKLIM) >= 5 mm over Germany). The rule passes as pre-stated and is adopted.**
+
+*Criterion 1, its removals are RADKLIM-dry.* Removals = the rule lowers a pixel-hour of the
+screened field (C >= 1 mm) to <= 0.5 C:
+
+| raw bin | pixel-hours | lowered | flag rate | RADKLIM-dry |
+|---|---|---|---|---|
+| 10-20 mm | 210,141 | 0 | 0 | - |
+| 20-50 mm | 29,959 | 308 | 1.0% | 87.7% |
+| 50-100 mm | 4,245 | 141 | 3.3% | 97.2% |
+| >= 100 mm | 1,588 | 30 | 1.9% | 100% |
+
+*Criterion 2, the contamination falls.* RADKLIM-dry share of the kept screened values >= u,
+without -> with the rule:
+
+| u | all days | event days | random days |
+|---|---|---|---|
+| 20 mm | 5.8% -> 4.4% (n 29,673 -> 29,194) | | |
+| 30 mm | 9.6% -> 4.5% (6,383 -> 6,018) | 9.7% -> 3.5% | 11.0% -> 6.1% |
+| 50 mm | 31.5% -> 11.7% (744 -> 573) | 34.0% -> 9.5% | 27.3% -> 12.7% |
+| 75 mm | 68.8% -> 34.7% (160 -> 72) | 70.8% -> 29.4% | |
+| 100 mm | 86% -> 60% (44 -> 15) | | |
+
+At >= 30 mm the share reaches the 5-6% disagreement floor of ordinary values. At >= 50 mm it
+is down to ~12%; at >= 75 mm a third remains (25 of 72 pixel-hours), a residual for a later
+round.
+
+*Criterion 3, real cores.*
+- 13 of the 479 removals (2.7%) have RADKLIM >= 0.5 x raw within tolerance, spread over 8
+  days (at most 4 on 2015-07-04).
+- The flag rate stays at 1-3% of pixel-hours per raw bin. It does not climb with intensity
+  the way a rule hitting real cores would.
+
+*Sensitivity: isolation threshold 5 mm instead of 1 mm.* It FAILS criterion 1: removals at
+20-50 mm are only 50% RADKLIM-dry (832 lowered), and 155 of 1,053 removals are confirmed.
+The isolation condition is what protects real rain, and 1 mm is the right side of it.
+
+*Correction made while summarising (recorded so the numbers can be audited).* The first summary
+counted as "removed by the rule" every pixel-hour whose screened value C was already 0, because
+the condition Cb <= 0.5 C is then trivially true. That inflated the removals to ~20,000 with
+61% "confirmed". The removal definition now requires C >= 1 mm. The criterion-2 table compares
+the kept values directly and was not affected.
+
+**Adopted:** `hourly.rules.burst: true` in `configs/quality_v4.yaml`, with the pre-stated
+thresholds (share > 0.8, frame rate >= 100 mm/h, isolation median < 1 mm).
+
+**Result, per-pixel Mahalanobis mask (2026-10-09; `scripts/data_quality/pixel_outliers.py`,
+`mask_validate.py`; `calib/pixel_outliers`, `calib/mask_validate/summary.txt`). Not adopted
+pending the researcher's decision.**
+- *Masks:* built for 2012-2026. Median per year: 32,282 / 10,301 / 1,559 / 65 pixels at
+  d^2 > 25 / 100 / 400 / 1600 (1.6% / 0.5% / 0.07% / 0.003% of valid pixels). They contain
+  most of the existing hot mask (520 of 528 pixels at d^2 > 25). The flag rate rises in
+  the highest elevation decile (4.2% vs ~0.9% at d^2 > 25).
+- *Pre-stated criterion* (RADKLIM confirms the magnitude, K >= 0.5 raw, for removals at less
+  than half the rate of kept values): every threshold passes on both halves. The selection
+  rule picks d^2 > 25, which passes on the odd half (10-20 / 20-50 / 50-100 mm: confirmed
+  19 / 13 / 2% of removals vs 58 / 46 / 31% of kept).
+- *Presence test* (RADKLIM-dry within tolerance, §25), share of removals that are dry, odd
+  half:
+
+  | threshold | 10-20 mm | 20-50 mm | 50-100 mm | removals >= 10 mm |
+  |---|---|---|---|---|
+  | d^2 > 25 | 60% | 64% | 87% | 2,091 |
+  | d^2 > 100 | 76% | 81% | 87% | 857 |
+  | d^2 > 400 | 91% | 93% | 100% (n 5) | 169 |
+
+  The kept-value floor is 3-6% dry; the existing rules' removals are 85-99% dry. So at
+  d^2 > 25 about 40% of the 10-50 mm removals have real rain under them. The mask repairs
+  the pixel in every frame, as the hot mask does, and so shaves real rain wherever a
+  flagged pixel sits inside a storm.
+- *The two criteria disagree.* The magnitude criterion was pre-stated for the mask. The
+  decision to trust RADKLIM only for presence was made earlier on 2026-10-09, before this
+  rerun, but it was not written as the mask's criterion.
+- *Proposed (Claude):* do not adopt d^2 > 25. Options:
+  1. use the mask only as a prior that lowers the persistence threshold, so pixels are
+     repaired only on days they behave like clutter (preferred; needs implementing and
+     the same test);
+  2. adopt d^2 > 400 (passes both criteria, small effect);
+  3. keep the existing hot mask only.
+- *Correction made while summarising (auditable).* The first run counted pixel-hours already
+  zeroed by other rules as removed by the mask (65-81% "removed" at 50-100 mm). The removal
+  definition now requires the no-mask value >= 1 mm. First run kept in
+  `calib/mask_validate_run1_nopos`.

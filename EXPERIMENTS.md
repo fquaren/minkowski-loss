@@ -1424,6 +1424,24 @@ isoperimetric scatter.
       clutter is 5-17% of the tail removal (5.4% at >= 100 mm, 16.9% at >= 10 mm). The
       `clean_frame` group's tail effect is mostly the spike rule, which RADKLIM classes as
       artefact removal (0-1% confirmed vs 27-56% for kept values).
+      **Consolidated methods-and-results draft: `notes/opera_hourly_screen.md`** (2026-10-09). Keep
+      it in step with DECISIONS §21-§26 when numbers change.
+      **2026-10-09, contamination and the burst rule.**
+      - *RADKLIM is now used as a presence test only* (dry = < 5 mm within +-2 px / +-1 h;
+        DECISIONS §25). By that test the screen's removals are 85-99% dry.
+      - *The kept screened tail over Germany was still contaminated:* 31% dry at >= 50 mm,
+        68% at >= 75 mm.
+      - *The signature was isolated single-frame bursts on convective days* (88% one frame
+        > 80% of the hour; 92% isolated).
+      - *The new burst rule (DECISIONS §26) passed its pre-stated test* and is enabled
+        (`hourly.rules.burst`). Contamination: 9.6 -> 4.5% at >= 30 mm, 31.5 -> 11.7% at
+        >= 50, 69 -> 35% at >= 75 mm.
+      - *Scripts:* `radklim_presence.py`, `burst_validate.py`; outputs in
+        `calib/radklim_presence`, `calib/burst_validate`.
+      - *Target decided:* the plain hourly sum, with the advection-corrected field stored
+        alongside (`advection_test.py`, `advection_gauges.py`).
+      - *Mahalanobis mask:* acceptance test being rerun after a fix to the removal
+        definition (`mask_validate.py`).
       **Open: which dataset is the main one.** Decided after the RADKLIM removal test
       (DECISIONS §24 addendum) and an OPERA-vs-RADKLIM comparison over Germany of both the
       tail and the geometry (Minkowski functionals, peak ratio) on matched hours.

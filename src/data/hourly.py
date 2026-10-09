@@ -21,6 +21,9 @@ DECISIONS §22):
               site-anchored line of the n_peak >= p2_min map (rays inside rain). In every frame
               where a flagged pixel is a local peak it takes its 5x5 median.
   per frame   cells without temporal support (as v3/v4), judged on the frames above
+  per hour    isolated single-frame bursts (`burst`, off until accepted; DECISIONS §26): one
+              frame carries > 80% of the pixel-hour at >= 100 mm/h and the hour's 5x5 median
+              is < 1 mm; that frame's pixel takes its 5x5 median
   hour        sum of the four frames; optionally (`advection`) also the advection-corrected
               mean over the same window, h["sum_adv"] (DECISIONS §25)
 
@@ -39,14 +42,15 @@ from scipy import ndimage
 from src.data import cleaning as C
 
 STEP = np.timedelta64(15, "m")
-RULES = ("hot", "spike", "ceiling", "footprint", "ring", "ray", "persist", "unsupported")
+RULES = ("hot", "spike", "ceiling", "footprint", "ring", "ray", "persist", "unsupported", "burst")
 DEFAULTS = {
     "hot_fallback": "keep",
     "max_size": 500,                 # v4 guard
     "ray_u": 1.0, "ray_half_window": 4, "ray_min_frames": 3,
     "peak_u": 1.0, "peak_ratio": 2.0,
     "p1_min": 24, "p1_ring_min": 12, "p2_min": 12,
-    "rules": {r: True for r in RULES},
+    "rules": {**{r: True for r in RULES}, "burst": False},   # burst: off until accepted (§26)
+    "burst": {"min_share": 0.8, "min_rate": 100.0, "iso_median": 1.0},
     "advection": None,               # None: plain sum only; {"mode": "blend"|"noblend",
                                      # "interp": "linear"|"cubic"|"nearest"} adds h["sum_adv"]
 }
@@ -59,6 +63,8 @@ def config(q: dict | None = None) -> dict:
     for k, v in h.items():
         if k == "rules":
             cfg["rules"].update(v)
+        elif k == "burst" and isinstance(v, dict):
+            cfg["burst"].update(v)
         elif k in DEFAULTS:
             cfg[k] = v
     return cfg
@@ -213,7 +219,7 @@ class HourlyDay:
         hot = self._sl(self.hot_fn(self.year)) if (R["hot"] and self.hot_fn) else None
         ring = self._sl(self.ring_fn(self.year)) if self.ring_fn else None
         S = np.empty_like(raw)
-        code = np.zeros(raw.shape, np.uint8)
+        code = np.zeros(raw.shape, np.uint16)                            # REPAIR_BURST needs bit 8
         kw = {"max_size": cfg["max_size"]}
         for t in range(T):                                               # per-frame rules
             c, info = C.clean_frame(raw[t], hot, hot_fallback=cfg["hot_fallback"],
@@ -291,10 +297,41 @@ class HourlyDay:
                 fin[t], code[t] = C.repair_unsupported(S[t], prev, nxt, code[t], max_size=cfg["max_size"])
             S = fin
 
+        nsec = lambda t: int(np.datetime64(t, "ns").astype(np.int64))
+        if R.get("burst"):                                                # isolated single-frame bursts
+            bc = cfg["burst"]                                             # (DECISIONS §26)
+            at = {nsec(t): j for j, t in enumerate(times)}
+            n_burst = np.zeros(raw.shape[1:], np.int16)
+            for e in times[proc]:
+                if (e - d0) % np.timedelta64(60, "m"):
+                    continue
+                want = [e - k * STEP for k in (3, 2, 1, 0)]                # the hour's frames, H-45 .. H
+                if not all(nsec(w) in at for w in want):
+                    continue
+                jj = [at[nsec(w)] for w in want]
+                F4 = np.nan_to_num(S[jj], nan=0.0)
+                tot, fmax, kmax = F4.sum(0), F4.max(0), F4.argmax(0)
+                cand = (fmax >= bc["min_rate"]) & (fmax > bc["min_share"] * np.maximum(tot, 1e-6))
+                if not cand.any():
+                    continue
+                iso = median5(0.25 * tot, cand) < bc["iso_median"]       # the hour has ~no rain around
+                flag = cand & iso
+                if not flag.any():
+                    continue
+                for slot in range(4):
+                    m = flag & (kmax == slot)
+                    if m.any():
+                        t = jj[slot]
+                        med = median5(S[t], m)
+                        low = m & (med < np.nan_to_num(S[t], nan=0.0))
+                        S[t][low] = med[low]
+                        code[t][low] |= C.REPAIR_BURST
+                        n_burst += low
+            self.signals["n_burst"] = n_burst
+
         adv = {}
         if cfg["advection"]:                       # hour ending H covers frame-times H-52.5 .. H+7.5
             ac = cfg["advection"]                  # (ODYSSEY frame t covers t-10 .. t+5, centre t-2.5)
-            nsec = lambda t: int(np.datetime64(t, "ns").astype(np.int64))
             at = {nsec(t): j for j, t in enumerate(times)}
             Z = np.nan_to_num(S, nan=0.0)
             mo = {}
