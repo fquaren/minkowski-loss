@@ -118,7 +118,7 @@ def main():
     from src.data.cleaning import hot_mask_from_climatology
     from src.data import geo
     dem = geo.load_dem_on_radar_grid(geo.DEFAULT_DEM_PATH) if hasattr(geo, "DEFAULT_DEM_PATH") else None
-    store, rows, nflag = {}, [], {e: None for e in EXPS}
+    store, rows, nflag = {}, [], {t: None for t in D2_THRS}
     with ProcessPoolExecutor(a.workers) as ex:
         for year, res in ex.map(year_scores, [(y, 1000 + y) for y in years]):
             if res is None:

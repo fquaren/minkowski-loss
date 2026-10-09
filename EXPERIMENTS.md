@@ -1313,6 +1313,31 @@ isoperimetric scatter.
       rejection rate per intensity bin, and spot-check each rule's gallery by eye.
 
 ### To explore
+- [ ] **More ways to detect unphysical extremes (write-up 2026-10-09, no time now).** All are
+      magnitude-free, so they do not depend on trusting any product's peak values (DECISIONS
+      §25, "RADKLIM as a presence test"). From most to least independent:
+      1. *Satellite cloud-top veto for candidate extremes.* Heavy hourly rain needs deep cloud.
+         - A pixel-hour >= ~30 mm with no cloud top colder than ~250-260 K within 10 km and
+           +-15 min is physically implausible. The permissive threshold spares warm-topped
+           orographic and stratiform rain.
+         - Data: Meteosat SEVIRI IR 10.8 um, 15 min, Europe-wide, 2004 on, from the EUMETSAT
+           Data Store; or the CM SAF CLAAS cloud type / cloud-top temperature. Only
+           candidate pixel-hours need fetching. A free account is needed.
+         - EURADCLIM applies a clear-sky veto to all rain (MSG cloud type).
+         - Validation: veto rate ~0 on RADKLIM-confirmed extremes, including orographic ones;
+           high on the RADKLIM-dry residuals.
+      2. *Lightning for convective extremes:* MTG Lightning Imager from July 2024 (free;
+         covers the NIMBUS era); earlier years only from commercial networks (EUCLID).
+      3. *Lagrangian consistency for extremes.* An extreme hour carried by one frame, with no
+         precursor or successor along the motion field, is suspect. The motion fields exist
+         now (`hourly.motion_lk`). This generalises the 30 km temporal-support box, which
+         surrounding storms satisfy on convective days.
+      4. *Storm-object plausibility.* Real extreme cores sit in coherent objects with
+         typical size-intensity-gradient relations; a tiny object with a huge peak, or a
+         flat plateau, is suspect. Exploratory, and the riskiest, since it is keyed on
+         intensity structure (§17).
+      5. *Presence checks against regional curated products:* RADKLIM (DE), Italian
+         `srt1_adj` (2018 on), CombiPrecip (CH, archive on request).
 - [ ] **Train and validate on more than one km-scale hourly dataset** (survey RESEARCH_NOTES
       §7.4f, 2026-10-08). Proposal: RADKLIM (DE), COMEPHORE (FR), MRMS v12 (US) and OPERA v4
       (EU), all on a common 2 km grid with one coarsening operator, plus a real-ERA5-input run.

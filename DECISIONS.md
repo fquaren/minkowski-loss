@@ -1222,3 +1222,72 @@ New design (still a Mahalanobis distance, as in Franch et al., with the literatu
       either mountain clutter or real orographic maxima, for the acceptance tests to
       separate.
   - *The mask contains the current hot-pixel mask:* 1,972-1,977 of its 1,982 pixels in 2018.
+
+**Result, advection correction (2026-10-09; `calib/advection_variants/summary.txt`,
+`calib/advection_gauges/summary.txt`).**
+- *By the pre-stated rule, `noblend_nearest` is accepted,* the only variant passing all four
+  criteria:
+  - chi minus RADKLIM: 0 / 0 / -1 at 1 / 2 / 5 mm;
+  - slow-tile max: 0.96 of plain;
+  - mass: 1.000;
+  - gauge-hours >= 20 mm: -6% in median ratio, interval [-10%, +0.4%], a narrow pass.
+  The pysteps-style linear blend fails three criteria; cubic blend and no-blend linear fail
+  two.
+- *Not in the criteria, but decisive for extremes: peaks of moving rain are lowered.* Median
+  tile max, plain / corrected / RADKLIM: slow 9.5 / 8.6 / 9.8, mid 9.2 / 6.4 / 8.3, fast
+  9.3 / 5.4 / 7.2 mm. The plain sum matches RADKLIM on slow rain, overshoots it by 10-30% on
+  moving rain (beads) and the correction undershoots it by 20-25%. In the median tile-hour
+  where RADKLIM has pixels >= 20 mm, every corrected variant has none (plain: half
+  RADKLIM's area).
+- *Undetermined:* how much of the undershoot is motion-field error and how much is RADKLIM's
+  gauge adjustment.
+- *Proposed (Claude), for the researcher to decide:* store both hourly fields, plain and
+  `noblend_nearest`, and choose by training on each against RADKLIM and the gauges.
+
+**Decision on the hourly target (researcher, 2026-10-09).**
+- *The target is the plain sum* of the four frames (ACRR convention).
+- *The advection-corrected field (`noblend_nearest`) is stored alongside.* The choice
+  between them is revisited when training.
+- *Why.* Beading is a sampling property of 15-min data, not unphysical data. Under §17,
+  the least-processed field is the default.
+- *RADKLIM cannot arbitrate magnitudes:*
+  - peaks smoothed and underestimated (reported in the literature);
+  - gauge adjustment interpolated between gauges;
+  - our own 1 -> 2 km averaging;
+  - it confirms only 27% of kept 50-100 mm values and has 7 pixel-hours >= 100 mm where
+    OPERA has 43.
+  Point gauges cannot either: a 2 km pixel mean of a convective core is below the point
+  maximum by construction.
+
+**RADKLIM as a presence test (2026-10-09; `scripts/data_quality/radklim_presence.py`,
+`calib/radklim_presence/summary.txt`).** RADKLIM is trusted only for "is there substantial rain
+within +-2 px and +-1 h" (dry = < 5 mm).
+- *Removals are artefacts on this magnitude-free criterion:* 85-99% of the removed
+  pixel-hours are dry, in every bin from 10 to >= 100 mm. Per rule: rejection,
+  footprints, rings and unsupported cells 90-100%; spikes 93-94%; persistence 75-89% (it
+  lowers peaks inside rain).
+- *Remaining contamination in the kept, screened values* (Germany, 192 days):
+
+  | screened >= u | kept | RADKLIM-dry |
+  |---|---|---|
+  | 20 mm | 29,180 | 5.7% |
+  | 30 mm | 6,272 | 9.5% |
+  | 50 mm | 736 | 31% |
+  | 75 mm | 157 | 68% |
+  | 100 mm | 43 | 86% |
+
+  The disagreement floor of ordinary kept 10-50 mm values is 5-6%. So contamination is at
+  the floor in the bulk of heavy rain and dominates the top. It is small in absolute terms
+  (228 pixel-hours >= 50 mm on 39 of 192 days), and the same pattern holds on random days.
+- *Signature of those 228 pixel-hours:*
+  - one 15-min frame carries > 80% of the hour in 88% (median 100%);
+  - that frame's rate has median 294 mm/h (q10-q90: 170-440);
+  - isolated in 92% (5x5 median of the hour ~0);
+  - not persistent (median 2 local-peak frames) and not near radars (median 59 km);
+  - concentrated on big convective days (2014-06-08..10, 2013-07-28, 2014-07-27..29,
+    2023-07-29).
+- *Why they survive:* there, the temporal-support rule is satisfied by surrounding storms
+  within 30 km, and the spike rule misses clusters of a few pixels.
+- *Candidate rule, proposed and not yet implemented:* an isolated single-frame burst. One
+  frame carries most of the hour at a high rate, with no rain in the immediate 4-6 km that
+  hour. The isolation condition protects real cores embedded in rain.
