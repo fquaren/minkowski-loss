@@ -46,15 +46,32 @@ def _hot(clim_path, year):
     return _HOT[year]
 
 
+_QPATH = None
+
+
 def geometry(year):
     from src.data.radar_screen import RadarGeometry
+    _contributing(_QPATH)
     if year not in _GEOM:
         _GEOM.clear()                      # one year at a time per worker (memory)
         _GEOM[year] = RadarGeometry(year)
     return _GEOM[year]
 
 
-def scan_day(day_dir, var, clim_path, out_path):
+def _contributing(qpath):
+    """Switch on the contributing-radar filter in this (worker) process, if the config asks."""
+    if not qpath:
+        return
+    import yaml
+    from src.data import radar_screen as rs
+    g = yaml.safe_load(open(qpath)).get("radar_geometry", {})
+    if g.get("contributing_only") and rs._CONTRIB is None:
+        rs.use_contributing(g["nodes_table"], g.get("valid_climatology"))
+
+
+def scan_day(day_dir, var, clim_path, out_path, qpath=None):
+    global _QPATH
+    _QPATH = qpath
     from src.data.cleaning import clean_frame
     from src.data.day_cleaner import open_day
     from src.data.radar_screen import FEATURES, radar_frame_features, value_histogram
@@ -96,6 +113,8 @@ def main():
     ap.add_argument("--days_file", default=None, help="one YYYYMMDD per line")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--skip_existing", action="store_true")
+    ap.add_argument("--quality", default=None, help="quality config; radar_geometry.contributing_only "
+                                                       "restricts ownership to contributing radars (DECISIONS §27)")
     args = ap.parse_args()
     from src.utils import load_config
     cfg = load_config(args.config)
@@ -117,7 +136,7 @@ def main():
     t0 = time.time()
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(scan_day, d, cfg["PRECIP_VAR_NAME"], args.climatology,
-                          os.path.join(out, os.path.basename(d) + ".npz")): d for d in todo}
+                          os.path.join(out, os.path.basename(d) + ".npz"), args.quality): d for d in todo}
         for k, f in enumerate(as_completed(futs), 1):
             try:
                 day, n = f.result()

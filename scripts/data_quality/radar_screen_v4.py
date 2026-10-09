@@ -317,6 +317,9 @@ def main():
     import yaml
     from src.utils import load_config
     q = yaml.safe_load(open(a.quality))
+    if q.get("radar_geometry", {}).get("contributing_only"):         # DECISIONS §27
+        from src.data.radar_screen import use_contributing
+        use_contributing(q["radar_geometry"]["nodes_table"], q["radar_geometry"].get("valid_climatology"))
     d = a.data_dir or q["data_dir"]
     if a.cmd in ("ceilings", "all"):
         cmd_ceilings(q, d)

@@ -58,6 +58,11 @@ def scan_day(day, raw_dir, var, clim_path, ring_path, quality, patch, out_dir, r
     from src.data.hourly import HourlyDay
     from src.data.radar_screen import owner_shares, repeat_context, repeated_value
     q, ceil = st._quality(quality)
+    if q.get("radar_geometry", {}).get("contributing_only"):             # DECISIONS §27
+        from src.data import radar_screen as rs
+        if rs._CONTRIB is None:
+            rs.use_contributing(q["radar_geometry"]["nodes_table"], q["radar_geometry"].get("valid_climatology"))
+            st._GEOM.clear()
     cfg = dict(q.get("hourly", {}))
     if rules:
         cfg["rules"] = {**cfg.get("rules", {}), **rules}

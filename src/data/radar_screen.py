@@ -203,14 +203,65 @@ def _year(v):
         return None
 
 
+_CONTRIB = None          # {year: set of ODIM codes listed as contributing}, see use_contributing
+_VALID = None            # clutter-climatology mapping, for the data-presence check
+
+
+def use_contributing(path, climatology=None):
+    """Restrict `active_sites` (and so `RadarGeometry`) to the radars that contributed to the
+    composite in each year (DECISIONS §27). `path`: `scripts/data/opera_nodes.py` output (one
+    composite per month; a year's set is the union of its months). Off by default, so earlier
+    builds reproduce exactly.
+
+    The node lists and the OPERA database do not always use the same ODIM code for one radar
+    (Spain: `esmad` in the composites, `estjv` Torrejon de Velasco in the database; also Feldberg,
+    Suergavere and two others). So a database radar counts as contributing in a year if its code
+    is listed, OR its country prefix has listed codes that match no database code AND the
+    composite has valid data at the radar's site in >= half the year's frames (`climatology`,
+    the per-pixel n_valid of `clutter_climatology.py`). Italy has no unmatched codes, so its radars
+    stay out even where foreign radars cover their sites; no Italian radar is listed in any month
+    2012-2026."""
+    global _CONTRIB, _VALID
+    import pandas as pd
+    t = pd.read_csv(path, dtype=str).fillna("")
+    out = {}
+    for m, n in zip(t["month"], t["nodes"]):
+        if n:
+            out.setdefault(int(m[:4]), set()).update(n.split(";"))
+    _CONTRIB = out
+    if climatology is not None:
+        _VALID = dict(np.load(climatology))
+    return out
+
+
+def _contributing_mask(s, year):
+    """Boolean mask over database rows `s` for the rule of `use_contributing`."""
+    listed = _CONTRIB[year]
+    ok = s["odim"].isin(listed)
+    unmatched = {c[:2] for c in listed - set(s["odim"])}
+    if unmatched and _VALID is not None and f"y{year}_n_valid" in _VALID:
+        nv = _VALID[f"y{year}_n_valid"].astype(float)
+        frac = nv / max(nv.max(), 1.0)
+        r = s["row"].round().astype(int).clip(0, nv.shape[0] - 1).values
+        c = s["col"].round().astype(int).clip(0, nv.shape[1] - 1).values
+        inside = s["row"].between(0, nv.shape[0] - 1).values & s["col"].between(0, nv.shape[1] - 1).values
+        has_data = inside & (frac[r, c] >= 0.5)
+        ok |= s["odim"].str[:2].isin(unmatched).values & has_data & (s["odim"].str.len() > 0).values
+    return ok
+
+
 def active_sites(year: int, sites=None):
     """Radars active in `year` near the grid (the rule of `scan_flags._sites_year`), one row
-    per key (ODIM code, or location when there is none): database duplicates merged."""
+    per key (ODIM code, or location when there is none): database duplicates merged. With
+    `use_contributing`, only radars that contributed that year (sites without an ODIM code are
+    then dropped, since they cannot be checked)."""
     from src.data import geo
     s = geo.load_radar_sites() if sites is None else sites
     s0, s1 = s["startyear"].map(_year), s["finishyear"].map(_year)
     ok = ((s0.isna() | (s0 <= year)) & (s1.isna() | (s1 >= year))
           & s["row"].between(-200, 2400) & s["col"].between(-200, 2100))
+    if _CONTRIB is not None and year in _CONTRIB:
+        ok &= _contributing_mask(s, year)
     act = s[ok].copy()
     act["key"] = np.where(act["odim"].str.len() > 0, act["odim"], act["location"])
     return act.drop_duplicates("key").reset_index(drop=True)

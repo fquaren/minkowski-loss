@@ -21,6 +21,11 @@ repeat:                       # rule 1, per tile after all repairs
 guard:                        # rule 4
   max_size: 500               # provisional; components above this are not ring-median repaired
 
+radar_geometry:               # which radars own pixels (DECISIONS §27)
+  contributing_only: true     # only radars listed in the composites' how/nodes that year
+  nodes_table: /home/fquareng/work/data/extremes/OPERA/validation/opera_nodes/opera_nodes.csv
+  valid_climatology: /home/fquareng/work/data/extremes/OPERA/quality_v2/clutter_climatology.npz   # code mismatches
+
 radar_frame:                  # rule 3, provisional until Phase 0
   min_valid: 500
   # flagged if (f31 >= f31_min and r2_range >= r2_min) or (max(ejump, bjump) >= jump_min and f10 >= f10_min)

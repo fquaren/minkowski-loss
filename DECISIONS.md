@@ -1476,3 +1476,64 @@ before any result).**
   needs a feature that does, e.g. Lagrangian persistence (stationary rain still advects at
   synoptic scale) or a satellite cloud-top check (EXPERIMENTS §5, "More ways to detect
   unphysical extremes").
+
+---
+
+## 27. Radar ownership from the radars that actually contribute to the composite (2026-10-09)
+
+**Problem.** The radar screen attributes each pixel to the nearest "active" radar within 250 km
+(`radar_screen.RadarGeometry`). It uses the OPERA radar database, which lists every member
+radar whether or not it delivers data.
+- 22-27 Italian sites a year owned pixels in the radar pass (the "itcro" flag on the 2022
+  Mediterranean derecho), although no Italian radar contributes to OPERA. Our raw store has
+  no data over most of Italy in 2012, 2016, 2018, 2021 and 2025.
+- Other database entries are duplicates, retired sites or radars that do not deliver: old
+  Swedish codes, De Bilt after 2017, airport radars, most Serbian sites.
+- Radar-frame flags, the radar-day ranking, ceiling attribution and tile owners all inherit
+  these errors. Example: the 2023 Valjevo-area 364.63 mm/h ceiling was attributed to sites
+  that do not deliver; only Fruska Gora (rsfrg) and Jastrebac (rsjas) are listed for Serbia.
+
+**Evidence.** Each composite lists its contributors in `how/nodes`. `scripts/data/opera_nodes.py`
+read one composite per month, 2012-09 .. 2026-10: 167 of 170 months, 100-178 nodes per month
+(`validation/opera_nodes/opera_nodes.csv`; 2012-11 .. 2013-01 missing from the archive).
+- *No Italian node is listed in any month.*
+- *ODIM codes differ between node lists and database for some radars:*
+  - Spain throughout (esmad / estjv Torrejon de Velasco, esbar / esgld Gelida, esmal /
+    esahr Alhaurin, esmur / esftn, esval / escll, eszar / espdg, essev / esclg, esalm /
+    esnjr, escor / esccd, espma / esllm, eslpa / esatn, ...);
+  - Feldberg (deflg / defbg), Suergavere (eesyr / eesur), hrzag and istgb.
+
+**Decision (Claude, implementing the researcher-approved next step 2026-10-09).** In the hourly
+build, a database radar owns pixels in year Y only if either:
+- its ODIM code is listed as contributing in some month of Y; or
+- its country prefix has listed codes that match no database code (Spain, and Germany /
+  Estonia in some years), AND the composite has valid data at its site in >= half the
+  year's frames (`clutter_climatology.npz`).
+
+Effect (database-active -> contributing):
+- 2013: 185 -> 109;
+- 2018: 222 -> 148;
+- 2025: 246 -> 172, of which 22-27 dropped are Italian-located.
+
+All Spanish radars stay. Oradea stays under its listed code `roora`; the database also has a
+second entry, `roopa`.
+
+**Implementation.**
+- `radar_screen.use_contributing(nodes_table, climatology)` restricts `active_sites`. It is off
+  by default, so the v3/v4 builds reproduce exactly.
+- It is switched on by `radar_geometry.contributing_only` in `configs/quality_v4.yaml`.
+- Read by `scan_radars.py --quality`, `radar_screen_v4.py` and `scan_hours.py`.
+
+**Consequence.** The radar pass (Phase 2) is rerun with this geometry before the full-archive
+tile scan. The previous outputs are archived in `quality_v4/phase2_db_geometry/`; the
+researcher's `review.csv` record stays there unchanged.
+
+**Limitations.**
+- Ownership remains geometric (nearest contributing radar), not the composite's actual
+  per-pixel source.
+- Where a country has unmatched codes, a few duplicate database sites with data at their
+  location are kept (e.g. German airport or duplicate entries in 2013 and 2018).
+
+Confidence: the node lists are authoritative for which radars contributed in the sampled
+months. The union over months may miss a radar that was down at every sampled time (one
+composite per month).
