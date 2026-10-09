@@ -842,6 +842,18 @@ Consequences:
   accumulation is the standard remedy and is tested before the store is built
   (EXPERIMENTS §5).
 
+**Status 2026-10-08, later: plain vs advection-corrected is settled by evidence**
+(EXPERIMENTS §5, "Signal or noise?").
+- *The evidence.* The plain sum of four 15-min snapshots beads moving rain. Over Germany it
+  inflates the Euler characteristic at 2 mm by +2 to +5 relative to RADKLIM, growing with
+  motion speed, and adds 1.2-2x power at 6-16 km. Advection correction removes both.
+- *Proposed (to confirm):* the hourly target is advection-corrected. Interpolate between
+  consecutive frames along a dense motion field (pysteps-like; needs pysteps or an
+  equivalent), not the crude per-tile shift of the test.
+- *Constraints.* Validate the correction against RADKLIM (coherence, chi) and the gauges
+  before the store is built. Keep the plain sum as a stored variant for comparison, and
+  OPERA's ACRR as the regression test of that variant only.
+
 **What would overturn it.** MCH wanting the model for daily products only, or hourly targets
 proving too noisy to train on, judged on the backbone's validation tail metrics and not on
 `val_mse`.

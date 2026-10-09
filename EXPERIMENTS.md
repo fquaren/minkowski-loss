@@ -1345,6 +1345,49 @@ isoperimetric scatter.
           spectrum;
         - Lagrangian persistence of the sub-25 km residual in each product: noise does not
           survive advection over 15 min, structure does.
+      **Signal or noise? (2026-10-08, `scripts/data_quality/signal_noise.py`,
+      `calib/signal_noise/summary.txt`, `spectra.png`.)** Sample: 64 x 64 tiles >= 98% valid
+      in RADKLIM, 158 days, 10,140 tile-hours. OPERA's extra fine structure is mostly
+      beading, i.e. our plain sum of four 15-min snapshots. It is not radar noise, and there
+      is no sign that RADKLIM smooths real structure at wavelengths >= 8 km.
+      - *Time alignment matters.*
+        - Our ACRR hour (about H-55..H+5) and RADKLIM's (H-70..H-10) overlap 45 min.
+        - The OPERA hour built from frames H-60..H-15 covers H-70..H-10 exactly. It raises
+          the coherence with RADKLIM from 0.44 to 0.70 at 32 km and from 0.29 to 0.54 at
+          16 km.
+        - Any product comparison needs exactly matched windows.
+      - *Coherence (aligned, advection-corrected OPERA vs RADKLIM, log1p):*
+        - 0.85 at 128 km; 0.70 at 32 km; 0.59 at 16 km; 0.44 at 10.7 km; 0.27 at 8 km;
+          0.12 at 6.4 km; ~0 below 5 km.
+        - The products share most of their variance down to ~12 km wavelength (6 px).
+          Below ~6 km (3 px) neither corroborates the other.
+      - *(b) Beading confirmed.*
+        - chi excess of the plain hour over RADKLIM at 2 mm grows with motion: +2 below
+          4 km per 15 min, +5 at 8-20 km per 15 min.
+        - Advection correction removes it at every speed: -2..+1 vs RADKLIM; at 1 mm the
+          median chi is 5 vs 5.
+        - OPERA's excess power at 6-16 km (1.2-2.0x RADKLIM) disappears with the
+          correction in moving rain.
+      - *(a) Not frame noise, at 4-16 km.* The fine band (difference of Gaussians, sigma 1-4
+        px) of consecutive 15-min frames correlates 0.58-0.74 after shifting along the
+        motion, while the Eulerian correlation falls to ~0 at >= 12 km per 15 min.
+      - *(c) No evidence that RADKLIM smooths real structure at >= 8 km.* After alignment and
+        correction, OPERA has 0.65-0.78 of RADKLIM's power at every wavelength, consistent
+        with OPERA's general underestimation. Below ~6 km, slow-moving OPERA keeps
+        1.4-2.4x RADKLIM's power after correction, where the coherence is ~0. Undetermined
+        whether that is OPERA noise or compositing, or RADKLIM smoothing.
+      - *Caveats.*
+        - The advection correction here is crude: one uniform shift per tile, each frame
+          extrapolated +-6 min. It over-smooths fast-moving rain (power 0.3-0.5x at 4-6 km;
+          perimeter at 20 mm 0.37x RADKLIM). A proper interpolation between frames along a
+          dense motion field is needed for the store.
+        - RADKLIM is averaged from 1 to 2 km. The sample is central Germany only.
+      - *Consequences:*
+        - the OPERA hourly target must be advection-corrected (DECISIONS §21 status note);
+        - geometry is no reason to prefer OPERA over RADKLIM, whose hourly sums are built
+          from 5-min data and avoid beading by construction;
+        - structure below ~6 km is product-specific at 2 km, a limit on any km-scale
+          geometric validation.
       **The event-day heavy tail** (screened pixel-hours vs RADKLIM within +-2 px and +-1 h):
       - 30-75 mm: mostly real. Confirmed in 59-75% (event) and 50-70% (random); RADKLIM
         displaces or smooths them.
