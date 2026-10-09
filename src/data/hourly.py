@@ -17,7 +17,8 @@ DECISIONS §22):
               the same pixels in >= ray_min_frames of the +-ray_half_window frames
   day         local-peak persistence: n_peak = frames in which a pixel is >= peak_u and
               >= peak_ratio x its 5x5 median. A pixel is flagged when n_peak >= p1_min
-              (p1_ring_min on climatological range rings), or when it lies on a thin
+              (p1_ring_min on climatological range rings, p1_prior_min on pixels of the
+              `prior` mask, e.g. the per-pixel Mahalanobis mask), or when it lies on a thin
               site-anchored line of the n_peak >= p2_min map (rays inside rain). In every frame
               where a flagged pixel is a local peak it takes its 5x5 median.
   per frame   cells without temporal support (as v3/v4), judged on the frames above
@@ -49,6 +50,7 @@ DEFAULTS = {
     "ray_u": 1.0, "ray_half_window": 4, "ray_min_frames": 3,
     "peak_u": 1.0, "peak_ratio": 2.0,
     "p1_min": 24, "p1_ring_min": 12, "p2_min": 12,
+    "p1_prior_min": 12,              # on pixels of a prior mask (`prior`), e.g. the Mahalanobis mask
     "rules": {**{r: True for r in RULES}, "burst": False},   # burst: off until accepted (§26)
     "burst": {"min_share": 0.8, "min_rate": 100.0, "iso_median": 1.0},
     "advection": None,               # None: plain sum only; {"mode": "blend"|"noblend",
@@ -166,9 +168,10 @@ class HourlyDay:
     """
 
     def __init__(self, raw_dir, day, var, hot, ring=None, sites_rc=None, ceilings=None,
-                 cfg=None, crop=None):
+                 cfg=None, crop=None, prior=None):
         self.raw_dir, self.day, self.var = raw_dir, str(day), var
         self.hot_fn, self.ring_fn, self.sites, self.ceilings = hot, ring, sites_rc, ceilings
+        self.prior_fn = prior          # year -> full-grid bool mask; lowers p1 there (DECISIONS §25)
         self.cfg = config(cfg)
         self.crop = crop
         self.year = int(self.day[:4])
@@ -275,6 +278,9 @@ class HourlyDay:
             thr = np.full(n_peak.shape, cfg["p1_min"], np.int16)
             if ring is not None:
                 thr[ring] = cfg["p1_ring_min"]
+            prior = self._sl(self.prior_fn(self.year)) if self.prior_fn else None
+            if prior is not None:
+                thr[prior] = np.minimum(thr[prior], cfg["p1_prior_min"])
             f1 = n_peak >= thr
             f2 = C.anchored_lines(n_peak.astype(np.float32), self.sites, u=cfg["p2_min"],
                                   row0=y0, col0=x0) if self.sites is not None else np.zeros_like(f1)

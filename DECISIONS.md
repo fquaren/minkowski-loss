@@ -1430,3 +1430,49 @@ pending the researcher's decision.**
   zeroed by other rules as removed by the mask (65-81% "removed" at 50-100 mm). The removal
   definition now requires the no-mask value >= 1 mm. First run kept in
   `calib/mask_validate_run1_nopos`.
+
+**Mask as a prior for the persistence rule (researcher chose option 1, 2026-10-09; written
+before any result).**
+- *Design:*
+  - The per-pixel mask no longer repairs anything by itself.
+  - On pixels flagged that year (d^2 > 25, the broadest mask), the persistence threshold
+    `p1_min` (24 local-peak frames in the day) is lowered to `p1_prior_min` = 12, the value
+    already used on climatological range rings.
+  - The repair is the persistence repair: in each frame where the pixel is a local peak, it
+    takes its 5x5 median. A flagged pixel inside a passing storm is a local peak in only a
+    few frames, so it is spared.
+  - The existing hot-pixel climatology stays as it is.
+- *Acceptance* (presence test over Germany, as §26). Removals attributable to the prior =
+  the chain with the prior lowers a pixel-hour of the chain without it (>= 1 mm) to <= 0.5x.
+  1. They are RADKLIM-dry in >= 85% of cases in every raw bin with n >= 30.
+  2. The RADKLIM-dry share of kept screened values >= 20 / 30 / 50 / 75 mm does not rise.
+  3. The flag rate by raw intensity is reported, with removals RADKLIM confirms and their
+     days.
+- *Sensitivity, reported and not used for the choice:* `p1_prior_min` = 8.
+
+**Result, mask as a persistence prior (2026-10-09; `scripts/data_quality/prior_validate.py`,
+`calib/prior_validate/summary.txt`; 192 days). FAILS; not adopted.**
+- *Removals attributable to the prior* (`p1_prior_min` 12), RADKLIM-dry share:
+
+  | raw bin | removals | dry |
+  |---|---|---|
+  | 10-20 mm | 817 | 84.2% (bar 85%) |
+  | 20-50 mm | 208 | 75.5% |
+  | 50-100 mm | 18 | 83% |
+  | >= 100 mm | 13 | 31% |
+
+  RADKLIM confirms 540 of the 3,493 removals. They concentrate on 2013-05-30..06-02 (the
+  Central European floods), 2023-07-19 and 2014-07-29: long-lasting real rain that is a
+  local peak in >= 12 frames on flagged pixels, which are more frequent at high
+  elevation. This is the stationary-rain risk named in RESEARCH_NOTES §7.4e.
+- *Sensitivity* (`p1_prior_min` 8): worse (79% / 70% dry; 1,127 of 5,497 confirmed).
+- *Little benefit at the top:* RADKLIM-dry share of kept values >= 50 mm 11.7 -> 9.9%,
+  >= 75 mm 34.7 -> 29.7% (the burst rule: 31.5 -> 11.7%, 69 -> 35%).
+- *Decision:* the per-pixel Mahalanobis mask is not adopted in either form (unconditional at
+  d^2 > 25, or as a prior). The existing hot-pixel climatology stays.
+- *What the result says about the method* (inference): at OPERA scale, with four exceedance
+  features and a 6-16 km reference, the per-pixel climatology does not separate clutter
+  from climatologically wet, orographic pixels where long rain persists. A future version
+  needs a feature that does, e.g. Lagrangian persistence (stationary rain still advects at
+  synoptic scale) or a satellite cloud-top check (EXPERIMENTS §5, "More ways to detect
+  unphysical extremes").

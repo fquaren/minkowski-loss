@@ -164,8 +164,15 @@ Acceptance (`calib/mask_validate`):
   few (169).
 - *An unconditional per-pixel mask shaves real rain* wherever a flagged pixel sits inside a
   storm.
-- *Proposed:* use the mask only as a prior for the persistence rule. Not adopted, pending the
-  researcher's decision (DECISIONS §25).
+- *Used as a prior for the persistence rule instead* (`calib/prior_validate`), it also fails its
+  pre-stated test: 84% / 76% RADKLIM-dry at 10-20 / 20-50 mm. Its confirmed removals
+  concentrate on long real rain (the May-June 2013 Central European floods), where flagged
+  pixels, more frequent at high elevation, are persistent local peaks.
+- *Its benefit at the top is small* (dry share >= 50 mm 11.7 -> 9.9%).
+- *Not adopted in either form;* the existing hot-pixel climatology stays (DECISIONS §25).
+- *Lesson for the paper:* a per-pixel climatological outlier test does not, by itself,
+  separate clutter from climatologically wet orographic pixels. The burst rule, keyed on
+  temporal structure rather than climatology, is what reduced the tail contamination.
 
 ## 6. Limitations to state
 

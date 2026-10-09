@@ -272,3 +272,40 @@ def test_burst_rule_off_by_default(tmp_path):
     _burst_days(tmp_path)
     hd = HourlyDay(str(tmp_path), "20200101", "TOT_PREC", hot=lambda y: None, sites_rc=SITE).run()
     assert not (hd.code & C.REPAIR_BURST).any()
+
+
+# ---------------------------------------------------------------- the mask as a persistence prior (§25)
+def _prior_days(tmp_path, moving=False):
+    """A point at (30, 30): stationary, a local peak in 16 frames of the day (between the prior
+    threshold 12 and p1_min 24); or, with moving=True, a cell crossing it once."""
+    for d, day in enumerate(("20200101", "20200102")):
+        fr = []
+        for k in range(96):
+            f = np.zeros((H, W), np.float32)
+            if d == 0 and not moving and 20 <= k < 36:
+                f[30, 30] = 30.0
+            if d == 0 and moving:
+                f += blob(H, W, 30, (k * 4) % W, 30.0, 2.0)
+            fr.append(f)
+        _write_day(tmp_path, day, fr)
+
+
+def _run_prior(tmp_path, prior_on):
+    pm = np.zeros((H, W), bool); pm[30, 30] = True
+    return HourlyDay(str(tmp_path), "20200101", "TOT_PREC", hot=lambda y: None, sites_rc=SITE,
+                     cfg={"rules": {"unsupported": False, "spike": False, "burst": False, "ray": False}},
+                     prior=(lambda y: pm) if prior_on else None).run()
+
+
+def test_prior_lets_persistence_catch_a_moderately_persistent_point(tmp_path):
+    _prior_days(tmp_path)
+    off, on = _run_prior(tmp_path, False), _run_prior(tmp_path, True)
+    assert not (off.code[:, 30, 30] & C.REPAIR_PERSIST).any()          # 16 < 24: not flagged
+    assert (on.code[:, 30, 30] & C.REPAIR_PERSIST).any()               # 16 >= 12 with the prior
+
+
+def test_prior_spares_a_cell_passing_over_the_flagged_pixel(tmp_path):
+    _prior_days(tmp_path, moving=True)
+    off, on = _run_prior(tmp_path, False), _run_prior(tmp_path, True)
+    for a, b in zip(off.hours, on.hours):
+        np.testing.assert_array_equal(a["sum"], b["sum"])
