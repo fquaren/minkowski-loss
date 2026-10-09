@@ -1125,3 +1125,100 @@ must be reported with it.
 - *Below 10 mm RADKLIM is wetter than OPERA* (>= 5 mm: 1.94 M vs 1.21 M pixel-hours): OPERA
   underestimates the body, as at the gauges (median radar/gauge 0.46). The screen does not
   change this.
+
+---
+
+## 25. Criteria fixed before the results: advection correction and the Mahalanobis mask (2026-10-09)
+
+Written before any result of the tests below (researcher approved the plan 2026-10-09).
+
+**Advection-corrected hourly sums (§21 status note).**
+
+*What the test must distinguish.* On a moving cell the plain sum of four snapshots is biased
+high at the four snapshot positions and low between them. A correct correction therefore
+lowers the plain-sum maximum of moving cells, and that is not softening. On stationary cells
+it must change nothing. Softening is judged on stationary cells and against gauges, never by
+"corrected max < plain max".
+
+*Variants:*
+- the pysteps-style linear blend of the earlier frame moved forward and the later frame
+  moved backward;
+- no blending (first half of each interval from the earlier frame, second half from the
+  later);
+- bilinear or cubic / nearest warping.
+
+*A variant is accepted only if all four hold:*
+1. *Beading removed:* median chi difference to RADKLIM within +-1 at 1, 2 and 5 mm
+   (RADKLIM-aligned hour).
+2. *No softening of stationary cells:* tile maxima of tiles moving < 2 px per 15 min within
+   +-5% of the plain sum (median ratio).
+3. *Heavy hours not pushed down at independent gauges:* on gauge-hours >= 20 mm (DE + CH,
+   reported for CH alone too), the median radar/gauge ratio is not lower than the plain
+   sum's (day-block bootstrap).
+4. *Mass conserved:* the median tile-sum ratio corrected/plain within +-1%.
+
+*Ties:* the variant with the smallest chi error is chosen. If none passes, the target stays
+the plain sum and beading is reported as a limitation.
+
+**Per-pixel Mahalanobis outlier mask** (after Franch et al. 2020, TAASRAD19).
+- *Features:* each pixel's histogram of log-rate (fixed bins), from a sample of frames.
+- *Reference:* the pixel's neighbourhood (~100-200 km), not the whole domain, so that
+  climatological gradients such as orographic maxima are not flagged. Computed separately per
+  product era (ODYSSEY to 2024-06, NIMBUS from 2024-07).
+- *Flag:* distance > mean + 3 sigma of the neighbourhood's distances, as in the paper.
+- *Accepted (replacing or supplementing the hot-pixel climatology) only if:*
+  - in the RADKLIM removal test (§24 addendum), the pixel-hours it changes are confirmed at
+    less than half the rate of kept values in every bin with n >= 30;
+  - its affected gauge-hours move towards the gauge in >= 80% of cases (§22);
+  - its flag rate does not rise steeply with intensity (§17 safeguard 2).
+- Known orographic maxima (Alps, Ticino, Black Forest) are reported explicitly.
+
+**Amendment to the mask design, 2026-10-09, before any mask result** (literature review in
+RESEARCH_NOTES §7.4g). The acceptance tests above are unchanged; the design changes, for four
+reasons:
+- *mean + 3 sigma fixes the flagged fraction whatever the data:* Franch et al. flag 0.9% and
+  Shi et al. 1.6%, ~10x the Gaussian rate, and neither validated the mask;
+- *a 526-bin histogram has an exactly singular covariance* (frequencies sum to 1), so its
+  pseudoinverse Mahalanobis distance is dominated by noise in rare bins;
+- *every operational chain uses exceedance frequencies at a few fixed thresholds*
+  (Wagner et al. 2012, Tabary et al. 2012, DWD RADKLIM, Odyssey);
+- *a 100-200 km reference flags orographic and coastal maxima.* EURADCLIM's global reference
+  did so along the Norwegian coast, and RADKLIM's statistical outliers included real
+  heavy-rain years (Kreklow et al. 2020). Clutter is 1-3 px with sharp edges, orography varies
+  over 10-50 km, so a ~10-20 km annulus separates them by scale.
+
+New design (still a Mahalanobis distance, as in Franch et al., with the literature's fixes):
+- *Features:* per pixel and year, logit of the exceedance frequency at 1, 31, 89 and 150 mm/h
+  (`clutter_climatology.npz`); pixels with < 1000 valid frames are skipped.
+- *Reference:* the residual of each feature against the median over an annulus of radius
+  3-8 px (6-16 km) around the pixel, which excludes the pixel's own blob.
+- *Distance:* Mahalanobis distance of the residual vector with a robust (minimum covariance
+  determinant) covariance; flag where d^2 exceeds the chi^2(4) quantile 1 - alpha.
+- *Choosing alpha:* from {1e-3, 1e-4, 1e-5, 1e-6}, chosen on half of the validation days and
+  evaluated on the other half, so the threshold is not tuned on the data that judges it.
+- *Masks per year;* the number of years a pixel is flagged within an era is reported (wind
+  farms appear mid-era, storm tracks do not persist).
+- *Application:* replaces the hot-pixel climatology in `clean_frame` (repair only if lower),
+  then the same acceptance tests.
+- *Selection rule for alpha* (fixed before results): split the RADKLIM-test days in two halves
+  by day index (even / odd). On the even half, keep the alphas that pass every acceptance test.
+  Among them, choose the one that removes the most pixel-hours >= 10 mm. Report that alpha's
+  tests on the odd half. If none passes on the even half, no mask is adopted.
+- *Second amendment, 2026-10-09, after the 2018 distance distribution and before any
+  acceptance result.*
+  - *The chi^2(4) null does not hold.* d^2 has median 0.69 (chi^2: 3.36) and 99.9th
+    percentile 835 (chi^2: 18.5), so every alpha in {1e-3 .. 1e-6} flags ~2% of pixels.
+  - *The threshold is therefore set directly on d^2,* grid {25, 100, 400, 1600}: in 2018 that
+    flags 2.8%, 1.0%, 0.28% and 0.015% of valid pixels. The selection rule is unchanged.
+  - *Implementation changes* found in the smoke test:
+    - residuals are standardised by spatial spread and sampling noise
+      (se = 1/sqrt((n + 0.5)(1 - p))), because sparse counts made the MAD zero;
+    - the correlation is estimated from Spearman ranks, because MCD was made singular by
+      tied sparse-count pixels.
+  - *What d^2 picks up (diagnostic, decides nothing):*
+    - radial spokes around many radars, and clutter near the sites: at d^2 > 400 the flag
+      rate is 1.6% within 10 km of a site vs 0.13% at 200-300 km;
+    - a rate rising with elevation, 0.20% below the median elevation vs 0.73% in the top 1%:
+      either mountain clutter or real orographic maxima, for the acceptance tests to
+      separate.
+  - *The mask contains the current hot-pixel mask:* 1,972-1,977 of its 1,982 pixels in 2018.

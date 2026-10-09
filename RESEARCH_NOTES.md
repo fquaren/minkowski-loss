@@ -895,6 +895,32 @@ ranking is Claude's inference.
 Not open as historical km-scale hourly archives: CHMI, DMI, AEMET, IMGW, KMA, CMPAS,
 Canada (HRDPA is 6-hourly), QPESUMS (archive start unknown).
 
+**FBK `opera-plus-it-vmi` (ArcoDataHub; checked 2026-10-09).**
+- *What it is:* a merge of the OPERA composite and the Italian DPC composite. Variable `vmi`
+  = column-maximum reflectivity in dBZ, not rain rate.
+- *Grid and time:* 1 km EPSG:3035, 5 min, from 2024-07-01 only, live.
+- *Access:* CC BY-SA 4.0, free account.
+- *No documented processing or QC* in the page, the notebook, the STAC record or FBK's
+  code.
+  - Likely source: OPERA's 1 km CIRRUS max-reflectivity product (inference, unconfirmed).
+  - The IT-DPC-SRI paper (arXiv 2602.15088) states only "minimal quality filtering beyond
+    the processing already applied in the operational chain".
+- *Use for us:*
+  - not a target (reflectivity; only 2024 on);
+  - a weak reference, since its European part is OPERA itself.
+- *Two reusable finds:*
+  - **The TAASRAD19 per-pixel outlier mask** (Franch et al. 2020,
+    https://pmc.ncbi.nlm.nih.gov/articles/PMC7359037/). It compares each pixel's value
+    histogram with the others by Mahalanobis distance and flags pixels above mean + 3 sigma.
+    It is a label-free static-clutter mask, an alternative to our hot-pixel climatology. To
+    be judged by the §22/§24 tests, per product era.
+  - **`italian-radar-dpc-srt1-adj`:** gauge-adjusted hourly accumulation over Italy, 2018-07
+    on, from an independent network. A possible RADKLIM-like check wherever OPERA has
+    Italian coverage (the overlap is not yet measured).
+- *Questions for FBK* (franch@fbk.eu): the exact OPERA product and regridding; the merge
+  rule; any QC; plans for a rate or accumulation version or a pre-2024 archive;
+  redistribution of derived patches under CC BY-SA.
+
 **Standard practice in generative downscaling.**
 - Most papers use daily targets or model output: WassDiff (MRMS daily), CPMGEM (UKCP 8.8 km
   daily), Rampal et al. (NZ, daily) and Wetherell (flow matching 8 -> 2 km daily, which

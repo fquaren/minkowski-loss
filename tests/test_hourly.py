@@ -185,3 +185,40 @@ def test_missing_frame_drops_only_its_hour(tmp_path):
     hd = _run(tmp_path)
     ends = {pd.Timestamp(h["end"]) for h in hd.hours}
     assert len(hd.hours) == 23 and pd.Timestamp("2020-01-01 06:00") not in ends
+
+
+# ---------------------------------------------------------------- advection-corrected hours (§25)
+def test_advected_mean_conserves_mass_and_keeps_a_stationary_peak():
+    from src.data.hourly import advected_mean
+    still = blob(64, 64, 32, 32, 40.0, 3.0)
+    frames = [still] * 6
+    zero = [np.zeros((2, 64, 64), np.float32)] * 5
+    for mode in ("blend", "noblend"):
+        out = advected_mean(frames, zero, 7.5, 67.5, mode=mode)
+        np.testing.assert_allclose(out, still, rtol=1e-5, atol=1e-5)   # nothing moves: unchanged
+
+
+def test_advected_mean_fills_the_track_of_a_moving_cell():
+    from src.data.hourly import advected_mean
+    frames = [blob(64, 96, 32, 10 + 12 * k, 40.0, 2.0) for k in range(6)]   # 12 px per frame
+    V = [np.stack([np.full((64, 96), 12.0, np.float32), np.zeros((64, 96), np.float32)])] * 5
+    plain = 0.25 * (frames[1] + frames[2] + frames[3] + frames[4])
+    adv = advected_mean(frames, V, 7.5, 67.5)
+    track = adv[32, 22:58]                                      # the cell passes x = 16 .. 64
+    assert track.min() > 0.9 * track.max()                     # an even track, no beads
+    assert plain[32, 22:58].min() < 0.05 * plain[32, 22:58].max()   # the plain sum has beads
+    # the plain maximum (a full quarter-hour of peak rate at each bead) is not the true
+    # accumulation; a cell moving 12 px per frame deposits ~ half of it along the track
+    assert adv.max() < 0.6 * plain.max()
+    assert abs(adv.sum() / plain.sum() - 1) < 0.1              # same mass over the window
+
+
+def test_hourly_day_adds_sum_adv_only_when_asked(tmp_path):
+    _synthetic_days(tmp_path, ray=False)
+    off = HourlyDay(str(tmp_path), "20200101", "TOT_PREC", hot=lambda y: None, sites_rc=SITE).run()
+    on = HourlyDay(str(tmp_path), "20200101", "TOT_PREC", hot=lambda y: None, sites_rc=SITE,
+                   cfg={"advection": {"mode": "blend", "interp": "linear"}}).run()
+    assert all(h["sum_adv"] is None for h in off.hours)
+    assert sum(h["sum_adv"] is not None for h in on.hours) >= 23
+    for a, b in zip(off.hours, on.hours):
+        np.testing.assert_array_equal(a["sum"], b["sum"])      # the plain sum is unchanged

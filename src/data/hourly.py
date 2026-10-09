@@ -21,7 +21,8 @@ DECISIONS §22):
               site-anchored line of the n_peak >= p2_min map (rays inside rain). In every frame
               where a flagged pixel is a local peak it takes its 5x5 median.
   per frame   cells without temporal support (as v3/v4), judged on the frames above
-  hour        sum of the four frames
+  hour        sum of the four frames; optionally (`advection`) also the advection-corrected
+              mean over the same window, h["sum_adv"] (DECISIONS §25)
 
 Repairs only ever lower a value. Codes are the REPAIR_* bits of `cleaning`.
 """
@@ -46,6 +47,8 @@ DEFAULTS = {
     "peak_u": 1.0, "peak_ratio": 2.0,
     "p1_min": 24, "p1_ring_min": 12, "p2_min": 12,
     "rules": {r: True for r in RULES},
+    "advection": None,               # None: plain sum only; {"mode": "blend"|"noblend",
+                                     # "interp": "linear"|"cubic"|"nearest"} adds h["sum_adv"]
 }
 
 
@@ -59,6 +62,60 @@ def config(q: dict | None = None) -> dict:
         elif k in DEFAULTS:
             cfg[k] = v
     return cfg
+
+
+# ---------------------------------------------------------------------------------------------
+# advection-corrected accumulation (DECISIONS §21 status note, §25)
+# ---------------------------------------------------------------------------------------------
+_GRID = {}
+
+
+def motion_lk(r1, r2):
+    """Dense motion (u, v) in px per frame step from frame r1 to r2: pysteps Lucas-Kanade on
+    log rates. Zero where there is too little rain to track."""
+    from pysteps import motion
+    a, b = (np.nan_to_num(r, nan=0.0) for r in (r1, r2))
+    if (a >= 0.5).sum() < 50 or (b >= 0.5).sum() < 50:
+        return np.zeros((2,) + a.shape, np.float32)
+    x = np.stack([np.log(np.maximum(a, 0.1)), np.log(np.maximum(b, 0.1))])
+    return motion.get_method("LK")(x, dense=True, verbose=False).astype(np.float32)
+
+
+def warp(f, V, s, interp="linear"):
+    """f moved by s x V, semi-Lagrangian with the motion taken at the destination:
+    out(x) = f(x - s V(x)); zero outside the grid. cv2.remap works in fixed point (1/32 px);
+    cubic can overshoot, so negative values are clipped."""
+    import cv2
+    H, W = f.shape
+    if (H, W) not in _GRID:
+        yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        _GRID[(H, W)] = (yy, xx)
+    yy, xx = _GRID[(H, W)]
+    flag = {"linear": cv2.INTER_LINEAR, "cubic": cv2.INTER_CUBIC, "nearest": cv2.INTER_NEAREST}[interp]
+    out = cv2.remap(f.astype(np.float32), xx - s * V[0], yy - s * V[1], flag,
+                    borderMode=cv2.BORDER_CONSTANT, borderValue=0.0)
+    return np.maximum(out, 0.0) if interp == "cubic" else out
+
+
+def advected_mean(frames, motions, t0, t1, mode="blend", interp="linear", step_min=15.0, dt=1.0):
+    """Mean rate over frame-times t0 .. t1 (minutes after frames[0]) from 15-min frames, with the
+    rain moved along the motion between them (pysteps advection correction).
+    frames: consecutive frames step_min apart (zeros, not NaN); motions[j]: frame j -> j+1.
+    mode "blend": (1 - s) x frame j moved forward + s x frame j+1 moved backward (pysteps);
+    "noblend": frame j moved forward for s < 0.5, frame j+1 moved backward otherwise, so two
+    imperfectly aligned intensities are never averaged."""
+    acc, n = 0.0, 0
+    for m in np.arange(t0 + dt / 2, t1, dt):
+        j = min(int(m // step_min), len(motions) - 1)
+        s = (m - j * step_min) / step_min
+        V = motions[j]
+        if mode == "blend":
+            f = (1 - s) * warp(frames[j], V, s, interp) + s * warp(frames[j + 1], V, -(1 - s), interp)
+        else:
+            f = warp(frames[j], V, s, interp) if s < 0.5 else warp(frames[j + 1], V, -(1 - s), interp)
+        acc = acc + f
+        n += 1
+    return acc / n
 
 
 def median5(z: np.ndarray, where: np.ndarray) -> np.ndarray:
@@ -234,6 +291,25 @@ class HourlyDay:
                 fin[t], code[t] = C.repair_unsupported(S[t], prev, nxt, code[t], max_size=cfg["max_size"])
             S = fin
 
+        adv = {}
+        if cfg["advection"]:                       # hour ending H covers frame-times H-52.5 .. H+7.5
+            ac = cfg["advection"]                  # (ODYSSEY frame t covers t-10 .. t+5, centre t-2.5)
+            nsec = lambda t: int(np.datetime64(t, "ns").astype(np.int64))
+            at = {nsec(t): j for j, t in enumerate(times)}
+            Z = np.nan_to_num(S, nan=0.0)
+            mo = {}
+            for e in times[proc]:
+                if (e - d0) % np.timedelta64(60, "m"):
+                    continue
+                want = [e - k * STEP for k in (4, 3, 2, 1, 0, -1)]          # H-60 .. H+15
+                if not all(nsec(w) in at for w in want):
+                    continue
+                jj = [at[nsec(w)] for w in want]
+                for a_, b_ in zip(jj[:-1], jj[1:]):
+                    if (a_, b_) not in mo:
+                        mo[(a_, b_)] = motion_lk(Z[a_], Z[b_])
+                adv[nsec(e)] = advected_mean([Z[j] for j in jj], [mo[(a_, b_)] for a_, b_ in zip(jj[:-1], jj[1:])],
+                                             7.5, 67.5, ac.get("mode", "blend"), ac.get("interp", "linear"))
         keep = np.nonzero(proc)[0]
         self.frames, self.fin, self.code, self.raw = times[keep], S[keep], code[keep], raw[keep]
         pos = {t: i for i, t in enumerate(self.frames)}
@@ -249,6 +325,8 @@ class HourlyDay:
             ok = np.isfinite(r).all(0)
             self.hours.append({"end": end, "idx": idx,
                                "sum": np.where(ok, 0.25 * np.nan_to_num(f, nan=0.0).sum(0), np.nan).astype(np.float32),
+                               "sum_adv": (np.where(ok, adv[int(np.datetime64(end, "ns").astype(np.int64))], np.nan).astype(np.float32)
+                                           if int(np.datetime64(end, "ns").astype(np.int64)) in adv else None),
                                "raw_sum": np.where(ok, 0.25 * np.nan_to_num(r, nan=0.0).sum(0), np.nan).astype(np.float32),
                                "max_rate": np.where(ok, np.nan_to_num(f, nan=0.0).max(0), np.nan).astype(np.float32),
                                "valid": ok})
