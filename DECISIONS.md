@@ -1598,3 +1598,30 @@ intensity bin at split time (§17), without changing the thresholds after seeing
 `radar_day.reference` in the quality config) and `radar_screen_v4.py exclude`, which writes
 `day_exclusions.csv` (radar, day, reason) and `year_exclusions.csv` for
 `make_splits_hourly.py --day_excl`. Without the new config keys, the old behaviour is kept.
+
+**Result of the pre-stated rule (2026-10-13), not yet adopted downstream.** `rank` + `exclude`
+on the contributing-radar Phase 2 rerun (previous ranking archived in
+`quality_v4/rank_iso31_both/`):
+- *Radar-days with score >= 1: 3,029* (111 with the old `iso31` reference). Driven by `iso31`:
+  2,948, then f150 65, ceilings 13, flagged frames 3. 130 of 203 radars have at least one.
+- *Rule 3 flags chronic radar behaviour, not failure days.* On the new `iso31` exclusions the
+  median day has 176 isolated pixel-frames >= 31 mm/h, against a neighbour median of 0 and the
+  radar's own seasonal q99 of 277. Old `score_iso31` median -0.1. Spread evenly over the
+  seasons (DJF 765, MAM 703, JJA 840, SON 721), so not mainly convection. Concentrated on
+  coastal and island radars (isegs 267, sekkr 201, deboo 192, mtgud 181, skjav 147, sevar 138).
+- *51 excluded radar-days fall on catalogued event days*, the check named above.
+- *Rule 2's rain-day denominator is degenerate (a specification error, Claude's).* Few days have
+  >= 20% of a radar's area at >= 1 mm/h in any frame, so many radar-years have 0-2 rain days
+  and a median share of 54%: 170 radar-years (57,710 radar-days) excluded. Over days with data
+  instead, the same 5% / 3-day rule gives 39 radar-years (13,852 days).
+- *A median own-reference does not separate them either* (comparison only, nothing written):
+  2,686 radar-days, same radars, same flat seasons. Most of these radars have iso31 = 0 on most
+  days, so their median is ~0.
+- *The Oradea failure days of §19 (1,286-8,636 isolated pixels) no longer appear:* the largest
+  Oradea (roora) day has 502. Under the contributing geometry those pixels probably belong to
+  another radar. To be checked; it is the case rule 3 was written for.
+
+So the threshold does not decide this; whether the ~2,600 `iso31` days are artefacts is an
+empirical question. Proposed test, in the form of §25/§26 (criterion fixed before running):
+on the excluded German radar-days (deboo, depro, ...), the isolated >= 31 mm/h pixels must be
+dry in RADKLIM at >= 85%. Pending the researcher's decision.

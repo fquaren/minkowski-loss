@@ -15,6 +15,9 @@ radar-day ranking and the review gallery (DECISIONS §19, rules 2, 3 and 5).
                 score_s = log10((x + floor) / (max(q99_own, median_neighbours) + floor))
             i.e. decades above both references. Writes review.csv (top N, for the
             researcher's exclude / keep decision) and ranking.csv.gz (all).
+            radar_day.reference {signal: neighbours} drops the own-q99 reference (§28).
+  exclude   rule 5 by the pre-stated score (DECISIONS §28): day_exclusions.csv and
+            year_exclusions.csv from ranking.csv.gz.
   gallery   one image per reviewed radar-day: three frames of the clean_frame field around
             the radar, with its maximum-range circle and owned area. Writes review.md.
 
@@ -186,8 +189,10 @@ def cmd_rank(q, d, events_path="configs/prominent_events.yaml"):
                 __import__("warnings").simplefilter("ignore", RuntimeWarning)
                 med = np.nanmedian(M[:, nbm], axis=2)            # (days, radars)
             rd.loc[g.index, f"{s}_nb"] = np.nan_to_num(med[gi, gr], nan=0.0)
+    refs = q["radar_day"].get("reference", {})                 # signal -> "both" | "neighbours" (§28)
     for s in sig:
-        ref = np.maximum(rd[f"{s}_q99"].fillna(0), rd[f"{s}_nb"].fillna(0))
+        ref = rd[f"{s}_nb"].fillna(0) if refs.get(s, "both") == "neighbours" else \
+            np.maximum(rd[f"{s}_q99"].fillna(0), rd[f"{s}_nb"].fillna(0))
         rd[f"score_{s}"] = np.log10((rd[s] + FLOORS[s]) / (ref + FLOORS[s]))
     sc = rd[[f"score_{s}" for s in sig]]
     rd["score"] = sc.max(axis=1)
@@ -304,9 +309,34 @@ def cmd_gallery(q, d, cfg, workers, clim):
     print(f"[gallery] {len(jobs)} images -> {d}/gallery, {d}/review.md")
 
 
+def cmd_exclude(q, d):
+    """Rule 5 by the pre-stated score (DECISIONS §28): radar-days with score >= exclude_score,
+    and every day of a radar-year whose excluded days are >= year_share of its rain days and
+    >= year_min_days. Writes day_exclusions.csv (radar, day, reason) for
+    `make_splits_hourly.py --day_excl`, and year_exclusions.csv."""
+    p = q["radar_day"]
+    rd = pd.read_csv(os.path.join(d, "ranking.csv.gz"), dtype={"day": str},
+                     usecols=["radar", "day", "year", "max_wet", "score", "reason"])
+    rd["excl"] = rd.score >= p["exclude_score"]
+    rd["rain"] = rd.max_wet >= p["rain_wet"]
+    yr = rd.groupby(["radar", "year"]).agg(n_days=("day", "size"), n_rain=("rain", "sum"),
+                                           n_excl=("excl", "sum")).reset_index()
+    yr["share"] = yr.n_excl / yr.n_rain.clip(lower=1)
+    yr = yr[(yr.share >= p["year_share"]) & (yr.n_excl >= p["year_min_days"])]
+    days = rd.loc[rd.excl, ["radar", "day", "reason"]].assign(reason=lambda x: "score:" + x.reason)
+    ym = rd.merge(yr[["radar", "year"]], on=["radar", "year"])[["radar", "day"]].assign(reason="year")
+    out = pd.concat([days, ym]).drop_duplicates(["radar", "day"]).sort_values(["radar", "day"])
+    out.to_csv(os.path.join(d, "day_exclusions.csv"), index=False)
+    yr.to_csv(os.path.join(d, "year_exclusions.csv"), index=False)
+    print(f"[exclude] {int(rd.excl.sum()):,} radar-days with score >= {p['exclude_score']} "
+          f"({rd.loc[rd.excl, 'reason'].value_counts().to_dict()}); {len(yr)} radar-years "
+          f"(>= {p['year_share']:.0%} of rain days, >= {p['year_min_days']} days) adding "
+          f"{int((out.reason == 'year').sum()):,} days; {len(out):,} radar-days in day_exclusions.csv")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("cmd", choices=["ceilings", "frames", "rank", "gallery", "all"])
+    ap.add_argument("cmd", choices=["ceilings", "frames", "rank", "gallery", "exclude", "all"])
     ap.add_argument("--quality", default="configs/quality_v4.yaml")
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--data_dir", default=None, help="override the quality config's data_dir")
@@ -327,6 +357,8 @@ def main():
         cmd_frames(q, d, a.workers, a.keep_frames)
     if a.cmd in ("rank", "all"):
         cmd_rank(q, d)
+    if a.cmd == "exclude" or (a.cmd == "all" and "exclude_score" in q["radar_day"]):
+        cmd_exclude(q, d)
     if a.cmd in ("gallery", "all"):
         cmd_gallery(q, d, load_config(a.config), a.workers, a.climatology)
 

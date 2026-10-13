@@ -43,6 +43,12 @@ radar_day:                    # rule 5: reviewed by the researcher (DECISIONS §
   review_top: 100
   exclusions: []              # entries: {radar: <key>, day: YYYYMMDD, reason: ..., reviewed: YYYY-MM-DD}
   reject_share: 0.10
+  # automatic rule 5, fixed 2026-10-13 before the ranking was opened (DECISIONS §28)
+  exclude_score: 1.0          # radar-day excluded at a decade above both references
+  year_share: 0.05            # radar-year excluded at >= 5% of its rain days ...
+  year_min_days: 3            # ... and >= 3 excluded days
+  rain_wet: 0.2               # rain day: some frame with >= 20% of owned pixels >= 1 mm/h
+  reference: {iso31: neighbours}   # other signals: max(own seasonal q99, neighbours)
 
 known_failures:               # regression catalogue (DECISIONS §20, criterion 1)
   - name: madrid_20180429
