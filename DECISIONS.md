@@ -1695,3 +1695,59 @@ use u = 20 mm in 1 h as the primary level and report 10 and 30 mm.
 **What would change the conclusion.** The gauge criteria rest on DE/CH only (§24) and on a
 provisional u. A pass says the screen is ready for the full build; it does not replace the
 §20 gate on the build.
+
+**RADKLIM test result (2026-10-13; `calib/iso31_radklim/summary.md`). Passes; rule 3 stays.**
+- *Test:* 69,726 isolated pixel-frames on 337 German radar-days (308 days; RADKLIM for
+  2026-07/08 is not yet published). RADKLIM-dry **99.8% [99.5%, 99.9%]** against the 85% bar.
+  Per radar 99.5-100%, except Isen (deisn): 62.5% on 6 radar-days (341 pixel-frames), the one
+  place the signal may catch real convection.
+- *Control:* 11,141 isolated pixel-frames on 831 German radar-days that are *not* excluded:
+  98.0% [96.6%, 98.9%] dry. Isolated >= 31 mm/h pixels are artefacts on ordinary days too.
+- *The hourly chain already removes most of them:* only 11.4% of the test pixels leave >= 5 mm
+  in the screened hour (98.4% of those are RADKLIM-dry). Example: Berlin (debln) on
+  2013-07-28 (Andreas): 197 isolated pixel-frames, median 2,938 mm/h, 100% dry; the chain
+  leaves 2 of them >= 5 mm.
+
+**Result (2026-10-13; `calib/gate_prebuild/summary.md`, `gate_prebuild.py`). The gate is not
+passed in any rule-5 variant.** Calibration days rescanned with the current chain
+(`calib/hourly_c`, 199 days, 335,996 tile-hours); gauges on 246 days (8.66 M gauge-hours,
+1,733 stations).
+
+| criterion | rule 5 off | §28 as pre-stated | year share over days with data |
+|---|---|---|---|
+| tile-hours rejected | 0.13% | 14.24% | 3.49% |
+| 1. known failures kept (Madrid / Valjevo / 48.62) | **5 / 1 / 1, FAIL** | 0 / 0 / 0, pass | 0 / 0 / 0, pass |
+| 3a. worst event rejected | 0.00%, pass | **100% (Montpellier, Cannes, Misox), FAIL** | **20.1% (Andreas), FAIL** |
+| 3b. reasons rising with intensity | **ceiling: 0.04% -> 1.77%, FAIL** | same | same |
+
+All three known-failure checks are non-vacuous: the failure is present in the raw field in 32,
+46 and 79 tile-hours.
+
+Criterion 2 (independent of rule 5; pixel values of the chain, no split-time rejection):
+
+| u | raw: false alarms | screened: false alarms [95% CI] | screen-caused misses | overall misses |
+|---|---|---|---|---|
+| 10 mm | 16.2% | 4.6% [3.5, 5.9] | 0.1% | 7.6% |
+| **20 mm** | 48.8% | **6.4% [3.9, 9.6] -> 2a FAIL (bound <= 5%)** | **0.1% -> 2b pass** | 8.1% |
+| 30 mm | 68.4% | 8.5% [1.1, 19.6] | 0.0% | 9.5% |
+
+**Diagnosis (descriptive, after the results).**
+- *The radar-year rule causes most of the event loss.* Of the event tile-hours rejected by the
+  pre-stated list, 2,028 of 2,169 come through excluded radar-years (chwei 2024 in the
+  southern-Germany floods, nldbl 2014 at Pentecost, frnim 2014 at Montpellier, depro 2017 in the
+  Poland derecho); 141 through radar-days with score >= 1.
+- *Score only (no radar-year rule):* 1.08% of tile-hours rejected; criterion 1 passes
+  (0 / 0 / 0 kept); criterion 3a fails only for Andreas (11.2%, debln 2013-07-27/28) and Boris
+  (8.5%, hubud / hrdeb / sipas). Both through `iso31`, on days whose isolated pixels the chain
+  already removes (Berlin: 99%, above).
+- *Ceiling rejection rises with intensity by construction:* a ceiling is a high value. Whether
+  the >= 20 mm rejections are real cores is not tested.
+- *False alarms:* the screen cuts them from 48.8% to 6.4% at 20 mm. The 5% bound was carried
+  over from the eye-review of tiles (§20); for a 2 km pixel against a point gauge part of the
+  remainder is support mismatch, not contamination. Not changed after the result.
+
+**Open, for the researcher.** (1) Drop the radar-year rule. (2) Score `iso31` on the pixels
+the hourly chain leaves, so rule 5 targets what the chain misses; against it, §19 computes the
+signals before repairs so that a repair cannot hide a failing radar. (3) Test the ceiling
+rejections >= 20 mm against RADKLIM / gauges where they overlap. (4) Decide whether criterion
+2a's bound stays at 5% for gauge comparisons, with a new criterion fixed before re-running.
