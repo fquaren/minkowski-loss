@@ -39,7 +39,8 @@ radar_frame:                  # rule 3, provisional until Phase 0
                               # >= this. Provisional: 20 gallery cases (15/15 failures kept, 4/4 storms
                               # dropped; closest storm 0.13). Changes frame_flags on a rerun of `frames`.
 
-radar_day:                    # rule 5: reviewed by the researcher (DECISIONS §19)
+radar_day:                    # rule 5 (DECISIONS §19); by a pre-stated score since §24 / §28,
+                              # review_top / exclusions kept for the old reviewed-list path
   review_top: 100
   exclusions: []              # entries: {radar: <key>, day: YYYYMMDD, reason: ..., reviewed: YYYY-MM-DD}
   reject_share: 0.10

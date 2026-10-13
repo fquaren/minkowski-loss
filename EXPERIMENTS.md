@@ -293,14 +293,28 @@ isoperimetric scatter.
       - Next:
         - per-signal galleries from `calib/hourly/signals/`, including n_peak / n_wet;
         - set the provisional thresholds of §23 from the galleries and the ablation;
-        - an hourly `make_splits` / `build_store`.
+        - ~~an hourly `make_splits` / `build_store`~~ **done 2026-10-13** (`2c6b5f5`):
+          `scripts/dataset_v2/make_splits_hourly.py` (rejection per reason x intensity bin,
+          `--day_excl` for rule 5) and `build_store_hourly.py` (plain-sum target, `adv_precip`
+          alongside; coarse-grid motion and tile-only advection, ~2 min per processing day on 3
+          workers). Test build on 2021-07-14/15 + 1 NIMBUS day verified; 6/150 rows differed
+          from metadata made before the burst rule, as expected.
+      *Progress 2026-10-09 .. 10-13:* burst rule adopted (DECISIONS §26); Mahalanobis mask not
+      adopted (§25, §26); radar ownership from contributing radars, radar pass rerun done
+      2026-10-09 23:28 (§27); rule 5 thresholds pre-stated and applied (§28): 3,029 radar-days,
+      mostly chronic isolated pixels on coastal radars, not used downstream yet. Running
+      2026-10-13: the RADKLIM test of rule 3 (`iso31_radklim.py`) and the pre-build gate
+      (`gate_prebuild.py`, DECISIONS §29). Limitations for the paper: `notes/opera_hourly_screen.md`
+      §6. The review server (port 8765) was stopped 2026-10-13.
       1. ~~Researcher reviews~~ **Dropped 2026-10-08 (DECISIONS §24): no dataset decision
          rests on the researcher's eye.** The 144 gallery verdicts (done 2026-10-08, 100/144
          agree with Claude's) and `review.csv` (0/100) are kept only as a record. To do
          instead:
-         - automatic radar-day / radar-year exclusion from a pre-stated score;
+         - automatic radar-day / radar-year exclusion from a pre-stated score; *applied
+           2026-10-13 (§28), RADKLIM test of the `iso31` signal running*;
          - `min_wet_jump` from the normal-operation distribution;
-         - the §20 criterion 2 replaced by gauge false-alarm and miss rates.
+         - the §20 criterion 2 replaced by gauge false-alarm and miss rates; *numbers fixed
+           2026-10-13 in §29 (u = 20 mm provisional), pre-build gate running*.
       2. **Decisions** (proposals in RESEARCH_NOTES §7.4e):
          - (a) hour convention: frames H-45..H, as OPERA `ACRR`;
          - (b) completeness: 4/4 frames, or fill one frame by motion interpolation;
@@ -717,6 +731,8 @@ isoperimetric scatter.
         repair cannot hide a failure): per radar-frame features and per radar-year value
         histograms (~6-8 h). Then ceiling table, radar-frame thresholds, radar-day ranking and
         gallery -> **review list for the researcher** (top 100 radar-days, cut-off stated).
+        *Superseded 2026-10-08 (§24): exclusions come from a pre-stated score; `radar_screen_v4.py
+        exclude` (§28). The gallery is a diagnostic only.*
       - *Phase 3, tile scan* with the v4 chain (~12 h): clean_frame -> ceiling masking ->
         guarded repair_static -> repair_unsupported -> post-repair repeated-value count; new
         tile columns `n_ceiling`, `max_rep`, `rep_value`, `n_refused`, `radar_fail_frac`,
@@ -731,8 +747,12 @@ isoperimetric scatter.
         ratio (DE/CH) no worse than v3 (also closes the ring-at-89 re-validation above);
         (5) remaining xi(u) drift explained, with a truncated-GPD fit
         (`pot_threshold.py --version v4`). **Step 3 (retraining) starts only after the gate.**
+        *Revised:* criterion 2 is now gauge false alarms and screen-caused misses (§24, numbers
+        in §29). Criteria 1, 2 and 4 also run before the build on the calibration and gauge
+        days (`gate_prebuild.py`, §29); 3 and 5 need the build.
       - *Decisions so far (2026-10-06):* ceiling tile-frame rejected at >= 5 pixels, 1-4
-        repaired like spikes; radar-day exclusions from a reviewed list; scope limited to the
+        repaired like spikes; radar-day exclusions from a reviewed list (*replaced by a
+        pre-stated score, §24 / §28*); scope limited to the
         five rules; no cleaning by tail fit (DECISIONS §20).
 
       Questions for Daniele Nerini and Lionel Moret are in RESEARCH_NOTES §7.4. Every tail
