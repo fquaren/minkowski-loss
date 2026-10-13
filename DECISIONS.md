@@ -1625,3 +1625,73 @@ So the threshold does not decide this; whether the ~2,600 `iso31` days are artef
 empirical question. Proposed test, in the form of §25/§26 (criterion fixed before running):
 on the excluded German radar-days (deboo, depro, ...), the isolated >= 31 mm/h pixels must be
 dry in RADKLIM at >= 85%. Pending the researcher's decision.
+
+**RADKLIM test of rule 3 (criteria fixed 2026-10-13, before the test was run; researcher
+asked for the test, Claude wrote the criteria).** `scripts/data_quality/iso31_radklim.py`.
+- *Population:* the pixels counted by `iso31` on the German radar-days that §28 excludes with
+  reason `iso31` (321 days with RADKLIM after fetching): a pixel owned by that radar
+  (contributing geometry, §27), >= 31 mm/h in the `clean_frame` field, isolated by
+  `radar_screen.isolated_mask`. Each pixel-frame belongs to the hour H whose ACRR window
+  H-45..H holds it; frames at d 00:00 (previous processing day) are skipped.
+- *Measure:* RADKLIM-dry = `K_tol < 5` mm (`radklim_presence.k_tolerant`: max over +-1 h and
+  +-2 px), the definition of §25/§26. A pixel at >= 31 mm/h in one frame adds >= 7.75 mm to
+  its hour, so a RADKLIM value below 5 mm in the whole window is a disagreement on presence.
+- *Pass:* the pooled dry share is >= 85%, as in §26. Reported with a 95% day-block bootstrap
+  interval, per radar, and per radar-day.
+- *If it passes,* rule 3 stays as fixed. *If it fails,* rule 3 goes back to the two-reference
+  score and the Oradea-type case is handled separately.
+- *Descriptive, not criteria:*
+  - the same measure on a control: isolated pixels of German radar-days that are *not*
+    excluded (score < 1), on the RADKLIM days already on disk;
+  - the share of the test pixels that the hourly chain (current `quality_v4.yaml`, burst rule
+    on) leaves at >= 5 mm in the screened hour. A high share means the pixel-level chain
+    does not already remove them, so a radar-day rule is needed for them.
+- *Rule 2's denominator* stays as fixed (rain days) until the researcher confirms the
+  correction to days with data; the gate (§29) reports rule 5 both ways.
+
+## 29. The readiness gate before the full-archive build (2026-10-13)
+
+**Question.** §20 defines the gate on the built v4 dataset, and §24 replaced its criterion 2
+with gauge measures but set no numbers. The full-archive build needs rule 5 settled first
+(§28). Which parts can be checked before the build, and against what?
+
+**Decision (researcher asked for the gate 2026-10-13; Claude fixed the numbers below before
+running).** A pre-build gate on the calibration days (199) and the gauge days (63), with the
+current chain: `quality_v4.yaml`, burst rule on, contributing-radar geometry (§27), frame
+flags of the 2026-10-09 radar pass. Calibration days are rescanned with that chain
+(`calib/hourly_c/`). Every criterion is reported with rule 5 off and with the pre-stated §28
+exclusion list.
+
+*u is provisional.* The hourly tail threshold is not derived yet (§21). The gauge criteria
+use u = 20 mm in 1 h as the primary level and report 10 and 30 mm.
+
+1. *Known failures caught (§20 criterion 1, `known_failures`, hourly form).* Among kept
+   tile-hours:
+   - Madrid 20180429: none >= 10% owned by estjv with `max_rate` >= 31 mm/h;
+   - Valjevo 2023 (calibration days): none with `max_rate` within 0.005 of 364.63;
+   - 48.62 (2019-11, tile 640/1408): none with `rep_value` within 0.005 of 48.62 and
+     `rep_count` >= 5.
+   Pass: zero in each.
+2. *Gauge false alarms and screen-caused misses (§20 criterion 2 as revised in §24).* DE/CH
+   gauges, `g_shift` window, gauge-hours on the 63 gauge days and the 196 calibration days with
+   any DE/CH gauge (`gauge_hourly.py`, fixed to run the burst rule), both networks, gauges on
+   hot pixels included.
+   - (a) *False alarms:* among gauge-hours with screened radar >= u, the share with
+     gauge < 1 mm. Pass: the upper end of its 95% day-block bootstrap interval is <= 5%, the
+     bound §20 set for residual contamination.
+   - (b) *Screen-caused misses:* among gauge-hours with gauge >= u, the share where the screen
+     lowered the radar to <= 0.5 x raw. Pass: <= 1%.
+   - Descriptive: the same for raw radar, and the overall miss share (screened radar <
+     0.2 u where gauge >= u), which measures the product and the support mismatch, not the
+     screen.
+3. *Real extremes survive (§20 criterion 4, the parts that need no build).*
+   - (a) Rejected share of event tile-hours (`make_splits.event_rows`, wet tile-hours with
+     max >= 1 mm) < 0.5% per event with >= 50 such tile-hours.
+   - (b) For each rejection reason, its rate among tile-hours with hourly max >= 20 mm is
+     <= max(3 x its rate at 5-10 mm, 0.5%). This is a stated reading of "not rising steeply".
+4. *Deferred to the build:* §20 criteria 3 (tail stability of the evaluation reference) and 5
+   (xi(u) drift). Both need the built test split.
+
+**What would change the conclusion.** The gauge criteria rest on DE/CH only (§24) and on a
+provisional u. A pass says the screen is ready for the full build; it does not replace the
+§20 gate on the build.
