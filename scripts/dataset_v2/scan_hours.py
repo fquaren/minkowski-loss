@@ -14,8 +14,9 @@ Columns (per tile-hour):
   max, mean, wet_frac, n_ge*, coarse_max  of the cleaned hourly sum (mm), as `tile_stats`,
                                         plus n_ge5, n_ge20, n_ge50
   raw_max, max_rate, raw_max_rate       raw hourly sum max; max cleaned / raw 15-min rate (mm/h)
-  n_hot_kept, n_ceiling, n_footprint, n_ring, n_ray, n_persist, n_unsupported, n_refused
-                                        pixel-frames coded by each rule over the four frames
+  n_hot_kept, n_ceiling, n_footprint, n_ring, n_ray, n_persist, n_unsupported, n_refused,
+  n_burst                               pixel-frames coded by each rule over the four frames
+                                        (n_burst added 2026-10-09; absent from earlier scans)
   n_ceiling_max                         largest per-frame ceiling count (v4 rejects at >= 5)
   rep_value, rep_count, rep_excess, max_rep, rep_context
                                         repeated-value test on the worst of the four frames
@@ -44,7 +45,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 sys.path.insert(0, os.path.dirname(__file__))
 
 RULE_BITS = {"n_footprint": 1, "n_ray": 2, "n_ring": 4, "n_unsupported": 8, "n_ceiling": 16,
-             "n_refused": 32, "n_hot_kept": 64, "n_persist": 128}
+             "n_refused": 32, "n_hot_kept": 64, "n_persist": 128, "n_burst": 256}
 
 
 def _ts(t):

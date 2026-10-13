@@ -309,3 +309,28 @@ def test_prior_spares_a_cell_passing_over_the_flagged_pixel(tmp_path):
     off, on = _run_prior(tmp_path, False), _run_prior(tmp_path, True)
     for a, b in zip(off.hours, on.hours):
         np.testing.assert_array_equal(a["sum"], b["sum"])
+
+
+def test_advected_mean_box_equals_full_field_in_the_box():
+    from src.data.hourly import advected_mean
+    rng = np.random.default_rng(0)
+    frames = [np.maximum(rng.gamma(0.3, 5.0, (60, 80)).astype(np.float32) - 1, 0) for _ in range(6)]
+    V = np.stack([np.full((60, 80), 1.7, np.float32), np.linspace(-1, 2, 60 * 80, dtype=np.float32).reshape(60, 80)])
+    full = advected_mean(frames, [V] * 5, 7.5, 67.5, "noblend", "nearest")
+    box = (10, 42, 25, 70)
+    part = advected_mean(frames, [V] * 5, 7.5, 67.5, "noblend", "nearest", box=box)
+    np.testing.assert_array_equal(part, full[10:42, 25:70])
+
+
+def test_motion_lk_coarse_step_close_to_dense():
+    from src.data.hourly import motion_lk
+    pytest.importorskip("pysteps")
+    pytest.importorskip("cv2")
+    yy, xx = np.mgrid[0:200, 0:240]
+    blob = lambda cy, cx: sum(30 * np.exp(-((yy - cy - dy) ** 2 + (xx - cx - dx) ** 2) / 30.0)
+                              for dy, dx in ((0, 0), (25, 40), (-30, 70), (40, -50), (10, 100)))
+    a, b = blob(90, 90).astype(np.float32), blob(93, 95).astype(np.float32)     # moved (+3, +5) px
+    Vd, Vc = motion_lk(a, b), motion_lk(a, b, step=8)
+    wet = a > 1
+    assert abs(np.median(Vc[0][wet]) - 5) < 1 and abs(np.median(Vc[1][wet]) - 3) < 1
+    assert np.abs(Vc - Vd)[:, wet].mean() < 0.3

@@ -54,7 +54,8 @@ DEFAULTS = {
     "rules": {**{r: True for r in RULES}, "burst": False},   # burst: off until accepted (§26)
     "burst": {"min_share": 0.8, "min_rate": 100.0, "iso_median": 1.0},
     "advection": None,               # None: plain sum only; {"mode": "blend"|"noblend",
-                                     # "interp": "linear"|"cubic"|"nearest"} adds h["sum_adv"]
+                                     # "interp": "linear"|"cubic"|"nearest", "motion_step": 1}
+                                     # adds h["sum_adv"]
 }
 
 
@@ -78,49 +79,71 @@ def config(q: dict | None = None) -> dict:
 _GRID = {}
 
 
-def motion_lk(r1, r2):
+def motion_lk(r1, r2, step=1):
     """Dense motion (u, v) in px per frame step from frame r1 to r2: pysteps Lucas-Kanade on
-    log rates. Zero where there is too little rain to track."""
+    log rates. Zero where there is too little rain to track. step > 1: the sparse vectors
+    (same tracking, outlier removal and declustering as pysteps) are interpolated by the same
+    inverse-distance weighting on every step-th pixel only and bilinearly upsampled; the field
+    is smooth on that scale, and the full-grid interpolation costs ~50 s per pair."""
     from pysteps import motion
     a, b = (np.nan_to_num(r, nan=0.0) for r in (r1, r2))
     if (a >= 0.5).sum() < 50 or (b >= 0.5).sum() < 50:
         return np.zeros((2,) + a.shape, np.float32)
     x = np.stack([np.log(np.maximum(a, 0.1)), np.log(np.maximum(b, 0.1))])
-    return motion.get_method("LK")(x, dense=True, verbose=False).astype(np.float32)
+    if step <= 1:
+        return motion.get_method("LK")(x, dense=True, verbose=False).astype(np.float32)
+    import cv2
+    from pysteps.utils.cleansing import decluster
+    from pysteps.utils.interpolate import idwinterp2d
+    xy, uv = motion.get_method("LK")(x, dense=False, verbose=False)
+    if xy.shape[0]:
+        xy, uv = decluster(xy, uv, 20, 1, False)           # pysteps default decl_scale
+    if xy.shape[0] == 0:
+        return np.zeros((2,) + a.shape, np.float32)
+    H, W = a.shape
+    yg, xg = np.arange(0, H + step - 1, step), np.arange(0, W + step - 1, step)
+    co = idwinterp2d(xy, uv, xg, yg).astype(np.float32)    # (2, len(yg), len(xg))
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    return np.stack([cv2.remap(c, xx / step, yy / step, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+                     for c in co])
 
 
-def warp(f, V, s, interp="linear"):
+def warp(f, V, s, interp="linear", box=None):
     """f moved by s x V, semi-Lagrangian with the motion taken at the destination:
     out(x) = f(x - s V(x)); zero outside the grid. cv2.remap works in fixed point (1/32 px);
-    cubic can overshoot, so negative values are clipped."""
+    cubic can overshoot, so negative values are clipped. box (y0, y1, x0, x1): the output only
+    on that part of the grid (the source is still the whole of f)."""
     import cv2
     H, W = f.shape
     if (H, W) not in _GRID:
         yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
         _GRID[(H, W)] = (yy, xx)
     yy, xx = _GRID[(H, W)]
+    if box is not None:
+        y0, y1, x0, x1 = box
+        yy, xx, V = yy[y0:y1, x0:x1], xx[y0:y1, x0:x1], V[:, y0:y1, x0:x1]
     flag = {"linear": cv2.INTER_LINEAR, "cubic": cv2.INTER_CUBIC, "nearest": cv2.INTER_NEAREST}[interp]
     out = cv2.remap(f.astype(np.float32), xx - s * V[0], yy - s * V[1], flag,
                     borderMode=cv2.BORDER_CONSTANT, borderValue=0.0)
     return np.maximum(out, 0.0) if interp == "cubic" else out
 
 
-def advected_mean(frames, motions, t0, t1, mode="blend", interp="linear", step_min=15.0, dt=1.0):
+def advected_mean(frames, motions, t0, t1, mode="blend", interp="linear", step_min=15.0, dt=1.0, box=None):
     """Mean rate over frame-times t0 .. t1 (minutes after frames[0]) from 15-min frames, with the
     rain moved along the motion between them (pysteps advection correction).
     frames: consecutive frames step_min apart (zeros, not NaN); motions[j]: frame j -> j+1.
     mode "blend": (1 - s) x frame j moved forward + s x frame j+1 moved backward (pysteps);
     "noblend": frame j moved forward for s < 0.5, frame j+1 moved backward otherwise, so two
-    imperfectly aligned intensities are never averaged."""
+    imperfectly aligned intensities are never averaged. box: as `warp`."""
     acc, n = 0.0, 0
     for m in np.arange(t0 + dt / 2, t1, dt):
         j = min(int(m // step_min), len(motions) - 1)
         s = (m - j * step_min) / step_min
         V = motions[j]
         if mode == "blend":
-            f = (1 - s) * warp(frames[j], V, s, interp) + s * warp(frames[j + 1], V, -(1 - s), interp)
+            f = (1 - s) * warp(frames[j], V, s, interp, box) + s * warp(frames[j + 1], V, -(1 - s), interp, box)
         else:
-            f = warp(frames[j], V, s, interp) if s < 0.5 else warp(frames[j + 1], V, -(1 - s), interp)
+            f = warp(frames[j], V, s, interp, box) if s < 0.5 else warp(frames[j + 1], V, -(1 - s), interp, box)
         acc = acc + f
         n += 1
     return acc / n
@@ -168,8 +191,10 @@ class HourlyDay:
     """
 
     def __init__(self, raw_dir, day, var, hot, ring=None, sites_rc=None, ceilings=None,
-                 cfg=None, crop=None, prior=None):
+                 cfg=None, crop=None, prior=None, adv_boxes=None):
         self.raw_dir, self.day, self.var = raw_dir, str(day), var
+        self.adv_boxes = adv_boxes     # {hour end (int ns): [(y0, y1, x0, x1), ...]}: advection only
+                                       # for those hours and boxes, NaN elsewhere (store builds)
         self.hot_fn, self.ring_fn, self.sites, self.ceilings = hot, ring, sites_rc, ceilings
         self.prior_fn = prior          # year -> full-grid bool mask; lowers p1 there (DECISIONS §25)
         self.cfg = config(cfg)
@@ -344,15 +369,25 @@ class HourlyDay:
             for e in times[proc]:
                 if (e - d0) % np.timedelta64(60, "m"):
                     continue
+                boxes = None if self.adv_boxes is None else self.adv_boxes.get(nsec(e))
+                if self.adv_boxes is not None and not boxes:
+                    continue
                 want = [e - k * STEP for k in (4, 3, 2, 1, 0, -1)]          # H-60 .. H+15
                 if not all(nsec(w) in at for w in want):
                     continue
                 jj = [at[nsec(w)] for w in want]
                 for a_, b_ in zip(jj[:-1], jj[1:]):
                     if (a_, b_) not in mo:
-                        mo[(a_, b_)] = motion_lk(Z[a_], Z[b_])
-                adv[nsec(e)] = advected_mean([Z[j] for j in jj], [mo[(a_, b_)] for a_, b_ in zip(jj[:-1], jj[1:])],
-                                             7.5, 67.5, ac.get("mode", "blend"), ac.get("interp", "linear"))
+                        mo[(a_, b_)] = motion_lk(Z[a_], Z[b_], ac.get("motion_step", 1))
+                args_ = ([Z[j] for j in jj], [mo[(a_, b_)] for a_, b_ in zip(jj[:-1], jj[1:])], 7.5, 67.5,
+                         ac.get("mode", "blend"), ac.get("interp", "linear"))
+                if boxes is None:
+                    adv[nsec(e)] = advected_mean(*args_)
+                else:
+                    out = np.full(Z.shape[1:], np.nan, np.float32)
+                    for b in boxes:
+                        out[b[0]:b[1], b[2]:b[3]] = advected_mean(*args_, box=b)
+                    adv[nsec(e)] = out
         keep = np.nonzero(proc)[0]
         self.frames, self.fin, self.code, self.raw = times[keep], S[keep], code[keep], raw[keep]
         pos = {t: i for i, t in enumerate(self.frames)}
