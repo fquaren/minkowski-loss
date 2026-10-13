@@ -62,16 +62,20 @@ def crit1(t, rej, cal):
     k = ~rej
     m = (t.day == pd.Timestamp("2018-04-29")).values
     sh = np.array([owner_share(o, "estjv") for o in t.owners.values])
+    # (name, tile-hours where the failure is in the raw field (context), screened candidates, kept)
     cand = m & (sh >= 0.10) & (t.max_rate.values >= 31)
-    out.append(("madrid_20180429 (estjv >= 10%, max_rate >= 31)", int(cand.sum()), int((cand & k).sum())))
+    ctx = m & (sh >= 0.10) & (t.raw_max_rate.values >= 31)
+    out.append(("madrid_20180429 (estjv >= 10%, max_rate >= 31)", int(ctx.sum()), int(cand.sum()), int((cand & k).sum())))
     vdays = {pd.Timestamp(d) for d in cal[cal.category.str.contains("valjevo")].day}
     m = t.day.isin(vdays).values
     cand = m & (np.abs(t.max_rate.values - 364.63) <= 0.005)
-    out.append((f"valjevo_ceiling_2023 ({len(vdays)} days, max_rate = 364.63)", int(cand.sum()), int((cand & k).sum())))
+    ctx = m & (np.abs(t.raw_max_rate.values - 364.63) <= 0.005)
+    out.append((f"valjevo_ceiling_2023 ({len(vdays)} days, max_rate = 364.63)", int(ctx.sum()), int(cand.sum()), int((cand & k).sum())))
     ddays = {pd.Timestamp(d) for d in ("2019-11-14", "2019-11-15", "2019-11-16", "2019-11-18", "2019-11-21")}
     m = t.day.isin(ddays).values & (t.row.values == 640) & (t.col.values == 1408)
     cand = m & (np.abs(t.rep_value.fillna(0).values - 48.62) <= 0.005) & (t.rep_count.values >= 5)
-    out.append(("ceiling_4862_201911 (tile 640/1408, >= 5 px at 48.62)", int(cand.sum()), int((cand & k).sum())))
+    ctx = m & (t.n_ceiling.values > 0)          # raw value table not in the scan; ceiling pixels coded
+    out.append(("ceiling_4862_201911 (tile 640/1408, >= 5 px at 48.62)", int(ctx.sum()), int(cand.sum()), int((cand & k).sum())))
     return out
 
 
@@ -145,9 +149,10 @@ def main():
         d = decide_hourly(t, q, frame_flags=flags, day_excl=de)
         rej = t["unphysical"].astype(bool).values | d["rej_v4"].values
         L += [f"## Rule 5: {name} ({len(de):,} excluded radar-days); tile-hours rejected {rej.mean():.2%}", "",
-              "Criterion 1, known failures (candidates / kept; pass = 0 kept):", ""]
+              "Criterion 1, known failures (pass = 0 kept; 'in raw' shows the check is not vacuous):", ""]
         c1 = crit1(t, rej, cal)
-        L += [f"- {n}: {a} candidates, {k} kept -> {'PASS' if k == 0 else 'FAIL'}" for n, a, k in c1]
+        L += [f"- {n}: {c} tile-hours with it in raw / coded, {a} after the chain, {k} kept -> "
+              f"{'PASS' if k == 0 else 'FAIL'}{' (vacuous: not present in raw)' if c == 0 else ''}" for n, c, a, k in c1]
         a, b, nlo, nhi = crit3(t, d, rej)
         big = [x for x in a if x[1] >= 50]
         worst = max(big, key=lambda x: x[2]) if big else None
