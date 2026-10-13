@@ -1563,3 +1563,38 @@ out of 175 database-active ones.
 - *Consequence for the data, a limitation to state:* Austria (never), Switzerland and
   Hungary (before 2014) are observed only by distant foreign radars, with beam overshoot over
   the Alps. Extremes there are likely underestimated. Kept, not screened.
+
+## 28. Rule 5 by a pre-stated score: radar-day and radar-year exclusions (2026-10-13)
+
+**Question.** §24 replaced the reviewed radar-day list with an automatic rule but left the
+numbers open. Which radar-days and radar-years are excluded?
+
+**Decision (researcher, 2026-10-13, on Claude's proposal).** Written down before the ranking
+of the contributing-radar Phase 2 rerun (§27, `quality_v4/ranking.csv.gz`) was opened. Only its
+log summary had been seen: 111 radar-days with score >= 1 under the old `iso31` reference.
+1. *Radar-day:* excluded when `score >= 1`, i.e. some signal is a decade above both the
+   radar's own seasonal q99 and the median of its 5 nearest radars that day (§19).
+2. *Radar-year:* excluded, with all its days, when its excluded radar-days are >= 5% of its
+   rain days and number >= 3. A rain day is a day on which, in some frame, >= 20% of the
+   radar's owned pixels are >= 1 mm/h (`max_wet >= 0.2`, the wet threshold of the R2
+   feature). The 3-day floor stops one bad day from removing a short year (2012 has 46 days).
+3. *`iso31` is scored against its neighbours only,* not against the radar's own seasonal q99.
+   A radar failing on more than ~1% of its season-days raises its own q99 and hides behind
+   it (§19: Oradea's failure days scored < 0 on 6 of 7). The neighbour median has no such
+   blind spot for a single failing radar. The other three signals keep both references.
+
+**Why these values.** Rule 1 is the value §24 floated: one decade is far outside the
+day-to-day spread of a working radar, so the rule keys on failure, not on rare weather
+(§17 safeguard 1). The 5% and the 3-day floor in rule 2 are Claude's proposal, with no data
+behind them when fixed: a radar failing on one rain day in twenty is unreliable on the days
+the score does not catch. The 20% rain-day threshold reuses an existing convention.
+
+**What would change the conclusion.** Real extremes that are a decade above all five
+neighbours (a small, isolated convective cell). To check, report the excluded radar-days that
+fall on catalogued event days (`configs/prominent_events.yaml`) and their rejection share by
+intensity bin at split time (§17), without changing the thresholds after seeing them.
+
+**Implementation.** `radar_screen_v4.py rank` (reference per signal from
+`radar_day.reference` in the quality config) and `radar_screen_v4.py exclude`, which writes
+`day_exclusions.csv` (radar, day, reason) and `year_exclusions.csv` for
+`make_splits_hourly.py --day_excl`. Without the new config keys, the old behaviour is kept.
