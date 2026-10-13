@@ -174,32 +174,140 @@ Acceptance (`calib/mask_validate`):
   separate clutter from climatologically wet orographic pixels. The burst rule, keyed on
   temporal structure rather than climatology, is what reduced the tail contamination.
 
-## 6. Limitations to state
+## 6. Limitations (for the methods section and the appendix)
 
-- *Validation covers Germany.* The screen is validated against independent data in
-  Germany (RADKLIM) and DE/CH (gauges), about a third of its tail removals. Elsewhere rules
-  rest on their signatures.
-- *Italian radars are not in OPERA.* Italy is outside the dataset; FBK's `srt1_adj`
-  (2018 on) could add it.
-- *Austria never contributes, and Switzerland and Hungary only from 2014.* Those areas have
-  valid composite data from distant foreign radars, with beam overshoot over the Alps.
-  Ownership follows the radars listed in each composite's `how/nodes` (DECISIONS §27).
-- *Residual contamination at >= 75 mm* after the burst rule: about a third of kept values
-  over Germany are RADKLIM-dry.
-- *The plain hourly sum beads fast-moving cells.*
-- *Below ~6 km wavelength* OPERA and RADKLIM do not corroborate each other; geometry at
-  those scales is product-specific.
-- *Magnitudes:* OPERA reads ~0.44 of gauges on heavy hours (partly point-vs-area support).
-  The screen does not correct magnitudes.
+Updated 2026-10-13. Each item gives the cause, the direction of the error it introduces, its
+size where we measured it, and what the method does about it. Items marked *[verify]* rest on
+a fact not yet checked against a source.
+
+### 6.1 How far the validation reaches
+
+- **Independent data exist only over Germany and Switzerland.** RADKLIM covers Germany and
+  the gauges cover DE/CH, about a third of the screen's tail removals. Elsewhere a rule is
+  justified by its signature (a value piled up at a ceiling, a field that depends on range
+  only), not by a test. *Assumption:* thresholds tested over DE/CH transfer to the rest of
+  Europe. The failures that matter most for the tail (Valjevo 2023, Madrid, Oradea) lie
+  outside the tested area (DECISIONS §24). A rule tuned to German radars could miss failure
+  modes of other networks, or remove real rain in climates it was not tested in.
+- **RADKLIM is not fully independent of OPERA over Germany.** It is reprocessed from the
+  same DWD radars, with its own clutter correction and gauge adjustment.
+  - *An artefact in the raw radar data that RADKLIM's correction also misses* is "confirmed"
+    by the presence test, so the test can pass contamination as rain.
+  - *Real rain that RADKLIM's own filters remove* looks like an OPERA artefact, so the test
+    can credit a rule for removing rain.
+  - The gauges are independent of the radar, but they are point measurements (below).
+- **The presence test checks whether there is rain, not how much** (§4). RADKLIM
+  underestimates peaks, and its adjustment is interpolated between gauges. It confirms only
+  27% of the 50–100 mm values kept in screened OPERA, and has 7 pixel-hours ≥ 100 mm where
+  screened OPERA has 43. So the screen's effect on peak *magnitude* is not validated, only
+  the *presence* of the rain it keeps or removes.
+- **The presence test has a disagreement floor.** Ordinary kept 10–50 mm values are
+  "RADKLIM-dry" 5–6% of the time, from timing and position mismatch. A rule's removals cannot
+  be shown to be more than ~94% artefacts. Pass bars (85% dry) sit below that floor, so up to
+  ~15% of a passing rule's removals may be real rain. Example: the burst rule removes 308
+  pixel-hours at 20–50 mm (1.0% of that bin), 87.7% of them RADKLIM-dry (§26), so ~38 of them
+  may be real rain.
+- **Radar against point gauges is ill-posed in the tail.** Inside a convective core a point
+  gauge exceeds the 2 km pixel mean by construction. So gauge tests use the *gain* in
+  agreement on a fixed set of pairs (§22), not absolute agreement, and tail magnitudes are
+  not compared. The gain is fragile: one DWD gauge on a clutter pixel once produced +0.10 of
+  a +0.108 gain, so every gain is reported with the most influential station left out.
+- **The test samples are small.** Rules were tuned on 199 calibration days, gauge tests use
+  63 days, and RADKLIM tests use 192 days. The rarest bins (≥ 100 mm) hold tens of
+  pixel-hours, so a rule's behaviour on the most extreme values rests on few cases. Intervals
+  are 95% day-block bootstraps, which assume days are independent; multi-day events break
+  that.
+
+### 6.2 How the criteria were set
+
+- **Pre-registration is internal.** Criteria were written into the decision log (DECISIONS)
+  and committed before each test was run. The commit timestamps are the record. They were
+  not registered externally, and the people who wrote the criteria also ran the tests.
+- **Some criteria were amended after the results, and are labelled as such.** In §28 the
+  radar-year denominator ("rain days") turned out degenerate once applied. It is reported as
+  a specification error, with both the pre-stated and the corrected numbers.
+- **The rules were designed by looking at the same archive.** Signatures were found on images
+  of known failures (hypothesis generation), and acceptance was tested on independent data.
+  The gallery verdicts decide nothing (§24). But the calibration days were chosen to contain
+  failures, so rule thresholds may be tuned to those failures' particular forms.
+- **Several variants were tested for some decisions** (four advection variants, four
+  Mahalanobis thresholds). A selection rule fixed in advance picked the winner, and for the
+  mask it was checked on two halves of the data. Testing several variants still raises the
+  chance that one passes by luck.
+
+### 6.3 What the screen cannot see
+
+- **It targets overestimation and unphysical values, not underestimation.** Beam blockage,
+  attenuation in heavy rain, beam overshoot at long range and bright-band effects lower or
+  remove real rain and have no rule. Missed extremes are not restored. The dataset's tail is
+  therefore biased low wherever these occur, most strongly in the Alps (below).
+- **Contamination remains.** After the burst rule, about a third of kept values ≥ 75 mm over
+  Germany are RADKLIM-dry (§5.3). Part of that is RADKLIM missing real peaks, so the true
+  contamination rate is not known. It is bounded above by about one third.
+- **Real extremes share some error signatures.**
+  - An isolated convective cell can look like a burst or an isolated pixel cluster.
+  - Stationary orographic rain can look like a persistent clutter pixel.
+  - A single storm can lift a radar-day score.
+  Every rule therefore reports its rejection rate by intensity bin (§17). For radar-days, the
+  §28 rule removes 51 radar-days that fall on catalogued event days.
+- **Radar-day exclusion is coarse and still open** (§28). It removes a whole radar-day, so
+  good data from a radar with a local fault go with it. The isolated-pixel signal (`iso31`)
+  cannot separate a radar that is always noisy from one that has failed. Against the
+  neighbours only it flags 3,029 radar-days, mostly on coastal and island radars. Against the
+  radar's own q99 it misses radars that fail often. Pending a RADKLIM test.
+
+### 6.4 Coverage and product changes
+
+- **Italian radars are not in OPERA.** No Italian radar appears in any composite's
+  contributor list (`how/nodes`), so Italy is outside the dataset. FBK's `srt1_adj` (2018
+  on) could add it.
+- **Austria never contributes; Switzerland and Hungary only from 2014.** Those areas have
+  valid composite data, but it comes from distant foreign radars whose beams pass over the
+  Alps. Extremes there are probably underestimated and are kept, not screened (§27). Other
+  countries join or leave: Latvia from 2015, Serbia 2017–2024, Greece from 2021.
+- **Which radars contribute is known from one composite per month.** A radar that was down
+  at every sampled time is missed. Nov 2012 to Jan 2013 are missing from the archive.
+- **The network changes over time.** Radars are added, retired and upgraded, so error
+  statistics are not stationary. Per-year climatologies and ceilings absorb part of this.
+  A model trained on the whole period mixes network states.
+- **Two products.** OPERA switched from ODYSSEY to NIMBUS on 2024-07-05. NIMBUS has ~30–40%
+  less wet area, 8–20% higher median intensities, a correlation of only 0.65–0.80 with
+  ODYSSEY in log space, and about half the +15 min persistence (§18). The screen was
+  calibrated mostly on ODYSSEY days. NIMBUS forms its own split, so the shift is tested
+  rather than averaged in, but rule thresholds were not re-derived for NIMBUS.
+
+### 6.5 The target itself
+
+- **The plain hourly sum beads fast-moving cells.** Four 15-min snapshots of a moving cell
+  sum to four blobs, which inflates small-scale structure. Over Germany this adds +2 to +5 to
+  the Euler characteristic at 2 mm and 1.2–2x power at 6–16 km, relative to RADKLIM, growing
+  with motion speed (§21). We keep the least-processed field as the target (§25) and store
+  the advection-corrected field alongside. This matters for a structural loss built on
+  Minkowski functionals: part of the "structure" in the target is a sampling artefact.
+- **A pixel-hour needs all four frames.** Hours with a missing frame are dropped. If radar
+  outages correlate with severe weather (power or communication loss in storms), the most
+  intense hours are under-sampled. *[verify]*: outage rate as a function of rain intensity
+  is not measured.
+- **Frame timing.** An ODYSSEY frame t covers t−10..t+5 min, so our hour H is effectively
+  H−55..H+5. Gauges match best with a 10-min shift. NIMBUS frames are snapshots at the
+  nominal time, so the effective window differs between products.
+- **Magnitudes are radar magnitudes.** OPERA reads ~0.44 of the gauge value on heavy hours,
+  partly from point-versus-area support. The screen corrects no magnitudes, so return levels
+  from this dataset are radar return levels, not rain-gauge ones. The Z–R relation used in
+  the OPERA product is *[verify]*.
+- **Scales below ~6 km are product-specific.** OPERA and RADKLIM do not corroborate each
+  other below ~6 km wavelength, so the target's geometry at those scales depends on the
+  product.
 
 ## 7. Open items (EXPERIMENTS §5)
 
 - *Detection ideas not yet implemented:* satellite cloud-top veto for candidate extremes,
   lightning, Lagrangian consistency, storm-object plausibility, regional curated products.
 - *Before the full-archive build:*
-  - radar-ownership geometry from the contributing radars (DECISIONS §27; radar pass
-    rerun launched 2026-10-09, `logs/radar_pass_v4_contrib.log`);
-  - automatic radar-day exclusion from a pre-stated score;
+  - ~~radar-ownership geometry from the contributing radars~~ (done 2026-10-09, §27; radar
+    pass rerun finished 2026-10-09 23:28);
+  - radar-day exclusion: pre-stated rule applied 2026-10-13, result under review (§28);
   - the readiness gate with gauge false-alarm and miss rates (DECISIONS §20, §24);
-  - hourly split and store scripts;
+  - ~~hourly split and store scripts~~ (done 2026-10-13: `make_splits_hourly.py`,
+    `build_store_hourly.py`; 3-day test build verified);
   - the hourly tail threshold.
