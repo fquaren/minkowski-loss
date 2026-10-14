@@ -99,8 +99,9 @@ def run_day(args):
     t_start = time.time()
     res, raw, ends = {}, None, None
     for v in variants:
-        # the burst rule follows the quality config (before 2026-10-13 it was always off here)
-        rules = {**{k: True for k in RULES}, "burst": q.get("hourly", {}).get("rules", {}).get("burst", False)}
+        # burst / stationary follow the quality config (burst was always off here before 2026-10-13)
+        rules = {**{k: True for k in RULES}, **{k: q.get("hourly", {}).get("rules", {}).get(k, False)
+                                                for k in ("burst", "stationary")}}   # follow the config
         if v == "none":
             rules = {k: False for k in rules}
         elif v.startswith("no_"):

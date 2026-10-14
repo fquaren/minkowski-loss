@@ -49,6 +49,13 @@ TESTS = {  # name: (without, with, split into halves)
     "p1_min 20 (added removals)": ("base", "p1_20", True),
     "p1_min 16 (added removals)": ("base", "p1_16", True),
 }
+# further variant sets (--set): output directory, variants, tests
+SETS = {
+    "stationary": (f"{CAL}/rule_validate_stationary", ["base", "stat_12", "stat_8"], {   # DECISIONS §31
+        "stationary echo, min_frames 12": ("base", "stat_12", True),
+        "stationary echo, min_frames 8": ("base", "stat_8", True),
+    }),
+}
 BINS = [10, 20, 50, 100, np.inf]
 LABELS = ["10-20", "20-50", "50-100", ">=100"]
 
@@ -63,6 +70,9 @@ def variant_cfg(q, v):
         cfg["rules"]["unsupported"] = False
     if v.startswith("p1_"):
         cfg["p1_min"] = int(v[3:])
+    if v.startswith("stat_"):
+        cfg["rules"]["stationary"] = True
+        cfg["stationary"] = {**cfg.get("stationary", {}), "min_frames": int(v[5:])}
     return cfg
 
 
@@ -184,7 +194,11 @@ def main():
     ap.add_argument("cmd", choices=["run", "summary"])
     ap.add_argument("--workers", type=int, default=5)
     ap.add_argument("--days", nargs="*", default=None)
+    ap.add_argument("--set", default="review", choices=["review", *SETS])
     a = ap.parse_args()
+    if a.set != "review":                  # module globals, inherited by the forked workers
+        global OUT, VARIANTS, TESTS
+        OUT, VARIANTS, TESTS = SETS[a.set]
     if a.cmd == "summary":
         summary()
         return
