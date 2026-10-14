@@ -1948,3 +1948,41 @@ random calibration days, full grid, kept tile-hours: 31 mm/h is exceeded by 3.99
 agrees with the provisional 20 mm of §29. The final u comes from a stability analysis on the build.
 
 Slides of these results: `notes/slides/2026-10-14_screening/deck.pdf`.
+
+## 31. Stationary isolated echoes (2026-10-14)
+
+**Problem.** After §30 the readiness gate fails only on false alarms (§29, criterion 2a: +5.4
+points over RADKLIM at 20 mm). The clearest cause is a single-day stationary echo the chain
+leaves untouched. Kleiner Feldberg/Taunus, 2018-04-30: a blob of 20-40 px (>= 5 mm/h) peaking
+at 50-107 mm/h, at the same place for ~14 h, in a dry ring (ring median 0.00-0.07 mm/h); clean
+on the days before and after; gauge and RADKLIM dry. It is a local peak in 20 frames, so the
+persistence rule (24) misses it, and lowering that threshold removes real rain (§30). It is not
+a burst (it lasts) and it supports itself in time.
+
+**The signature.** A moving cell's core covers a given pixel for one or two frames: a 5-10 km
+core moving at 30 km/h advances ~4 px per frame. A stationary target fills the same pixels for
+hours. Real stationary convection (orographic anchoring) usually sits in wider rain, which the
+dry-ring condition keeps.
+
+**The rule (`hourly.rules.stationary`, off until accepted; code bit 512).** On the screened
+frames after the persistence rule:
+- *Isolated component in frame t:* an 8-connected component of pixels >= 1 mm/h, at most 150 px
+  (600 km^2), containing a pixel >= 10 mm/h, whose 3-px ring (6 km) is >= 50% valid with a
+  median < 0.1 mm/h.
+- *Stationary pixel:* inside an isolated component in >= `min_frames` frames of the processing
+  day.
+- *Repair:* in each frame, an isolated component holding a stationary pixel is set to its ring
+  median, i.e. ~0. Repairs only lower values.
+
+**Test (criteria fixed before running, Claude, researcher asked 2026-10-14).** Candidates
+`min_frames` 12 (3 h) and 8 (2 h).
+1. *RADKLIM presence* (`rule_validate.py`, the 193 RADKLIM calibration days, as §30): removals
+   of the rule against the current chain must be RADKLIM-dry >= 85% in every raw bin with
+   >= 30 removals, on both halves of the days.
+2. *Real storms outside Germany:* on the 79 event days, full grid, the rule must lower by >= 50%
+   at most 1% of the pixel-hours that the current chain leaves at >= 20 mm.
+3. Adopt the lowest `min_frames` passing 1 and 2. If none passes, the rule is not adopted.
+4. With the adopted value, re-run §29 criterion 2a (gauges against RADKLIM). This is reported,
+   not a condition for adopting the rule.
+*Not evidence:* that it removes Kleiner Feldberg. That is the case the rule was designed on; it
+is only a check that the code does what was intended.
