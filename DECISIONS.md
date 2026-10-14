@@ -1904,3 +1904,40 @@ Pass = removals RADKLIM-dry >= 85% in every bin with >= 30 removals.
 *Descriptive, for the slides, not criteria:* exceedance counts of raw OPERA, screened OPERA and
 RADKLIM on the same German pixel-hours, and of DE/CH gauges against OPERA at the gauge pixels.
 CombiPrecip and COMEPHORE are not on disk.
+
+**Results (2026-10-14; `calib/rule_validate/summary.md`, 193 RADKLIM days, 2.62 M pixel-hours).**
+
+| test | removals (10-20 / 20-50 / 50-100 / >= 100 mm) | RADKLIM-dry | verdict |
+|---|---|---|---|
+| static-clutter repair | 41 / 32 / 4 / 12 | 100% / 100% / 100% / 67% | **pass: stays** |
+| hot mask as persistence prior | 15 / 18 / 3 / 0 | 100% | not needed |
+| no temporal support | 216 / 51 / 4 / 6 | 97.2% / 100% / 100% / 100% | **pass: stays** |
+| `p1_min` 20, added removals | odd 175 / 48, even 137 / 36 | 66-78% (24-28 confirmed in 10-20) | **fail** |
+| `p1_min` 16, added removals | odd 392 / 98, even 309 / 64 | 67-80% (54-59 confirmed) | **fail** |
+
+- *`p1_min` stays 24.* Lowering it removes real rain. The single-day stationary echoes behind
+  the 2a false alarms (Kleiner Feldberg) need a rule keyed on something else, such as a fixed
+  location with a dry ring over many hours. That is not a threshold change.
+- *The hot repair passes over Germany with few cases* (89 removals): most of its Europe-wide
+  effect (rule-effect table) is outside RADKLIM. The §24 gauge result (46% closer / 48% further,
+  183 gauge-hours, mostly low intensity) and this presence result disagree in tone. The
+  presence test is the one that speaks to contamination of the tail, so the repair stays.
+- *`min_wet_jump` = 0.021* (item 4: q99.9 of s over 6.86 M normal radar-frames; q99 0.005,
+  q99.99 0.063; share >= 0.15 was 2.1e-5). Recomputing the flags for all 5,023 days gives the same
+  48 flagged radar-frames as 0.15, and the same gate results. Adopted in `quality_v4.yaml`.
+- *Chain values are unchanged,* so §29 criterion 2a is unchanged (fail, +5.4 points) and is
+  not re-run.
+- A bug in `rule_validate.py` (`p is not False` on a NumPy bool) printed PASS for the `p1`
+  tests; it was fixed before this result was recorded.
+
+*Screened OPERA against RADKLIM on the same German pixel-hours* (kept tile-hours):
+
+| field | >= 10 | >= 20 | >= 30 | >= 50 | >= 75 | >= 100 |
+|---|---|---|---|---|---|---|
+| raw OPERA | 253,856 | 43,715 | 19,772 | 13,756 | 12,040 | 9,511 |
+| screened OPERA | 234,870 | 29,042 | 5,987 | 569 | 71 | 15 |
+| RADKLIM | 315,170 | 28,710 | 4,873 | 357 | 28 | 7 |
+
+Screened OPERA matches RADKLIM at 20 mm and has 1.2x / 1.6x / 2.5x its counts at 30 / 50 / 75 mm.
+RADKLIM underestimates peaks (§4 of the methods draft), so the excess is an upper bound on
+residual contamination, not a measurement of it.

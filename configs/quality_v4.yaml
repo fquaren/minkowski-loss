@@ -35,9 +35,9 @@ radar_frame:                  # rule 3, provisional until Phase 0
   f10_min: 0.2
   reject_share: 0.10          # reject a tile when flagged radars own >= this share of it
   temporal:                   # hourly (DECISIONS §23): a flag stands only if the radar is flagged in a
-    min_wet_jump: 0.15        # neighbouring frame too, or its wet fraction exceeds both neighbours' by
-                              # >= this. Provisional: 20 gallery cases (15/15 failures kept, 4/4 storms
-                              # dropped; closest storm 0.13). Changes frame_flags on a rerun of `frames`.
+    min_wet_jump: 0.021       # neighbouring frame too, or its wet fraction exceeds both neighbours' by
+                              # >= this. 0.021 = q99.9 of normal operation (DECISIONS §30, 2026-10-14);
+                              # was 0.15 from 20 gallery cases. Both give the same 48 flagged frames.
 
 radar_day:                    # rule 5 (DECISIONS §19); by a pre-stated score since §24 / §28,
                               # review_top / exclusions kept for the old reviewed-list path
