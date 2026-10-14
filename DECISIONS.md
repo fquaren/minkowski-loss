@@ -1941,3 +1941,10 @@ CombiPrecip and COMEPHORE are not on disk.
 Screened OPERA matches RADKLIM at 20 mm and has 1.2x / 1.6x / 2.5x its counts at 30 / 50 / 75 mm.
 RADKLIM underestimates peaks (§4 of the methods draft), so the excess is an upper bound on
 residual contamination, not a measurement of it.
+
+*Provisional hourly tail threshold (item 5; `calib/dist_hist/u_provisional.txt`).* On the 100
+random calibration days, full grid, kept tile-hours: 31 mm/h is exceeded by 3.99e-5 of screened
+15-min pixel-frames; the screened hourly sums exceed **u = 20.2 mm** at the same frequency. This
+agrees with the provisional 20 mm of §29. The final u comes from a stability analysis on the build.
+
+Slides of these results: `notes/slides/2026-10-14_screening/deck.pdf`.

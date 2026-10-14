@@ -73,13 +73,13 @@ def gauges():
         ax.set_title(f"{name}: {len(s) / 1e6:.1f} M gauge-hours" + (" (raw = screened)" if same else ""),
                      fontsize=9, color=INK, loc="left")
         if np.quantile(s.raw, ps[-1]) > hi:
-            ax.annotate(f"raw reaches {np.quantile(s.raw, ps[-1]):,.0f} mm at q99.999\n(a gauge on a clutter pixel)",
-                        (0.04, 0.58), xycoords="axes fraction", fontsize=7, color=RAW["color"])
+            ax.annotate(f"raw reaches\n{np.quantile(s.raw, ps[-1]):,.0f} mm at q99.999\n(a gauge on a clutter pixel)",
+                        (0.03, 0.76), xycoords="axes fraction", fontsize=7, color=RAW["color"])
         for p, lab in ((0.999, "q99.9"), (0.9999, "q99.99"), (0.99999, "q99.999")):
             ax.annotate(lab, (np.quantile(s.g_shift, p), np.quantile(s.full, p)), fontsize=7, color=MUTED,
                         xytext=(4, -10), textcoords="offset points")
         if net == "dwd":
-            ax.legend(loc="upper left")
+            ax.legend(loc="lower right")
     save(fig, "qq_gauges")
     fig, axs = plt.subplots(1, 2, figsize=(7.2, 3.0))
     for ax, net, name in zip(axs, ("dwd", "smn"), ("Germany", "Switzerland")):
@@ -111,20 +111,29 @@ def radklim():
         s = np.sort(fld.values)
         axs[0].plot(xs, n - np.searchsorted(s, xs, side="left"), **st)
     axs[0].set(xscale="log", yscale="log", xlabel="hourly accumulation x (mm)", ylabel="pixel-hours >= x")
-    axs[0].set_title("Germany, same pixel-hours (196 days)", fontsize=9, color=INK, loc="left")
+    nd = len(parts)
+    axs[0].set_title(f"Germany, same pixel-hours ({nd} days)", fontsize=9, color=INK, loc="left")
     axs[0].legend(loc="lower left")
     top = 20000
     ra, rc, rk = (np.sort(v.values)[::-1][:top] for v in (k.A, k.base, k.K))
-    hi = max(ra[0], rk[0]) * 1.2
-    axs[1].plot([5, hi], [5, hi], color=MUTED, lw=0.8)
+    hi = 300
+    axs[1].plot([15, hi], [15, hi], color=MUTED, lw=0.8)
     axs[1].plot(rk, ra, **{**RAW, "lw": 1.4})
     axs[1].plot(rk, rc, **{**SCREENED, "lw": 1.4})
-    for r in (10, 100, 1000, 10000):
-        axs[1].annotate(f"rank {r:,}", (rk[r - 1], rc[r - 1]), fontsize=7, color=MUTED, xytext=(4, -10),
+    for r in (10, 1000):
+        axs[1].annotate(f"rank {r:,}", (rk[r - 1], rc[r - 1]), fontsize=7, color=MUTED, xytext=(6, -12),
                         textcoords="offset points")
-    axs[1].set(xscale="log", yscale="log", xlim=(5, hi), ylim=(5, hi), xlabel="RADKLIM order statistic (mm)",
+    k_out = int((ra > hi).sum())
+    axs[1].annotate(f"raw leaves the plot:\n{k_out:,} pixel-hours > {hi} mm,\nup to {ra[0]:,.0f} mm",
+                    (0.33, 0.80), xycoords="axes fraction", fontsize=7, color=RAW["color"])
+    axs[1].legend(handles=axs[1].lines[1:3], loc="lower right")
+    axs[1].set(xscale="log", yscale="log", xlim=(15, 150), ylim=(15, hi), xlabel="RADKLIM order statistic (mm)",
                ylabel="OPERA order statistic (mm)")
     axs[1].set_title("tail Q-Q (k-th largest against k-th largest)", fontsize=9, color=INK, loc="left")
+    from matplotlib.ticker import NullFormatter, ScalarFormatter
+    axs[1].set_xticks([20, 50, 100, 150]); axs[1].set_yticks([20, 50, 100, 200, 300])
+    for ax_ in (axs[1].xaxis, axs[1].yaxis):
+        ax_.set_major_formatter(ScalarFormatter()); ax_.set_minor_formatter(NullFormatter())
     save(fig, "radklim")
     print("radklim: done")
 
@@ -152,6 +161,7 @@ def europe():
         ax.set(xscale="log", yscale="log", xlim=(0.1, 3000), ylim=(1e-10, 1), xlabel=xl, ylabel="P(X >= x) per valid pixel")
         ax.set_title("15-min frames" if kr == "raw15" else "hourly sums", fontsize=9, color=INK, loc="left")
     axs[0].legend(loc="lower left")
+    fig.subplots_adjust(wspace=0.35)
     save(fig, "europe")
     print("europe: done")
 
