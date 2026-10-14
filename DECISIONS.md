@@ -1775,3 +1775,46 @@ value piled at an exact dBZ level appears where reflectivity is high, so these a
 intense rain with a capped core, rejected as a clear error under §17; the criterion-3b rise
 with intensity would then be by construction. Options: an internal-consistency test, or GPM
 IMERG as a presence reference (needs an Earthdata login).
+
+**Three follow-up tests (researcher approved 2026-10-14; Claude fixed the criteria below
+before running).**
+
+*(i) Is the rest of an excluded radar-day's field worse? (`rest_of_field.py`)* German radars,
+screened hourly field C of the current chain (`quality_v4.yaml`), RADKLIM box. Test: the 337
+radar-days excluded with reason `iso31` that have RADKLIM. Control: non-excluded radar-days
+*of the same radars* on the RADKLIM days frozen before the fetch (`iso31_radklim/control_days.txt`).
+Pixels: owned by the radar (contributing geometry); pixel-hours holding an isolated pixel-frame
+(the `iso31` pixels) are left out, so only the *rest* of the field is judged.
+- Measure: false-alarm share = pixel-hours with C >= 5 mm that are RADKLIM-dry (K_tol < 5 mm).
+- "Worse" if the test share exceeds the control share by > 2 percentage points and the 95%
+  day-block bootstrap interval of the difference lies above 0.
+- If worse: excluding the radar-day is justified, and criterion 3a does not count event losses
+  on such radar-days. If not: the exclusion is a cost, and rule 5 should act on the isolated
+  pixels, not on the whole radar-day.
+- Descriptive: the same at 10 and 20 mm; misses (K >= 5 mm, C < 1 mm); median per radar-day
+  log-correlation of C and K over pixel-hours wet in either. Weather differs between the two
+  sets (excluded days are not random), which the same-radar control only partly removes.
+
+*(ii) Criterion 2a against a measured floor (`gate_prebuild.py`, replaces the 5% bound).*
+DWD gauges on the gate days that have RADKLIM; gauge window `g_shift`; u = 20 mm (10 and 30
+reported). OPERA = the screened pixel value with split-time rejection applied (score-only rule
+5, current `day_exclusions.csv`; rejected tile-hours dropped). Hours tables for the 47 gauge
+days that are not calibration days are scanned with the same chain. RADKLIM = K at the gauge
+pixel, same hour.
+- Measure: false-alarm share = gauge-hours with the field >= u whose gauge reads < 1 mm.
+- Pass: the upper end of the 95% day-block bootstrap interval of (OPERA - RADKLIM) is <= 2
+  percentage points. RADKLIM is adjusted to DWD gauges, so its share at gauge sites is
+  optimistic and the test is conservative.
+
+*(iii) Ceiling rejections >= 20 mm: capped cores or artefacts? (`ceiling_context.py`)*
+Calibration days, tile-hours rejected by `rej_ceiling` with hourly max >= 20 mm (335). In the
+raw frames of each such hour, every pixel of the tile equal (+-0.005) to a ceiling value of its
+owning radar-year (`ceilings.csv`). Context = median, in dBZ, of the valid non-ceiling pixels of
+its 5x5 window (Z = 200 R^1.6, as `radar_screen.dbz`); "embedded" = context >= ceiling dBZ -
+10 dB.
+- >= 80% embedded: the high-intensity rejections are real intense rain with a capped core. The
+  3b rise is then by construction; the researcher decides whether the rule should mask the
+  ceiling pixels (NaN) and keep the tile-hour instead of rejecting it.
+- <= 20% embedded: they are artefacts in weak or dry surroundings; the rule stands and its 3b
+  rise is artefact-driven.
+- In between: reported per ceiling value and radar.
