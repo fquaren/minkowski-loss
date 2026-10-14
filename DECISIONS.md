@@ -1986,3 +1986,25 @@ frames after the persistence rule:
    not a condition for adopting the rule.
 *Not evidence:* that it removes Kleiner Feldberg. That is the case the rule was designed on; it
 is only a check that the code does what was intended.
+
+**Result (2026-10-14). Not adopted: both candidates fail criterion 2.**
+- *RADKLIM presence* (`calib/rule_validate_stationary/summary.md`): `min_frames` 12 passes
+  (removals 89.7% / 98.5% dry at 10-20 / 20-50 mm on odd days, 94.3% / 91.7% on even days);
+  `min_frames` 8 fails (49-60% dry; 193-305 removals at 10-20 mm confirmed by RADKLIM).
+- *Event days* (`calib/stationary_events/summary.md`, 79 days, full grid; 340,224 pixel-hours
+  left >= 20 mm by the current chain): `min_frames` 12 lowers 3,731 of them by >= 50%,
+  **1.097%** against <= 1%; `min_frames` 8 lowers 2.05%. Both fail. The bar was fixed in advance
+  and is not moved.
+- *Where:* the losses concentrate in quasi-stationary real storms: Elvira/Friederike 883,
+  Med. derecho 562, Boris 412, Valencia DANA 378, HyMeX IOP6 357, Poland derecho 215,
+  Emilia-Romagna (1st) 202, Aude 172. A back-building storm regenerates a convective core over
+  one place, sometimes in dry air: the same signature as the Kleiner Feldberg echo. The dry-ring
+  condition does not separate them. Germany alone (RADKLIM) does not show this, because its
+  calibration days hold few such storms.
+- *Consequence:* step 4 (re-running §29 criterion 2a) is not done. The gate still fails 2a
+  (+5.4 points). The rule stays in the code, off (`hourly.rules.stationary: false`), with its
+  tests.
+- *What could separate them (ideas, not tested):* recurrence of the same echo location on
+  other days, which a fixed target or interference would show but weather would not (Kleiner
+  Feldberg was a single day, so this would not catch it); the absence of a growth and decay
+  cycle; lightning, as an independent marker of real convection (not on disk).
