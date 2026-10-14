@@ -33,7 +33,7 @@ U_MAIN, U_ALL = 20.0, (10.0, 20.0, 30.0)
 
 
 def rule5_sets(q):
-    pre = pd.read_csv(f"{Q4}/day_exclusions.csv", dtype=str)
+    pre = pd.read_csv(f"{Q4}/day_exclusions_20261013_prestated.csv", dtype=str)   # §28 as first fixed
     r = pd.read_csv(f"{Q4}/ranking.csv.gz", dtype={"day": str}, usecols=["radar", "day", "year", "score"])
     p = q["radar_day"]
     r["e"] = r.score >= p["exclude_score"]

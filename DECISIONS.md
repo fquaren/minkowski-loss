@@ -1751,3 +1751,27 @@ the hourly chain leaves, so rule 5 targets what the chain misses; against it, §
 signals before repairs so that a repair cannot hide a failing radar. (3) Test the ceiling
 rejections >= 20 mm against RADKLIM / gauges where they overlap. (4) Decide whether criterion
 2a's bound stays at 5% for gauge comparisons, with a new criterion fixed before re-running.
+
+**Decision (researcher, 2026-10-14, Claude agreeing). The radar-year rule is dropped.** It
+caused 2,028 of the 2,169 event tile-hours the pre-stated list rejected; the known failures are
+caught without it (§29 diagnosis); its premise (a radar failing on 5% of days is unreliable on
+the others) was never tested, and its denominator was degenerate. Cost: a radar with chronic
+contamination that never scores >= 1 is not caught; the residual-contamination estimates
+(methods §6.3) cover it. `radar_day.year_rule: false`; `day_exclusions.csv` now holds the 3,029
+radar-days with score >= 1. The pre-stated lists are kept as
+`day_exclusions_20261013_prestated.csv` / `year_exclusions_20261013_prestated.csv`.
+
+**Decision (researcher, 2026-10-14). `iso31` stays scored on the `clean_frame` field, before
+repairs** (§19: a repair must not hide a failing radar), not on what the hourly chain leaves.
+Open: whether the rest of an excluded radar-day's field is worse than normal (Claude proposes
+RADKLIM agreement of non-isolated pixels, excluded vs control radar-days). If not, criterion
+3a's losses (Andreas 11.2%, Boris 8.5%) are a real cost; if so, 3a should not count them.
+
+**Ceiling rejections >= 20 mm (§29 item 3, 2026-10-14).** All 335 such tile-hours on the
+calibration days are in HU (190), HR (82) and RS (63): no RADKLIM or DE/CH gauge overlaps them,
+so the planned independent test cannot run on data we hold. Main values 48.62 (50.0 dBZ, hunap
+/ husze 2019) and 364.63 (64.0 dBZ, HR / RS 2023); 12 at 31,575.94. Inference (untested): a
+value piled at an exact dBZ level appears where reflectivity is high, so these are likely real
+intense rain with a capped core, rejected as a clear error under §17; the criterion-3b rise
+with intensity would then be by construction. Options: an internal-consistency test, or GPM
+IMERG as a presence reference (needs an Earthdata login).

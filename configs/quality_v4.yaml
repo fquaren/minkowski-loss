@@ -46,6 +46,7 @@ radar_day:                    # rule 5 (DECISIONS §19); by a pre-stated score s
   reject_share: 0.10
   # automatic rule 5, fixed 2026-10-13 before the ranking was opened (DECISIONS §28)
   exclude_score: 1.0          # radar-day excluded at a decade above both references
+  year_rule: false            # radar-year rule dropped 2026-10-14 (§28): it caused most event loss
   year_share: 0.05            # radar-year excluded at >= 5% of its rain days ...
   year_min_days: 3            # ... and >= 3 excluded days
   rain_wet: 0.2               # rain day: some frame with >= 20% of owned pixels >= 1 mm/h

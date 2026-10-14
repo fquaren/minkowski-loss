@@ -322,7 +322,10 @@ def cmd_exclude(q, d):
     yr = rd.groupby(["radar", "year"]).agg(n_days=("day", "size"), n_rain=("rain", "sum"),
                                            n_excl=("excl", "sum")).reset_index()
     yr["share"] = yr.n_excl / yr.n_rain.clip(lower=1)
-    yr = yr[(yr.share >= p["year_share"]) & (yr.n_excl >= p["year_min_days"])]
+    if p.get("year_rule", True):
+        yr = yr[(yr.share >= p["year_share"]) & (yr.n_excl >= p["year_min_days"])]
+    else:                                                     # dropped 2026-10-14 (§28)
+        yr = yr.iloc[:0]
     days = rd.loc[rd.excl, ["radar", "day", "reason"]].assign(reason=lambda x: "score:" + x.reason)
     ym = rd.merge(yr[["radar", "year"]], on=["radar", "year"])[["radar", "day"]].assign(reason="year")
     out = pd.concat([days, ym]).drop_duplicates(["radar", "day"]).sort_values(["radar", "day"])
