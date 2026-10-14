@@ -291,13 +291,93 @@ a fact not yet checked against a source.
 - **Frame timing.** An ODYSSEY frame t covers t−10..t+5 min, so our hour H is effectively
   H−55..H+5. Gauges match best with a 10-min shift. NIMBUS frames are snapshots at the
   nominal time, so the effective window differs between products.
-- **Magnitudes are radar magnitudes.** OPERA reads ~0.44 of the gauge value on heavy hours,
-  partly from point-versus-area support. The screen corrects no magnitudes, so return levels
-  from this dataset are radar return levels, not rain-gauge ones. The Z–R relation used in
-  the OPERA product is *[verify]*.
+- **Magnitudes are radar magnitudes.** OPERA reads below the gauges over most of the
+  distribution; §6.6 explains why and splits the cause into radar bias and point-versus-area
+  support. The screen corrects no magnitudes, so return levels from this dataset are radar
+  return levels, not rain-gauge ones. The Z–R relation used in the OPERA product is *[verify]*.
 - **Scales below ~6 km are product-specific.** OPERA and RADKLIM do not corroborate each
   other below ~6 km wavelength, so the target's geometry at those scales depends on the
   product.
+
+### 6.6 Why OPERA reads below the gauges (for the appendix)
+
+Added 2026-10-14. Numbers: `scripts/data_quality/support_gap.py` -> `calib/support_gap/summary.txt`;
+figures in `notes/slides/2026-10-14_screening/` (Q-Q and exceedance against gauges).
+
+**What is seen.** Against both the German (DWD) and the Swiss (MeteoSwiss) gauges, screened
+OPERA at the gauge pixel lies below the gauge distribution over most of the range: its
+quantiles are 0.71–0.78x the gauge quantiles from q99.9 to q99.999 (Switzerland reaches 1.12x at
+q99.999, where few cases remain). Raw and screened OPERA coincide below ~10 mm in 1 h, so the
+screen does not cause this. Directly: the screen lowers only 0.1% of gauge-hours >= 20 mm
+(§29, criterion 2b).
+
+**Two effects, with different meanings.** The comparison sets a point measurement (a gauge
+orifice of ~200 cm²) against a 2 km x 2 km pixel mean.
+
+1. *Point versus area (support).* This is not an error. An areal mean has the same expectation as
+   the point values it averages, but a smaller variance. Rainfall is intermittent and skewed, so
+   at a given exceedance probability the areal mean is lower than a point value. Hydrology
+   corrects for this with areal reduction factors [CITE?: areal reduction factors for short-duration
+   rainfall]. The effect grows with intensity, because heavy hourly rain is concentrated in
+   cores comparable to or smaller than the pixel. Even an error-free 2 km product sits below
+   point gauges in the tail.
+2. *Radar measurement bias.* This is a real underestimation, from the way the composite turns
+   reflectivity aloft into surface rain [CITE?: review of radar QPE error sources]:
+   - a single Z–R relation, which underestimates convective rain with large drops;
+   - the beam rises above the ground with range, so it misses low-level growth, overshoots
+     shallow systems and sees rain that evaporates before reaching the ground (the vertical
+     profile of reflectivity);
+   - attenuation of the C-band signal in heavy rain and on a wet radome;
+   - partial beam blockage in complex terrain;
+   - no gauge adjustment in the OPERA composite [CITE?: OPERA composite processing chain /
+     EURADCLIM, a gauge-adjusted OPERA archive built because of this bias].
+   One effect works the other way: gauges undercatch in wind, so the true radar deficit is
+   somewhat larger than measured here [CITE?: gauge wind-induced undercatch].
+
+**Splitting the two over Germany.** RADKLIM (DWD's radar climatology) is adjusted to the DWD
+gauges and averaged here to the same 2 km pixel. Where RADKLIM also falls below the gauges, the
+gap is mostly support. OPERA's further gap below RADKLIM is radar bias. On 6.91 M DWD
+gauge-hours with all three:
+
+| | gauge | RADKLIM | OPERA screened | RADKLIM / gauge | OPERA / gauge | OPERA / RADKLIM |
+|---|---|---|---|---|---|---|
+| mean (mm in 1 h) | 0.129 | 0.124 | 0.111 | 0.96 | 0.86 | 0.89 |
+| q99 | 2.9 | 3.0 | 2.3 | 1.02 | 0.78 | 0.77 |
+| q99.9 | 9.6 | 8.4 | 7.2 | 0.87 | 0.74 | 0.85 |
+| q99.99 | 22.5 | 17.6 | 16.7 | 0.78 | 0.74 | 0.95 |
+| q99.999 | 39.5 | 30.4 | 31.4 | 0.77 | 0.79 | 1.03 |
+
+Gauge-hours >= 5 mm: gauges 26,945, RADKLIM 25,338, OPERA 15,919. On the 1,025 hours with a gauge
+>= 20 mm, the median ratio to the gauge is 0.56 for RADKLIM and 0.42 for OPERA.
+
+- *Moderate rain (up to ~q99.9, about 10 mm in 1 h): radar bias.* RADKLIM matches the gauges and
+  OPERA is 15–23% below both. Its mean is 14% low; averaging cannot lower a mean, so this part is
+  underestimation, not support.
+- *Heavy tail (q99.99 and above): mostly support.* RADKLIM, though adjusted to these gauges, is
+  itself 0.77–0.78x the gauges, and OPERA roughly matches RADKLIM (0.95–1.03x).
+- *Switzerland* shows the same pattern but has no RADKLIM-like reference here, so it is not split.
+  Beam blockage and overshoot in the Alps should strengthen the radar-bias part there (inference,
+  not measured).
+
+**Caveats.**
+- RADKLIM's agreement with the gauges at moderate intensities is partly built in by its
+  adjustment to the same network. The split is therefore approximate.
+- RADKLIM smooths and underestimates peaks itself (§4), so the tail ratio RADKLIM / gauge mixes
+  support with RADKLIM's own peak loss. It is an upper estimate of the support share.
+- Quantiles compare marginal distributions. Timing and position mismatch between gauge and pixel
+  do not enter them; they do enter the conditional ratios (0.56, 0.42).
+- The sample is the 243 calibration and gauge days, enriched in events; it is not a climatology.
+
+**Consequences for the dataset and the paper.**
+- The dataset's magnitudes are OPERA's. Moderate rain reads ~15–20% low, and the tail is a 2 km
+  areal statistic. Return levels or exceedances from it are compared with station records only
+  after an areal reduction.
+- The screen neither causes nor corrects this. A gauge adjustment (as EURADCLIM does) is a separate
+  decision, outside the screen's scope by design (§17).
+- For the super-resolution task, the model learns OPERA's climatology, including its bias. The
+  structural (Minkowski) loss is sensitive to threshold exceedances, so its thresholds should be
+  set on this dataset's own distribution, not on gauge-based levels (recommendation, not yet
+  decided).
 
 ## 7. Open items (EXPERIMENTS §5)
 
