@@ -425,6 +425,49 @@ isoperimetric scatter.
 - [ ] **Competing losses: a fair trial** (roadmap M4). Fix SSIM, calibrate λ, match epochs,
       and use 3 seeds.
 
+### Evaluation: generalisation to unseen products and regions (added 2026-10-14)
+- [ ] **Cross-dataset test with a product × region ablation (roadmap M6).** Test the
+      v4-trained model on Italian radar data. No Italian radar contributes to OPERA
+      (DECISIONS §27), so Italy is held out by construction, with no leakage, unlike every
+      split of OPERA itself.
+      - *Product:* DPC `italian-radar-dpc-srt1-adj` (FBK ArcoDataHub): hourly, 1 km,
+        gauge-adjusted, independent network, 2018-07 on (RESEARCH_NOTES §7, FBK notes). Not
+        `opera-plus-it-vmi`: reflectivity, 2024 on, and OPERA itself outside Italy.
+      - *Preprocessing:* 1 -> 2 km area mean, regridded onto the OPERA grid (it spans Italy; the
+        data are NaN there), so DEM lookup (`src.data.geo`), patching and
+        `coarsen_and_interpolate` work unchanged. Check DPC's hour convention against ACRR
+        (H-45..H) and apply the same scaler. Decide whether our screen runs on DPC (it has its
+        own QC): evaluate both "as delivered" and "screened".
+      - *Why an ablation:* the Italian test shifts **region** (Apennines, Po valley,
+        Mediterranean convection) and **product** (network, processing, gauge adjustment) at
+        once, so a skill drop alone cannot be attributed. Two findings make the product side
+        large: scales below ~6 km are product-specific (methods draft §6.5), and OPERA reads
+        15-20% low at moderate intensities while DPC is gauge-adjusted (§6.6).
+      - *Design:*
+
+        | test set | region shift | product shift | role |
+        |---|---|---|---|
+        | A. OPERA test (v4 splits) | no | no | reference |
+        | B. RADKLIM over Germany | no (Germany is trained on) | yes | product effect alone |
+        | C. DPC over the Alpine border strip where OPERA also has coverage | no | yes | product effect on the same rain as OPERA |
+        | D. DPC over interior Italy | yes | yes | region + product |
+
+        Region effect ~ D against C; product effect ~ B and C against A.
+      - *Metric:* skill **relative to a baseline** on the same patches (model vs interpolation
+        / the deterministic backbone), not absolute scores, since the baseline suffers the same
+        product effects. Report the target's own spectra and Minkowski curves per product, so
+        the expected structural mismatch is known before judging the model.
+      - *Assumption:* the perfect-model setup (input = coarsened target). With real ERA5
+        inputs the test also probes the ERA5 -> radar mapping in a new climate.
+      - *Steps:* (1) measure the DPC-OPERA overlap along the Alpine border (open item in
+        RESEARCH_NOTES) and how much rain C contains; (2) confirm licence terms for derived
+        patches (CC BY-SA) and the hour convention with FBK (franch@fbk.eu); (3) fetch and
+        regrid 2018-07 .. 2024; (4) build A-D patch sets; (5) evaluate. B needs only RADKLIM,
+        already on disk for the calibration days (more months on request from DWD open data).
+      - *Events:* Italian events (N Italy hail 2023-07-19, La Chaux-de-Fonds / Azzano,
+        Emilia-Romagna 2023) become testable on DPC even where OPERA has no coverage; ask MCH
+        for more (event email to Lionel Moret, 2026-10-14).
+
 ### Paper
 - [ ] Add the W₁ identity to the theory section (DECISIONS §13).
 - [ ] Report exceedance ratio + RL bias as tail columns. Demote ξ to the text, with the
@@ -1661,6 +1704,13 @@ the direct test of the central hypothesis (M5).
 - The cut has to be made by **event** and **in time**, on the screened pool. A patch-level
   cut would leak the same storms through neighbouring tiles and frames (§5).
 - *Needs:* M1.
+
+### M6. Generalisation to an unseen product and region (added 2026-10-14)
+Evaluate the v4-trained models on Italian DPC radar data, which OPERA never contains, with a
+product × region ablation (OPERA test / RADKLIM over Germany / DPC on the OPERA-overlap strip /
+DPC over interior Italy) and skill relative to a baseline. Details and steps: §5, "Evaluation:
+generalisation". Complements M2 (unseen intensities) with unseen regions and products.
+- *Needs:* a v4-trained model; DPC `srt1-adj` regridded to the OPERA grid.
 
 ### M3. Regime-aware Minkowski training
 Classify each sample into a precipitation regime from the low-res input, the prediction and
