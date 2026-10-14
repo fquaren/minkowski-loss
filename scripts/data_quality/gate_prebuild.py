@@ -40,7 +40,9 @@ def rule5_sets(q):
     y = r.groupby(["radar", "year"]).agg(n=("day", "size"), k=("e", "sum")).reset_index()
     y = y[(y.k / y.n >= p["year_share"]) & (y.k >= p["year_min_days"])]
     cor = pd.concat([r.loc[r.e, ["radar", "day"]], r.merge(y[["radar", "year"]], on=["radar", "year"])[["radar", "day"]]])
-    return {"off": set(), "pre-stated": set(zip(pre.radar, pre.day)), "days-with-data": set(zip(cor.radar, cor.day))}
+    cur = pd.read_csv(f"{Q4}/day_exclusions.csv", dtype=str)                      # adopted 2026-10-14
+    return {"off": set(), "pre-stated": set(zip(pre.radar, pre.day)), "days-with-data": set(zip(cor.radar, cor.day)),
+            "score only (adopted 2026-10-14)": set(zip(cur.radar, cur.day))}
 
 
 def load_hours():
@@ -136,6 +138,69 @@ def crit2():
     return L
 
 
+def crit2_floor(q, flags):
+    """Criterion 2a against RADKLIM (DECISIONS §29 follow-up (ii), 2026-10-14): DWD gauge-hours on
+    days with RADKLIM, tile-hours rejected at split time (current day_exclusions.csv) dropped;
+    false-alarm share (field >= u, gauge < 1 mm) of screened OPERA vs RADKLIM at the gauge pixel.
+    Pass: upper end of the 95% day-block interval of (OPERA - RADKLIM) <= 2 points."""
+    de = pd.read_csv(f"{Q4}/day_exclusions.csv", dtype=str)
+    de = set(zip(de.radar, de.day))
+    st = pd.read_csv(f"{D}/validation/gauges/dwd_stations.csv")[["station", "row", "col"]].dropna()
+    rows = []
+    for f in sorted(glob.glob(f"{GAUGE}/g_*.csv.gz")):
+        day = os.path.basename(f)[2:10]
+        rk, hp = f"{D}/validation/radklim/hourly/{day}.npz", None
+        for h in (f"{CAL}/hourly_c/hours/{day}.csv.gz", f"{CAL}/hourly_g/hours/{day}.csv.gz"):
+            hp = h if os.path.exists(h) else hp
+        if not (os.path.exists(rk) and hp):
+            continue
+        z = np.load(rk)
+        K, (y0, y1, x0, x1) = z["K"], z["box"]
+        if not np.isfinite(K).any():
+            continue
+        g = pd.read_csv(f, dtype={"day": str, "end": str})
+        g = g[(g.net == "dwd")].merge(st, on="station")
+        t = pd.read_csv(hp, dtype={"end": str, "frames": str, "owners": str})
+        if "n_burst" not in t:
+            t["n_burst"] = 0
+        d = decide_hourly(t, q, frame_flags=flags, day_excl=de)
+        rej = t["unphysical"].astype(bool).values | d["rej_v4"].values
+        rset = {(e[:12], r, c) for e, r, c, x in zip(t.end, t.row, t.col, rej) if x}
+        r_, c_ = g.row.astype(int).values, g.col.astype(int).values
+        keep = np.array([(e, (r // 128) * 128, (c // 128) * 128) not in rset for e, r, c in zip(g.end, r_, c_)])
+        d1 = pd.Timestamp(day) + pd.Timedelta(hours=1)
+        i = ((pd.to_datetime(g.end, format="%Y%m%d%H%M") - d1) / pd.Timedelta(hours=1)).astype(int).values
+        inb = (i >= 0) & (i < 24) & (r_ >= y0) & (r_ < y1) & (c_ >= x0) & (c_ < x1)
+        k = np.full(len(g), np.nan)
+        k[inb] = K[i[inb], r_[inb] - y0, c_[inb] - x0]
+        g = g.assign(K=k)[keep & np.isfinite(k)]
+        rows.append(g[["day", "end", "station", "full", "K", "g_shift"]])
+    g = pd.concat(rows, ignore_index=True).dropna()
+    by = {d_: x for d_, x in g.groupby("day")}
+    days = list(by)
+    rng = np.random.default_rng(0)
+    L = [f"DWD gauge-hours on {len(days)} days with RADKLIM, rejected tile-hours dropped: {len(g):,}", "",
+         "| u (mm) | OPERA screened: n, false alarms | RADKLIM: n, false alarms | OPERA - RADKLIM [95% CI] |",
+         "|---|---|---|---|"]
+    out = None
+    for u in U_ALL:
+        def fa(x, col):
+            s = x[x[col] >= u]
+            return (s.g_shift < 1.0).sum() / max(len(s), 1), len(s)
+        (po, no), (pr, nr) = fa(g, "full"), fa(g, "K")
+        bs = []
+        for _ in range(1000):
+            x = pd.concat([by[d_] for d_ in rng.choice(days, len(days))])
+            bs.append(fa(x, "full")[0] - fa(x, "K")[0])
+        lo, hi = np.percentile(bs, [2.5, 97.5])
+        L.append(f"| {u:g} | {no:,}, {po:.1%} | {nr:,}, {pr:.1%} | {po - pr:+.1%} [{lo:+.1%}, {hi:+.1%}] |")
+        if u == U_MAIN:
+            out = hi
+    L += ["", f"Criterion 2a (revised, u = {U_MAIN:g} mm): upper bound of OPERA - RADKLIM {out:+.1%} -> "
+          f"{'PASS' if out <= 0.02 else 'FAIL'} (<= +2 points)"]
+    return L
+
+
 def main():
     q = yaml.safe_load(open(f"{REPO}/configs/quality_v4.yaml"))
     ff = pd.read_csv(f"{Q4}/frame_flags.csv.gz", dtype=str)
@@ -166,6 +231,7 @@ def main():
         L += [f"| {r} | {lo:.2%} | {hi:.2%} | {'PASS' if ok else 'FAIL'} |" for r, lo, hi, ok in b]
         L.append("")
     L += ["## Criterion 2, gauges (pixel values of the chain; rule 5 and tile rejection not applied)", ""] + crit2()
+    L += ["", "## Criterion 2a revised: false alarms against RADKLIM on the same gauge-hours", ""] + crit2_floor(q, flags)
     txt = "\n".join(L)
     print(txt)
     os.makedirs(OUT, exist_ok=True)
