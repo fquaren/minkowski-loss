@@ -1863,3 +1863,44 @@ criterion-3b rise comes from artefacts, not from real cores.
 - 2b: pass (0.1%).
 The gate therefore turns on 2a: a rule for what the chain leaves (screening review,
 2026-10-14).
+
+## 30. Low-hanging fruit of the screening review (2026-10-14)
+
+**Why.** The per-rule table (`calib/rule_effect/summary.md`, 199 calibration days) shows the
+static-clutter (hot) repair as the largest remover at 20-100 mm: 13-26% of pixel-hours on random
+days, 21% at 50-100 mm on event days. It is the one rule that failed its test (§24: 46% of
+affected gauge-hours moved closer, 48% further). The no-temporal-support rule lowers 6% of
+event-day 50-100 mm pixel-hours and was never tested. The residual false alarms of §29 (2a)
+include single-day stationary echoes that miss `p1_min` = 24 by 4 frames (Kleiner Feldberg
+2018-04-30, Paris-CDG 2021-07-14: 20 frames each).
+
+**Decision (researcher asked for all of them, 2026-10-14; Claude fixed the criteria below before
+running).** Tests use `scripts/data_quality/rule_validate.py` on the 196 calibration days with
+RADKLIM, the RADKLIM box, the current chain as the base, and split-time rejection (current rule 5)
+applied. Removal = a kept pixel-hour with C_without >= 1 mm and C_with <= 0.5 C_without.
+RADKLIM-dry = K_tol < 5 mm, as in §25/§26. Raw bins 10-20 / 20-50 / 50-100 / >= 100 mm.
+Pass = removals RADKLIM-dry >= 85% in every bin with >= 30 removals.
+
+1. *Static-clutter repair.* Without vs with `hot`.
+   - Pass: it stays.
+   - Fail: the unconditional repair goes. The hot mask only lowers the persistence threshold
+     (`p1_prior_min` 12 on hot pixels, the §24 proposal). That replacement's own removals must
+     pass the same test.
+2. *No-temporal-support rule.* Without vs with `unsupported`. Pass: it stays. Fail: off until
+   redesigned.
+3. *Persistence threshold.* `p1_min` 20 and 16 against the current 24 (`p1_ring_min` 12
+   unchanged). The removals added by the lower value must pass on both halves of the days
+   (odd and even day index). Pick the lowest passing value; if none passes, keep 24. Then re-run
+   §29 criterion 2a with whatever is adopted.
+4. *`min_wet_jump`* (radar-disk temporal check, now 0.15 from 20 cases). The 99.9th percentile
+   of s = min(w_t - w_{t-1}, w_t - w_{t+1}), the wet-fraction excess over both neighbour
+   frames. Taken over radar-frames in normal operation: 500 random days (seed 0) of the
+   2026-10-09 radar pass, radar-days with score < 1, no flagged frame, n_valid >= min_valid.
+5. *Hourly tail threshold u (provisional).* The screened hourly level with the same pixel
+   exceedance frequency as 31 mm/h has in the screened 15-min frames. Same 100 random
+   calibration days, full grid, kept tile-hours. Final u comes from a threshold-stability
+   analysis on the build (§21).
+
+*Descriptive, for the slides, not criteria:* exceedance counts of raw OPERA, screened OPERA and
+RADKLIM on the same German pixel-hours, and of DE/CH gauges against OPERA at the gauge pixels.
+CombiPrecip and COMEPHORE are not on disk.
