@@ -123,7 +123,7 @@ def run_day(day):
 def summary():
     df = pd.concat([pd.read_csv(f, dtype={"day": str}) for f in sorted(glob.glob(f"{OUT}/days/*.csv"))])
     cat = pd.read_csv(f"{CAL}/days.csv", dtype=str).set_index("day").category
-    df["group"] = df.day.map(cat).map(lambda c: c if c in ("random", "event") else "failure")
+    df["group"] = df.day.map(cat).map(lambda c: "random" if c == "random" else "event" if c.startswith("event") else "failure")
     L = ["# How much each rule removes, by raw hourly intensity (calibration days, current chain)", "",
          "Cell = share of the bin's raw mass the stage removes; in brackets, share of pixel-hours it "
          "lowers by >= 50%. Rejection rows: screened mass of pixel-hours in rejected tile-hours.", ""]
@@ -142,7 +142,16 @@ def summary():
                 cells.append("." if pm < 5e-5 and pl < 5e-5 else f"{pm:.2%} ({pl:.2%})")
             L.append(f"| {s} | " + " | ".join(cells) + " |")
         rest = [f"{1 - sum(tot[f'{s}|mass|{l}'] for s in STAGES) / max(tot[f'mass|{l}'], 1e-9):.1%}" for l in LABELS]
-        L += ["| **kept** | " + " | ".join(rest) + " |", ""]
+        L += ["| **kept (mass)** | " + " | ".join(rest) + " |", ""]
+        # pixel-hour view: robust to the few absurd raw values that dominate the mass of the top bin
+        L += [f"Pixel-hours lowered by >= 50% ({grp}):", "",
+              "| stage | " + " | ".join(f"{l} mm" for l in LABELS) + " |", "|---|" + "---|" * len(LABELS)]
+        for s in STAGES:
+            v = [tot[f"{s}|low|{l}"] / max(tot[f"n|{l}"], 1) for l in LABELS]
+            if max(v) >= 5e-5:
+                L.append(f"| {s} | " + " | ".join("." if x < 5e-5 else f"{x:.2%}" for x in v) + " |")
+        keep = [1 - sum(tot[f"{s}|low|{l}"] for s in STAGES) / max(tot[f"n|{l}"], 1) for l in LABELS]
+        L += ["| **left intact** (not lowered >= 50% by any single stage) | " + " | ".join(f"{x:.1%}" for x in keep) + " |", ""]
     txt = "\n".join(L)
     print(txt)
     open(f"{OUT}/summary.md", "w").write(txt + "\n")
