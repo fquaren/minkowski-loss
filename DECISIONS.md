@@ -1818,3 +1818,48 @@ its 5x5 window (Z = 200 R^1.6, as `radar_screen.dbz`); "embedded" = context >= c
 - <= 20% embedded: they are artefacts in weak or dry surroundings; the rule stands and its 3b
   rise is artefact-driven.
 - In between: reported per ceiling value and radar.
+
+**Results of the three follow-up tests (2026-10-14).**
+
+*(i) Rest of the field: WORSE, so excluding the whole radar-day is justified*
+(`calib/rest_of_field/summary.md`). 348 excluded German radar-days against 2,147 non-excluded
+radar-days of the same radars, isolated pixel-hours left out:
+
+| measure | excluded | control | difference [95% CI] |
+|---|---|---|---|
+| false alarms, C >= 5 mm (RADKLIM-dry) | 40.2% | 12.3% | +27.9 [+17.2, +42.5] |
+| false alarms, C >= 10 mm | 52.2% | 5.5% | +46.7 [+32.1, +63.4] |
+| false alarms, C >= 20 mm | 66.6% | 4.0% | +62.6 [+39.7, +85.1] |
+| misses (K >= 5, C < 1 mm) | 9.4% | 7.4% | +1.9 [-0.8, +5.7] |
+| median log-correlation with RADKLIM | 0.36 | 0.58 | |
+
+As pre-stated, criterion 3a no longer counts event losses on excluded radar-days: Andreas
+(debln) and Boris (hubud / hrdeb / sipas) are correct removals. The evidence is from German
+radars; Boris's are HU / HR / SI (the §24 transfer assumption).
+
+*(ii) Criterion 2a against RADKLIM: FAIL.* 6.87 M DWD gauge-hours on 243 days, rejected
+tile-hours dropped. At u = 20 mm OPERA screened 6.3% (n = 378), RADKLIM 0.9% (n = 426);
+difference +5.4 [+2.3, +9.9] against <= +2. At 10 mm +1.1 [-0.1, +2.6]; at 30 mm +8.0
+[+0.0, +21.6]. RADKLIM's floor is optimistic (gauge-adjusted), but the excess is real
+contamination. The 24 false-alarm gauge-hours (18 stations, 13 days, none on a hot pixel):
+- ~9 with RADKLIM ~0 mm, i.e. artefacts the chain leaves untouched (screened = raw). Largest:
+  Kleiner Feldberg/Taunus 2018-04-30, 6 hours of 23-83 mm at one pixel, a single-day
+  stationary echo, not a local peak (the "extended blob" §23 left out); Ostenfeld
+  2014-09-29 (60 mm), Bad Berleburg 2023-07-09, Ellern 2018-04-23, Traunreut 2023-07-19.
+- ~15 inside convection (RADKLIM 5-20 mm, gauge dry): most likely support mismatch.
+
+*(iii) Ceiling context: artefacts* (`calib/ceiling_context/summary.md`, each pixel counted once):
+166,994 ceiling pixel-frames in the rejected tile-hours >= 20 mm; 13.7% embedded (<= 20%).
+Surrounding median ~0.6 dBZ; 44-72% have no rain around them. The ceiling rule stands; its
+criterion-3b rise comes from artefacts, not from real cores.
+
+**Gate status with rule 5 = score only (adopted).** 1.08% of tile-hours rejected.
+- 1, known failures: pass (0 / 0 / 0 kept, all non-vacuous).
+- 3a, events: pass once losses on excluded radar-days are not counted (i); every other event
+  0%.
+- 3b: rej_ceiling (0.04% -> 1.77%) and rej_radar_day (1.14% -> 4.80%) rise with intensity.
+  Both are explained by (iii) and (i): what they remove at high intensity is contamination.
+- 2a: **fail**, from residual contamination such as single-day stationary echoes.
+- 2b: pass (0.1%).
+The gate therefore turns on 2a: a rule for what the chain leaves (screening review,
+2026-10-14).

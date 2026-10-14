@@ -145,7 +145,7 @@ def crit2_floor(q, flags):
     Pass: upper end of the 95% day-block interval of (OPERA - RADKLIM) <= 2 points."""
     de = pd.read_csv(f"{Q4}/day_exclusions.csv", dtype=str)
     de = set(zip(de.radar, de.day))
-    st = pd.read_csv(f"{D}/validation/gauges/dwd_stations.csv")[["station", "row", "col"]].dropna()
+    st = pd.read_csv(f"{D}/validation/gauges/dwd_stations.csv", dtype={"station": str})[["station", "row", "col"]].dropna()
     rows = []
     for f in sorted(glob.glob(f"{GAUGE}/g_*.csv.gz")):
         day = os.path.basename(f)[2:10]
@@ -158,7 +158,7 @@ def crit2_floor(q, flags):
         K, (y0, y1, x0, x1) = z["K"], z["box"]
         if not np.isfinite(K).any():
             continue
-        g = pd.read_csv(f, dtype={"day": str, "end": str})
+        g = pd.read_csv(f, dtype={"day": str, "end": str, "station": str})
         g = g[(g.net == "dwd")].merge(st, on="station")
         t = pd.read_csv(hp, dtype={"end": str, "frames": str, "owners": str})
         if "n_burst" not in t:
