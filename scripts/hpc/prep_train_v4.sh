@@ -27,10 +27,18 @@ $P scripts/validate/validate_stage.py gamma --config $CFG 2>&1 | grep -v Warn | 
   || { echo "GAMMA VALIDATION FAILED: see validation/gamma/"; exit 1; }
 echo "=== 3. dataset checks $(date)"
 $P scripts/dataset_v2/check_datasets.py $CFG 2>&1 | tail -25 || { echo "CHECKS FAILED"; exit 1; }
+echo "=== 3b. validate training on a real batch (GPU 1) $(date)"
+GPU="env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1"
+$GPU $P scripts/validate/validate_stage.py training --config $CFG --batch 8 --steps 150 2>&1 | grep -v Warn | tail -20 \
+  || { echo "TRAINING VALIDATION FAILED: see validation/training/"; exit 1; }
 echo "=== 4. smoke run $(date)"
 SMOKE=/work/fquareng/ch2/minkowski-loss/logs/config_v4_smoke.yaml
 $E/bin/python src/sweep_util.py patch --base $CFG --out $SMOKE --set NUM_EPOCHS=1 || { echo "PATCH FAILED"; exit 1; }
 bash scripts/hpc/launch_unet_analytical.sh configs/unet_analytical.yaml config 0.5 $SMOKE || { echo "SMOKE FAILED"; exit 1; }
-echo "=== smoke log: $(ls -t logs/unet_ana_*.log | head -1)"
-tail -20 "$(ls -t logs/unet_ana_*.log | head -1)"
+SMOKE_LOG=$(ls -t logs/unet_ana_*.log | head -1)
+echo "=== smoke log: $SMOKE_LOG"
+tail -20 "$SMOKE_LOG"
+echo "=== 5. validate the smoke run's log $(date)"
+$GPU $P scripts/validate/validate_stage.py training --config $CFG --batch 4 --steps 30 --log "$SMOKE_LOG" 2>&1 \
+  | grep -v Warn | tail -20 || { echo "SMOKE LOG VALIDATION FAILED: see validation/training/"; exit 1; }
 echo "=== PREP_TRAIN_V4_DONE $(date)"
