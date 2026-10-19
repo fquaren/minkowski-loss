@@ -51,6 +51,20 @@ U_GRID = [10, 11, 13, 15, 17, 19, 22, 25, 28, 31, 35, 40, 45, 53, 60, 70, 80, 89
           130, 150]
 LAT_BANDS = [("south <46N", -90, 46), ("46-50N", 46, 50), ("50-55N", 50, 55), (">=55N", 55, 90)]
 SEASONS = {"DJF": (12, 1, 2), "MAM": (3, 4, 5), "JJA": (6, 7, 8), "SON": (9, 10, 11)}
+VERSION, LEVELS, CLUSTER_U, TRUNC, UNIT = "v3", (31, 53, 89), 31, None, "mm/h"
+SHOW = [10, 15, 19, 25, 31, 40, 53, 70, 89, 115, 150]
+
+
+def set_version(v):
+    """v4 (DECISIONS §32): hourly store, hourly threshold grid and levels, truncated fit at 500 mm."""
+    global STORE, META, OUT, U_MIN, U_GRID, VERSION, LEVELS, CLUSTER_U, TRUNC, UNIT, SHOW
+    if v == "v4":
+        STORE, META = f"{D}/patches_v4/preprocessed_dataset.zarr", f"{D}/patches_v4/meta"
+        OUT = f"{D}/quality_v4/pot_threshold"
+        U_MIN = 5.0
+        U_GRID = [5, 6, 7, 8, 10, 12, 14, 16, 18, 20.2, 23, 26, 31.7, 35, 40, 45, 50.1, 60, 70, 80, 100]
+        VERSION, LEVELS, CLUSTER_U, TRUNC, UNIT = "v4", (20.2, 31.7, 50.1), 20.2, 500.0, "mm in 1 h"
+        SHOW = [5, 8, 10, 14, 20.2, 26, 31.7, 40, 50.1, 70, 100]
 
 
 # --------------------------------------------------------------------------------------------
@@ -123,8 +137,32 @@ def gpd_fit(x, w):
     return float(r.x[1]), float(np.exp(r.x[0]))
 
 
-def fit_grid(xv, counts, grid=U_GRID, min_n=50):
+def gpd_fit_trunc(x, w, t):
+    """Weighted MLE of a GPD truncated at excess t (values capped at u + t): density
+    f(x) / F(t). Returns xi."""
+    from scipy.optimize import minimize
+    from scipy.stats import genpareto
+    xi0, sg0 = gpd_fit(x, w)
+    if not np.isfinite(xi0):
+        return np.nan
+    W = w.sum()
+
+    def nll(p):
+        ls, xi = p
+        sg = np.exp(ls)
+        if xi < 0 and x.max() >= -sg / xi:
+            return 1e300
+        lf = genpareto.logpdf(x, xi, scale=sg)
+        lF = genpareto.logcdf(t, xi, scale=sg)
+        return -((w * lf).sum() - W * lF)
+
+    r = minimize(nll, [np.log(sg0), xi0], method="Nelder-Mead", options={"xatol": 1e-5, "maxiter": 2000})
+    return float(r.x[1])
+
+
+def fit_grid(xv, counts, grid=None, min_n=50):
     """xv: bin values (mm/h), counts: weights per bin (1-D). One fit per u in grid."""
+    grid = U_GRID if grid is None else grid
     out = []
     for u in grid:
         k = (xv > u) & (counts > 0)
@@ -180,7 +218,8 @@ def _boot_job(args):
     return res, mrl
 
 
-def bootstrap(sample, B, workers, grid=U_GRID, us_mrl=None, seed=0):
+def bootstrap(sample, B, workers, grid=None, us_mrl=None, seed=0):
+    grid = U_GRID if grid is None else grid
     seeds = np.random.default_rng(seed).integers(0, 2**31, B)
     jobs = [(sample, ch, grid, us_mrl) for ch in np.array_split(seeds, workers) if ch.size]
     with Pool(workers) as p:
@@ -217,7 +256,7 @@ def cluster_maxima(info, gap_min=60):
     """One value per tile position and storm run: tiles at the same (row, col) whose
     timestamps are <= gap_min apart belong to one run. Only tail tiles (max >= 31), so the
     sampling is uniform within the stratum and no weights are needed (u >= 31 only)."""
-    t = info[info["max"] >= 31].copy()
+    t = info[info["max"] >= CLUSTER_U].copy()
     t["ts"] = pd.to_datetime(t.timestamp.astype(str), format="%Y%m%d%H%M%S")
     t = t.sort_values(["row", "col", "ts"])
     new = (t.row.diff() != 0) | (t.col.diff() != 0) | (t.ts.diff() > pd.Timedelta(minutes=gap_min))
@@ -232,10 +271,11 @@ def analyze(workers, B):
     import matplotlib.pyplot as plt
 
     os.makedirs(f"{OUT}/fig", exist_ok=True)
-    us_mrl = np.arange(10, 301, 2.0)
+    us_mrl = np.arange(U_MIN, 301, 2.0)
     rows, mrl_rows, boots = [], {}, {}
 
-    def run(sample, label, kind, b=B, grid=U_GRID, with_mrl=False):
+    def run(sample, label, kind, b=B, grid=None, with_mrl=False):
+        grid = U_GRID if grid is None else grid
         c = sample.counts()
         point = fit_grid(sample.xv, c, grid)
         bf, bm = bootstrap(sample, b, workers, grid, us_mrl if with_mrl else None)
@@ -246,7 +286,9 @@ def analyze(workers, B):
             rows.append(dict(subset=label, kind=kind, u=u, n_exc=int(round(c[k].sum())),
                              days=int(nd), xi=point[i, 0], xi_lo=lo[i, 0], xi_hi=hi[i, 0],
                              sigma=point[i, 1], sstar=point[i, 2], sstar_lo=lo[i, 2],
-                             sstar_hi=hi[i, 2]))
+                             sstar_hi=hi[i, 2],
+                             xi_trunc=(gpd_fit_trunc(sample.xv[k] - u, c[k], TRUNC - u)
+                                       if TRUNC and kind == "pixel" and c[k].sum() >= 50 else np.nan)))
         if with_mrl:
             mrl_rows[label] = (mean_excess(sample.xv, c, us_mrl),
                                np.nanpercentile(bm, 2.5, 0), np.nanpercentile(bm, 97.5, 0))
@@ -268,7 +310,7 @@ def analyze(workers, B):
         "test, no event tiles", "pixel")
 
     # --- declustered: cluster maxima, u >= 31 -------------------------------------------
-    g31 = [u for u in U_GRID if u >= 31]
+    g31 = [u for u in U_GRID if u >= CLUSTER_U]
     for s in ("train", "test"):
         info = data[s][0]
         g = cluster_maxima(info if s == "train" else info[info.event.isna()])
@@ -304,9 +346,9 @@ def analyze(workers, B):
                                             ("sstar", "sstar_lo", "sstar_hi"))):
                 l, = a.plot(d.u, d[c], "o-", ms=3, label=lab)
                 a.fill_between(d.u, d[lo_], d[hi_], color=l.get_color(), alpha=0.15)
-        for a, yl in zip(ax, ("shape xi", "modified scale sigma* = sigma - xi u (mm/h)")):
-            a.set_xscale("log"); a.set_xlabel("threshold u (mm/h)"); a.set_ylabel(yl)
-            for u in (31, 53, 89):
+        for a, yl in zip(ax, ("shape xi", f"modified scale sigma* = sigma - xi u ({UNIT})")):
+            a.set_xscale("log"); a.set_xlabel(f"threshold u ({UNIT})"); a.set_ylabel(yl)
+            for u in LEVELS:
                 a.axvline(u, color="0.7", lw=0.8, ls=":")
             a.grid(alpha=0.3)
         ax[0].axhline(0, color="k", lw=0.6)
@@ -329,17 +371,17 @@ def analyze(workers, B):
     for lab, (e, lo_, hi_) in mrl_rows.items():
         l, = ax.plot(us_mrl, e, lw=1.2, label=lab)
         ax.fill_between(us_mrl, lo_, hi_, color=l.get_color(), alpha=0.15)
-    for u in (31, 53, 89):
+    for u in LEVELS:
         ax.axvline(u, color="0.7", lw=0.8, ls=":")
-    ax.set_xlabel("threshold u (mm/h)"); ax.set_ylabel("mean excess E[X-u | X>u] (mm/h)")
+    ax.set_xlabel(f"threshold u ({UNIT})"); ax.set_ylabel(f"mean excess E[X-u | X>u] ({UNIT})")
     ax.set_title("mean residual life (95% day-block bootstrap)"); ax.legend(fontsize=7)
     ax.grid(alpha=0.3)
     fig.savefig(f"{OUT}/fig/mrl.png", dpi=130); plt.close(fig)
 
     # --- report -------------------------------------------------------------------------
-    show = [10, 15, 19, 25, 31, 40, 53, 70, 89, 115, 150]
+    show = SHOW
     with open(f"{OUT}/report.md", "w") as f:
-        f.write("# POT threshold on v3\n\n`scripts/data_quality/pot_threshold.py`, "
+        f.write(f"# POT threshold on {VERSION}\n\n`scripts/data_quality/pot_threshold.py`, "
                 f"B = {B} day-block bootstrap replicates (B/2 for regions and seasons).\n\n")
         for kind in ("pixel", "cluster", "region", "season"):
             d = res[(res.kind == kind) & res.u.isin(show)].copy()
@@ -347,8 +389,9 @@ def analyze(workers, B):
                              zip(d.xi, d.xi_lo, d.xi_hi)]
             d["sigma* [95%]"] = [f"{a:.1f} [{b:.1f}, {c:.1f}]" for a, b, c in
                                  zip(d.sstar, d.sstar_lo, d.sstar_hi)]
+            cols = ["subset", "u", "n_exc", "days", "xi [95%]", "sigma* [95%]"] + (["xi_trunc"] if TRUNC else [])
             f.write(f"## {kind}\n\n" + md_table(
-                d[["subset", "u", "n_exc", "days", "xi [95%]", "sigma* [95%]"]], index=False,
+                d[cols], index=False,
                 floatfmt=".4g") + "\n\n")
     print(f"[analyze] wrote {OUT}/report.md, fits.csv, mrl.csv, fig/")
 
@@ -359,7 +402,9 @@ if __name__ == "__main__":
     ap.add_argument("--stage", choices=["extract", "analyze", "all"], default="all")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--B", type=int, default=200)
+    ap.add_argument("--version", default="v3", choices=["v3", "v4"])
     a = ap.parse_args()
+    set_version(a.version)
     if a.stage in ("extract", "all"):
         extract(a.workers)
     if a.stage in ("analyze", "all"):
