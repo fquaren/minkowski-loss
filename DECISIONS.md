@@ -2046,3 +2046,31 @@ running).**
 - *Hourly u for the evaluation tables:* the lowest grid u above which the bootstrap intervals of
   xi and sigma* (train, weighted) contain the point estimates at every higher u that has
   >= 1,000 exceedances. 20.2 mm stays provisional until then.
+
+**Result, criterion 3 (2026-10-19; `quality_v4/gate_tail/summary.md`). FAIL as pre-stated.**
+ODYSSEY test split: 218,513 tile-hours, 486 days, 3.58e9 valid pixel-hours, 489,170 >= 20.2 mm.
+The 20 dropped non-event days hold 26.7% of those exceedances.
+
+| statistic | full | without the 20 days | 95% day-block interval | inside |
+|---|---|---|---|---|
+| rate >= 20.2 mm | 1.366e-4 | 1.062e-4 | [1.18, 1.59]e-4 | no |
+| rate >= 31.7 mm | 3.727e-5 | 2.893e-5 | [3.17, 4.38]e-5 | no |
+| rate >= 50.1 mm | 8.553e-6 | 6.976e-6 | [7.01, 9.99]e-6 | no |
+| xi (u = 20.2) | 0.237 | 0.261 | [0.217, 0.255] | no |
+| RL, lambda = 10 | 43.4 mm | 43.7 mm | [42.4, 44.3] | yes |
+| RL, lambda = 100 | 83.4 mm | 86.5 mm | [79.3, 86.8] | yes |
+| RL, lambda = 1000 | 152.3 mm | 164.5 mm | [140.5, 162.9] | no |
+
+- *The dropped days are mostly three summer convective periods:* 16-30 June 2021 (12 of 20),
+  9-28 June 2024 (6) and 15-16 August 2022 (2), plus 2013-06-07 and 2023-07-18. They surround
+  catalogued events (Swiss hail and the Moravia tornado in 2021; the June 2024 floods; the 2022
+  Mediterranean derecho), whose own days were not dropped. Inference, not tested: real
+  outbreaks concentrated in a few test weeks, not contamination.
+- *A design flaw in the criterion (noted after the result; the bar is not changed):* it compares
+  a targeted removal of the most influential days with a random day-resampling interval.
+  Whenever ~4% of days hold ~25% of the tail, that comparison fails almost by construction, with
+  or without artefacts.
+- *Open, for the researcher:* (a) accept, and report every tail statistic of the evaluation
+  tables with its day-block interval plus a leave-period-out sensitivity; (b) test the dropped
+  days for contamination with RADKLIM and the gauges where they overlap (Germany, Switzerland);
+  (c) replace the criterion, with a new pass rule fixed before re-running.
