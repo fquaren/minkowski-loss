@@ -2,15 +2,16 @@
 # All precipitation values and thresholds are mm accumulated in 1 h, not mm/h rates.
 # Evaluation: POT u = 50.1 mm (DECISIONS §32), i.e. eval_extremes.py --pot_threshold 50.1;
 # exceedance-rate levels 20.2 / 31.7 / 50.1 mm. DECLUTTER_THRESHOLD is unused by the v4 store.
+# Metadata lists are the *_owned.txt versions: ownerless tile-hours excluded (DECISIONS §34).
 RAW_OPERA_DATA_DIR: /home/fquareng/work/data/extremes/OPERA/raw/OPERA
 METADATA_DIR: /home/fquareng/work/data/extremes/OPERA
 PREPROCESSED_DATA_DIR: /home/fquareng/work/data/extremes/OPERA/patches_v4
 DEM_DATA_DIR: /home/fquareng/work/data/extremes/OPERA/patches/dem
 DEM_STATS: /home/fquareng/work/data/extremes/OPERA/patches_v4/dem_stats.json
 STATIC_DEM_PATH: /home/fquareng/work/data/extremes/OPERA/europe_dem_laea.tif
-TRAIN_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/full_train.txt
-VAL_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/full_val.txt
-TEST_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/full_test.txt
+TRAIN_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/full_train_owned.txt
+VAL_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/full_val_owned.txt
+TEST_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/full_test_owned.txt
 PRECIP_VAR_NAME: TOT_PREC
 PATCH_SIZE: 128
 DOWNSCALING_FACTOR: 12.5
@@ -114,10 +115,10 @@ OF_SEARCH_RADIUS: 4
 OF_DOWNSAMPLE: 4
 OF_MASK_THRESHOLD: 0.1
 REWARD_FM_RETENTION_WEIGHT: 1.0
-LIGHT_TRAIN_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/light_train.txt
-LIGHT_VAL_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/light_val.txt
-LIGHT_TEST_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/light_test.txt
-EXTREMES_TRAIN_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/extremes_train.txt
-EXTREMES_VAL_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/extremes_val.txt
-EXTREMES_TEST_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/extremes_test.txt
-EVENTS_TEST_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/events_test.txt
+LIGHT_TRAIN_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/light_train_owned.txt
+LIGHT_VAL_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/light_val_owned.txt
+LIGHT_TEST_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/light_test_owned.txt
+EXTREMES_TRAIN_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/extremes_train_owned.txt
+EXTREMES_VAL_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/extremes_val_owned.txt
+EXTREMES_TEST_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/extremes_test_owned.txt
+EVENTS_TEST_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4/meta/events_test_owned.txt

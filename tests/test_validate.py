@@ -88,6 +88,19 @@ def test_gamma_checks_pass_then_catch_corruption(tmp_path):
     assert "FAIL" in _status(vg.c_setup(cfg), "setup/thresholds")
 
 
+def test_filtered_5_column_lists(tmp_path):
+    """DECISIONS §34 lists: lines carry their store row; a dropped row must not shift the others."""
+    cfg, _ = _make(tmp_path)
+    full = [l for l in open(cfg["TEST_METADATA_FILE"]).read().split("\n") if l]
+    owned = tmp_path / "meta" / "full_test_owned.txt"
+    owned.write_text("\n".join(f"{l},{i}" for i, l in enumerate(full) if i != 2) + "\n")
+    cfg["TEST_METADATA_FILE"] = str(owned)
+    assert _status(vs.c_structure(cfg), "structure/test") == {"PASS"}
+    assert _status(vs.c_metadata(cfg, 50), "metadata/test") == {"PASS"}
+    owned.write_text(owned.read_text().replace(f",{len(full) - 1}\n", f",{len(full) + 7}\n"))   # out of range
+    assert "FAIL" in _status(vs.c_structure(cfg), "structure/test")
+
+
 def test_missing_gamma_is_a_fail_not_a_skip(tmp_path):
     cfg, z = _make(tmp_path)
     del z["validation"]["gamma_targets"]

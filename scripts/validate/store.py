@@ -32,13 +32,19 @@ FIELDS = ["original_precip", "coarse_precip", "interpolated_precip", "max_rate",
 
 def groups(cfg):
     meta = os.path.dirname(cfg["TRAIN_METADATA_FILE"])
+    owned = cfg["TRAIN_METADATA_FILE"].endswith("_owned.txt")        # DECISIONS §34 filtered lists
     return {"train": cfg["TRAIN_METADATA_FILE"], "validation": cfg["VAL_METADATA_FILE"],
-            "test": cfg["TEST_METADATA_FILE"], "nimbus": os.path.join(meta, "full_nimbus.txt")}
+            "test": cfg["TEST_METADATA_FILE"],
+            "nimbus": os.path.join(meta, "full_nimbus_owned.txt" if owned else "full_nimbus.txt")}
 
 
 def read_meta(path):
+    """(timestamps, rows, cols, max, store_rows). A 5th column is the store row (filtered and
+    subset lists); without it the line position is."""
     m = pd.read_csv(path, header=None, dtype={0: str})
-    return m.iloc[:, 0].values, m.iloc[:, 1].values.astype(int), m.iloc[:, 2].values.astype(int), m.iloc[:, 3].values.astype(float)
+    sr = m.iloc[:, 4].values.astype(int) if m.shape[1] >= 5 else np.arange(len(m))
+    return (m.iloc[:, 0].values, m.iloc[:, 1].values.astype(int), m.iloc[:, 2].values.astype(int),
+            m.iloc[:, 3].values.astype(float), sr)
 
 
 def store(cfg, mode="r"):
@@ -52,14 +58,16 @@ def c_structure(cfg):
     for g, mp in groups(cfg).items():
         if not os.path.exists(mp):
             out.append(ok(f"structure/{g}", g not in z, "no metadata file", path=mp)); continue
-        n = sum(1 for _ in open(mp))
+        _, _, _, _, sr = read_meta(mp)
         miss = [f for f in FIELDS if g not in z or f not in z[g]]
         if miss:
             out.append(ok(f"structure/{g}", False, f"missing arrays {miss}")); continue
         G = z[g]
-        shapes_ok = all(G[f].shape[0] == n for f in FIELDS) and G["original_precip"].shape[1:] == (128, 128)
-        out.append(ok(f"structure/{g}", shapes_ok, "row counts = metadata lines, 128x128 targets", rows=n,
-                      coarse=str(G["coarse_precip"].shape[1:])))
+        N = G["original_precip"].shape[0]
+        same = all(G[f].shape[0] == N for f in FIELDS) and G["original_precip"].shape[1:] == (128, 128)
+        refs = len(np.unique(sr)) == len(sr) and sr.min() >= 0 and sr.max() < N
+        out.append(ok(f"structure/{g}", same and refs, "arrays agree, 128x128, metadata store rows unique and in range",
+                      metadata_rows=len(sr), store_rows=N, coarse=str(G["coarse_precip"].shape[1:])))
     return out
 
 
@@ -70,12 +78,12 @@ def c_metadata(cfg, n_sample, seed=0):
     for g, mp in groups(cfg).items():
         if g not in z or not os.path.exists(mp):
             continue
-        ts, ys, xs, mx = read_meta(mp)
+        ts, ys, xs, mx, sr = read_meta(mp)
         idx = np.unique(np.r_[0, len(ts) - 1, rng.choice(len(ts), min(n_sample, len(ts)), replace=False)])
         G = z[g]
         bad = {"nan": 0, "max != metadata": 0, "sum > max_rate": 0, "n_wet out of 0..4": 0}
         for i in idx:
-            t, r, w = G["original_precip"][i], G["max_rate"][i], G["n_wet"][i]
+            t, r, w = G["original_precip"][sr[i]], G["max_rate"][sr[i]], G["n_wet"][sr[i]]
             bad["nan"] += bool(np.isnan(t).any())
             bad["max != metadata"] += abs(float(np.nanmax(t)) - mx[i]) > 1e-3 + 1e-4 * mx[i]
             bad["sum > max_rate"] += bool((t > r + 1e-3).any())
@@ -135,9 +143,9 @@ def c_reproduction(cfg, n_days, workers, quality, seed=2):
     for g, mp in groups(cfg).items():
         if g not in z or not os.path.exists(mp):
             continue
-        ts, ys, xs, mx = read_meta(mp)
+        ts, ys, xs, mx, sr = read_meta(mp)
         for i in rng.choice(len(ts), max(1, n_days // 4), replace=False):
-            picks.append((g, int(i), ts[i], int(ys[i]), int(xs[i])))
+            picks.append((g, int(sr[i]), ts[i], int(ys[i]), int(xs[i])))
     jobs = {}
     for g, i, t, y, x in picks:
         T = pd.Timestamp(f"{t[:4]}-{t[4:6]}-{t[6:8]} {t[8:10]}:{t[10:12]}")
@@ -167,7 +175,8 @@ def c_dem():
 
 
 def c_scaler(cfg):
-    _, _, _, mx = read_meta(cfg["TRAIN_METADATA_FILE"])
+    meta = cfg["TRAIN_METADATA_FILE"].replace("_owned.txt", ".txt")   # the scaler uses the full split
+    _, _, _, mx, _ = read_meta(meta)
     v = float(np.load(os.path.join(cfg["PREPROCESSED_DATA_DIR"], "log_precip_max_val.npy")))
     return [ok("scaler", abs(v - np.log1p(mx.max())) < 1e-4, "log_precip_max_val = log1p(train max)",
                stored=v, expected=float(np.log1p(mx.max())), train_max=float(mx.max()))]
