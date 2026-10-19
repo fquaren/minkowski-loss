@@ -2154,3 +2154,10 @@ rule tried in §31 was not adopted); 2b pass; 3 (new) pass; 4 pass (event losses
 radar-days shown to be bad); 5 explained (pending the researcher). By §20 "Where we stop": train
 on v4 and report 2a's measured contamination as a limitation, unless a v5 for the named type
 (stationary echoes) is judged worth its cost.
+
+**Decision (researcher, 2026-10-19).**
+- *Criterion 5 is accepted as explained by a sub-asymptotic threshold.* The explanation, with a
+  synthetic check, is in the methods draft §5.6.
+- *Train on v4.* The 2a failure is reported as a minor limitation (methods draft §6.3): about 9
+  residual artefact gauge-hours, single-day stationary echoes, +5.4 points of false alarms at
+  20 mm over RADKLIM. No v5. The gate closes with this.
