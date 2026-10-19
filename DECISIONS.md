@@ -2311,3 +2311,19 @@ contributing geometry). `scripts/analysis/radar_boundary.py`:
   gradient (a mountain crest, a coastline) gives a jump without any bias. A radar whose whole
   area is wetter than all its neighbours' areas could be flagged on climate. The top-5% cut and
   the interval reduce this; they do not remove it.
+
+**Result (2026-10-19; `notes/data_analysis_v4/radar_boundary.md`). The exclusion is NOT applied yet:
+the test does not measure what the question needs.** 1,987 radar-years; top-5% cut 0.018 (log1p:
+~2% in 1 + rate); 100 radar-years from 49 radars flagged, all with jumps of 0.018-0.039 (2-4%).
+- *Who is flagged:* many Swedish radars in 2024-2026 (NIMBUS era), the Swiss Albis (chalb) and
+  La Dole (chdol), where an Alpine gradient plausibly coincides with the boundary (the limitation
+  stated in advance), French and German radars, and some Slovak and Romanian radars (skkub, sklaz,
+  skjav 2019, rotim, robar).
+- *Who is not flagged:* the radars that stood out in the tail diagnostic: Bobohalma (robob),
+  Napkor (hunap), Szentes (husze), Kojsovska hola (skkoj). Their jumps are 0.012-0.016.
+- *Why:* the median of mean log1p over wet frames is dominated by light rain. It finds small bulk
+  offsets, not the heavy-rain excess or the low-level floor that raised the suspicion.
+- *Pending the researcher's decision (2026-10-20):* (a) apply as pre-stated anyway; (b) replace it
+  with a tail-focused boundary test (frequency of rates >= 10 / 31 mm/h in the inner vs outer band),
+  which needs band statistics recomputed from the frames (a new radar pass, ~8 h), with its own
+  criterion fixed before running; (c) no radar exclusion, stated as a limitation.
