@@ -115,7 +115,7 @@ def analyze(B=200):
          f"{int(D[f'n{U:g}'].sum()):,} pixel-hours >= {U} mm.",
          f"Dropped: the 20 non-event days with the most exceedances >= {U} mm, holding "
          f"{drop.sum() / D[f'n{U:g}'].sum():.1%} of them: {', '.join(drop.index)}.", "",
-         "| statistic | full | without the 20 days | 95% day-block interval (B = %d) | inside |" % B,
+         f"| statistic | full | without the 20 days | 95% day-block interval (B = {B}) | inside |",
          "|---|---|---|---|---|"]
     ok_all = True
     for key in full:
