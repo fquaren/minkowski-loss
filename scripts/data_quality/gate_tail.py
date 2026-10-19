@@ -105,7 +105,8 @@ def analyze(B=200):
     ev_day = set(pday[info.event.fillna("").values != ""])
     share = pd.Series(D[f"n{U:g}"], index=days)
     drop = share[[d not in ev_day for d in days]].sort_values(ascending=False).head(20)
-    w = np.ones(nd); w[[days.get_loc(d) for d in drop.index]] = 0
+    pos = {d: i for i, d in enumerate(days)}
+    w = np.ones(nd); w[[pos[d] for d in drop.index]] = 0
     dropped = stats(w, D)
     rng = np.random.default_rng(0)
     boot = [stats(rng.multinomial(nd, np.full(nd, 1 / nd)).astype(float), D) for _ in range(B)]
