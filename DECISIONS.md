@@ -2092,3 +2092,25 @@ the criteria before running).** `scripts/data_quality/dropped_days_check.py`.
 - *Consequence:* contaminated -> a named failure type, which per §20 justifies a v5 for that type.
   Not contaminated -> the criterion-3 failure is real concentration of weather, and the
   criterion is replaced (option (c)), with the new rule fixed before re-running.
+
+**Decision (researcher, 2026-10-19, on Claude's proposal; written before the contamination
+test's result). §20 criterion 3 is replaced.**
+- *Why.* The old rule compared a targeted removal of the most influential days with a random
+  day-resampling interval. With heavy-tailed daily contributions (here 4% of days hold 27% of
+  the tail) the targeted change exceeds the random interval by construction, whatever the data.
+  It is like judging "remove the 20 largest values" against the standard error of the mean.
+  The old rule also cannot tell contamination concentrated on a few days from real weather
+  concentrated on a few days: both give the same signature. Widening the interval would be
+  tuning after the result, and would not change the outcome (the 20.2 mm rate falls to 1.06e-4
+  against a lower bound of 1.18e-4).
+- *New criterion 3, a gate:* the most influential test days (the 20 non-event days with the
+  largest share of exceedances >= u) are not contaminated. The test is the dropped-days test
+  above (RADKLIM and DE/CH gauges against 60 random control days; contaminated if
+  dropped - control > 2 points with the 95% day-block interval above 0). Pass = not contaminated
+  for both references.
+- *New reporting rule, not a gate:* every tail statistic of the evaluation tables (exceedance
+  rates and ratios, xi, return levels and their biases) is reported with its 95% day-block
+  bootstrap interval. A leave-period-out variant goes with it: without the most influential
+  outbreak period (on v4 test, 16-30 June 2021), and without the 20 most influential days. The
+  paper states how much a few outbreaks drive each number.
+- *The old rule's result stays recorded above* (fail; 5 of 7 statistics outside their intervals).
