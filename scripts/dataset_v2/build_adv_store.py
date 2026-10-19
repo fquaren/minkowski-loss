@@ -86,13 +86,21 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--block", type=int, default=2000)
+    ap.add_argument("--meta_only", action="store_true",
+                    help="rewrite the metadata from the saved per-row completeness and max (e.g. after a "
+                         "new exclusion in the owned lists), without recomputing the fields")
     a = ap.parse_args()
     import yaml
     import zarr
-    setup()
     t0 = time.time()
     fin, mx = {}, {}
-    for g in GROUPS:
+    if a.meta_only:
+        for g in GROUPS:
+            z = np.load(f"{DST}/meta/adv_rows_{g}.npz")
+            fin[g], mx[g] = z["fin"], z["mx"]
+    else:
+        setup()
+    for g in ([] if a.meta_only else GROUPS):
         n = zarr.open(zpath(SRC, g, "adv_precip"), mode="r").shape[0]
         fin[g], mx[g] = np.zeros(n, bool), np.full(n, np.nan)
         jobs = [(g, s, min(s + a.block, n)) for s in range(0, n, a.block)]
@@ -101,6 +109,7 @@ def main():
                 fin[g][s:s + len(f)], mx[g][s:s + len(m)] = f, m
                 if k % 50 == 0:
                     print(f"  [{g}] {k + 1}/{len(jobs)} blocks, {time.time() - t0:.0f} s", flush=True)
+        np.savez(f"{DST}/meta/adv_rows_{g}.npz", fin=fin[g], mx=mx[g])
         print(f"[{g}] {n:,} rows, corrected field complete on {fin[g].mean():.1%}", flush=True)
     report = []
     for g, stem in GROUPS.items():
