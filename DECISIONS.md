@@ -2074,3 +2074,21 @@ The 20 dropped non-event days hold 26.7% of those exceedances.
   tables with its day-block interval plus a leave-period-out sensitivity; (b) test the dropped
   days for contamination with RADKLIM and the gauges where they overlap (Germany, Switzerland);
   (c) replace the criterion, with a new pass rule fixed before re-running.
+
+**Contamination test of the dropped days (option (b); researcher asked 2026-10-19; Claude fixed
+the criteria before running).** `scripts/data_quality/dropped_days_check.py`.
+- *Days:* the 20 dropped days, against a control of 60 non-dropped, non-event test days drawn at
+  random (seed 0).
+- *Pixels:* the test split as stored (kept, sampled tile-hours), screened value C >= 20.2 mm.
+- *RADKLIM (Germany):* the share of those pixel-hours that are RADKLIM-dry (K_tol < 5 mm, as in
+  §25/§26).
+- *Gauges (DE and CH):* among gauge-hours whose tile-hour is in the test split and where
+  C >= 20.2 mm, the share with gauge < 1 mm (`gauge_hourly.py`, `g_shift`, current chain).
+- *Contaminated* if, for either reference, the dropped days' share exceeds the control's by
+  > 2 points and the 95% day-block interval of the difference lies above 0 (the §28 (i) rule).
+- *Descriptive, not a criterion:* the gauges' own exceedance frequency (>= 20.2 mm per gauge-hour)
+  on dropped against control days. If the gauges also find the dropped days much wetter, the
+  concentration is weather.
+- *Consequence:* contaminated -> a named failure type, which per §20 justifies a v5 for that type.
+  Not contaminated -> the criterion-3 failure is real concentration of weather, and the
+  criterion is replaced (option (c)), with the new rule fixed before re-running.
