@@ -375,8 +375,11 @@ isoperimetric scatter.
           equivalents of 31 / 53 / 89 mm/h. Before the first v4 training run:
           - [ ] hourly `PHYSICAL_THRESHOLDS` for the loss and FSS levels. The store's
                 `physical_thresholds.npy` still holds the 15-min levels (build log, aux stage);
-          - [ ] `eval_extremes.py`: `--pot_threshold 50.1` on v4, plus the day-block intervals and
-                leave-period-out variants of the uncertainty to-do above;
+          - [x] `eval_extremes.py`: `--pot_threshold 50.1` on v4, plus the day-block intervals and
+                leave-period-out variants (done 2026-10-19);
+          - [x] hourly `PHYSICAL_THRESHOLDS` and `configs/config_v4.yaml` (DECISIONS §33);
+          - [ ] persistence thresholds, gamma targets, dataset checks, smoke run: queued after the
+                build (`scripts/hpc/prep_train_v4.sh`, `logs/prep_train_v4.log`);
           - [ ] recompute sigma_r (`compute_residual_stats.py`) for each new backbone;
           - [ ] a v4 config (store path, scaler, DEM stats) and a smoke run.
       Small items:
@@ -438,7 +441,12 @@ isoperimetric scatter.
       and use 3 seeds.
 
 ### Evaluation: uncertainty of the tail tables (added 2026-10-19, DECISIONS §32)
-- [ ] **Day-block intervals and leave-period-out in `eval_extremes.py`.** On v4 test, 20 of 486
+- [x] **Day-block intervals and leave-period-out in `eval_extremes.py`.** *Done 2026-10-19:*
+      `--bootstrap B` and `--leave_out 20210616-20210630 @<days file>`, from
+      `src/evaluation/day_block.py` (tests: `tests/test_day_block.py`). Output keys
+      `dayblock_point`, `dayblock_interval95`, `leave_out` in `extremes_summary.yaml`. v4 run:
+      `--pot_threshold 50.1 --bootstrap 200 --leave_out 20210616-20210630
+      @<quality_v4/gate_tail/dropped_check/dropped.txt>`. On v4 test, 20 of 486
       days hold 27% of the pixel-hours >= 20.2 mm (June 2021, June 2024, August 2022 outbreaks), so
       tail numbers are driven by a few outbreaks. For every tail statistic (exceedance rates and
       ratio, xi, return levels and RL bias, FSS at the top thresholds), report:

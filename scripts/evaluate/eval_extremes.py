@@ -44,6 +44,7 @@ from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss
 from src.evaluation.training_metrics import compute_radial_power_spectrum
 from src.evaluation.extreme_metrics import sal, crps_ensemble
+from src.evaluation.day_block import DayRecord, parse_leave_out, processing_days
 from src.evaluation.tail_metrics import (
     FSSAccumulator, POTAccumulator, gpd_comparison, directional_anisotropy, peak_ratio,
 )
@@ -90,6 +91,11 @@ def main():
     ap.add_argument("--rl_lambdas", type=float, nargs="+", default=[10.0, 100.0, 1000.0],
                     help="return levels at these expected exceedance counts")
     ap.add_argument("--max_batches", type=int, default=None)
+    ap.add_argument("--bootstrap", type=int, default=0,
+                    help="B day-block bootstrap replicates for 95%% intervals of the table columns "
+                         "(DECISIONS §32); 0 = off")
+    ap.add_argument("--leave_out", nargs="*", default=None,
+                    help="leave-period-out variants: YYYYMMDD-YYYYMMDD ranges or @file of days")
     ap.add_argument("--tag", default=None, help="row label; defaults to --model")
     ap.add_argument("--output_dir", default="eval_results/extremes")
     args = ap.parse_args()
@@ -162,6 +168,7 @@ def main():
 
     fss = FSSAccumulator(fss_thr, args.fss_windows)
     pot_p, pot_o = POTAccumulator(pot_u), POTAccumulator(pot_u)
+    rec = DayRecord(list(fss._num), pot_u) if (args.bootstrap or args.leave_out) else None
     mse_i, tmax_i, S_i, A_i, L_i, aniso_i, pk_i, crps_i = [], [], [], [], [], [], [], []
     mink_sum, nb = 0.0, 0
     spec_i = []
@@ -212,7 +219,9 @@ def main():
 
             pp = pred.squeeze(1).cpu().numpy()
             tt = target.squeeze(1).cpu().numpy()
-            fss.update(pp, tt)
+            per = fss.update(pp, tt, per_sample=rec is not None)
+            if rec is not None:
+                rec.update(per, mse_i[-1], tmax_i[-1], pp, tt)
             pot_p.update(pp); pot_o.update(tt)
             aniso_i.append(directional_anisotropy(pp))
             pk_i.append(peak_ratio(pp, tt))
@@ -248,6 +257,15 @@ def main():
                  "and is not independent evidence there; anisotropy ~1 is isotropic, >1 means "
                  "grid-aligned structure; peak_ratio is predicted/observed patch maximum."),
     }
+    if rec is not None:                                   # DECISIONS §32 reporting rule
+        rec.finalize(processing_days(config[_META[args.split]], rec.n), thr, args.rl_lambdas)
+        summary["dayblock_point"] = rec.table(np.ones(rec.D))
+        if args.bootstrap:
+            summary["dayblock_interval95"] = rec.intervals(args.bootstrap)
+            summary["dayblock_B"] = args.bootstrap
+        if args.leave_out:
+            summary["leave_out"] = {k: rec.leave_out(v) for k, v in parse_leave_out(args.leave_out).items()}
+        summary["dayblock_n_days"] = int(rec.D)
     if crps_i:
         crps = np.concatenate(crps_i)
         summary["crps_mean"] = float(crps.mean())

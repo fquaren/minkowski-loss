@@ -45,10 +45,12 @@ class FSSAccumulator:
         self._num = {(t, w): 0.0 for t in self.thresholds for w in self.windows}
         self._den = {(t, w): 0.0 for t in self.thresholds for w in self.windows}
 
-    def update(self, pred: np.ndarray, obs: np.ndarray) -> None:
-        """pred, obs: [B, H, W] physical fields (mm/h)."""
+    def update(self, pred: np.ndarray, obs: np.ndarray, per_sample: bool = False):
+        """pred, obs: [B, H, W] physical fields (mm/h). With per_sample=True, also returns
+        {(t, w): (num [B], den [B])}, the per-patch sums, for day-block resampling."""
         pred = np.asarray(pred, dtype=np.float64)
         obs = np.asarray(obs, dtype=np.float64)
+        per = {} if per_sample else None
         for t in self.thresholds:
             bp = (pred >= t).astype(np.float64)
             bo = (obs >= t).astype(np.float64)
@@ -56,8 +58,13 @@ class FSSAccumulator:
                 # uniform_filter over the last two axes only (per patch)
                 pf = ndimage.uniform_filter(bp, size=(1, w, w), mode="constant")
                 po = ndimage.uniform_filter(bo, size=(1, w, w), mode="constant")
-                self._num[(t, w)] += float(((pf - po) ** 2).sum())
-                self._den[(t, w)] += float((pf**2).sum() + (po**2).sum())
+                num = ((pf - po) ** 2).sum(axis=(1, 2))
+                den = (pf**2).sum(axis=(1, 2)) + (po**2).sum(axis=(1, 2))
+                self._num[(t, w)] += float(num.sum())
+                self._den[(t, w)] += float(den.sum())
+                if per is not None:
+                    per[(t, w)] = (num, den)
+        return per
 
     def result(self) -> dict:
         out = {}
