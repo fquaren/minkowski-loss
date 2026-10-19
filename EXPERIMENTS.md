@@ -367,6 +367,18 @@ isoperimetric scatter.
          levels, `extremes_*` subsets, the §20 gate thresholds and the event tags
          (rate / accumulation). u = 31 applies to 15-min rates only.
       10. **Phase 5 gate** (DECISIONS §20) on hourly data, then retraining.
+          *Done 2026-10-19 (DECISIONS §32):* v4 built (`OPERA/patches_v4`: train 1,321,889 /
+          val 173,460 / test 218,513 / nimbus 381,736 tile-hours; `adv_precip` still filling,
+          `logs/build_v4.log`). Gate: 1 pass, 2a fail (minor, reported as a limitation), 2b pass,
+          3 replaced and passing, 4 pass, 5 explained (sub-asymptotic). **Decision: train on v4.**
+          Hourly levels: u = 50.1 mm for POT fits; 20.2 / 31.7 / 50.1 mm as the hourly
+          equivalents of 31 / 53 / 89 mm/h. Before the first v4 training run:
+          - [ ] hourly `PHYSICAL_THRESHOLDS` for the loss and FSS levels. The store's
+                `physical_thresholds.npy` still holds the 15-min levels (build log, aux stage);
+          - [ ] `eval_extremes.py`: `--pot_threshold 50.1` on v4, plus the day-block intervals and
+                leave-period-out variants of the uncertainty to-do above;
+          - [ ] recompute sigma_r (`compute_residual_stats.py`) for each new backbone;
+          - [ ] a v4 config (store path, scaler, DEM stats) and a smoke run.
       Small items:
       - Fix slide 10 of `notes/mch_slides.pdf` (a front, not a ray).
       - Lagrangian version of the decorrelation table (DECISIONS §21 caveat).
