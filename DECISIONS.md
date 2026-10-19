@@ -2281,3 +2281,33 @@ after the build finishes (`scripts/dataset_v2/build_adv_store.py`):
   matched-frequency grid are re-run on the new store before evaluation.
 - §25's gauge check of the corrected field passed narrowly (median ratio on gauge-hours >= 20 mm
   -6%, interval [-10%, +0.4%]). Stated as a limitation.
+
+## 36. Radars biased against their neighbours: the boundary-jump test (2026-10-19)
+
+**Question.** In the v4 climatology the Romanian, Hungarian and Slovak radars stand out
+(`notes/data_analysis_v4/radar_tail.md`, from 2015-12-12):
+- Bobohalma (robob) has the 2nd-highest pixel frequency >= 20 mm of 116 radars (2.6e-4), with a
+  pixel >= 20 mm on 46% of its radar-days;
+- Napkor (hunap), Szentes (husze) and Kojsovska hola (skkoj) are dry less often (0.17-0.19
+  against a median of 0.25), with median tile means up to 4x the median radar.
+Their heavy hours are spread over many days (top-1%-days share 0.20-0.36 against a median of
+0.47): chronic, not occasional failures. Real wet climate or radar bias?
+
+**The test (researcher approved 2026-10-19 and expects the flagged radars to be biased;
+Claude fixed the criteria before running).** Climate does not change at a radar ownership
+boundary; a radar that reads high does. The radar pass stores, per radar and frame, `bjump` =
+mean log1p(rate) in the 6 km band just inside the radar's owned area minus that in the 6 km band
+just outside it, owned by neighbours (`radar_screen.radar_frame_features`, clean_frame field,
+contributing geometry). `scripts/analysis/radar_boundary.py`:
+- *Frames used:* the radar's wet fraction (>= 1 mm/h) >= 0.05 and >= 50 valid pixels in each band.
+- *Radar-day value:* median `bjump` over its used frames, if >= 8 frames.
+- *Radar-year value:* median over its radar-days (>= 20 days), with a 95% day-block bootstrap
+  interval (B = 500).
+- *Flagged radar-year:* its value is in the top 5% of all radar-years AND the interval lies above 0.
+- *Consequence:* tile-hours of a flagged radar-year, where the radar owns >= 10% of the tile
+  (the rule-3 / rule-5 share), are excluded at the metadata level, as in §34, before the
+  advection store is built. The excluded share of tile-hours and of the tail is reported.
+- *Limitation, stated in advance:* an ownership boundary that coincides with a real climate
+  gradient (a mountain crest, a coastline) gives a jump without any bias. A radar whose whole
+  area is wetter than all its neighbours' areas could be flagged on climate. The top-5% cut and
+  the interval reduce this; they do not remove it.

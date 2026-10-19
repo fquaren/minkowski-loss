@@ -373,9 +373,21 @@ a fact not yet checked against a source.
 - **The plain hourly sum beads fast-moving cells.** Four 15-min snapshots of a moving cell
   sum to four blobs, which inflates small-scale structure. Over Germany this adds +2 to +5 to
   the Euler characteristic at 2 mm and 1.2–2x power at 6–16 km, relative to RADKLIM, growing
-  with motion speed (§21). We keep the least-processed field as the target (§25) and store
-  the advection-corrected field alongside. This matters for a structural loss built on
-  Minkowski functionals: part of the "structure" in the target is a sampling artefact.
+  with motion speed (§21). This matters for a structural loss built on Minkowski functionals:
+  part of the "structure" in the plain sum is a sampling artefact. **Updated 2026-10-19:** the
+  beading is visible in the images, so the target is now the advection-corrected field
+  (DECISIONS §35, revising §25), with the plain sum kept for comparison.
+- **The advection correction assumes rain only moves within each 15 minutes.** Motion between
+  consecutive frames is estimated (pysteps Lucas–Kanade) and each frame is moved along it in
+  1-min steps; the "no-blend nearest" variant takes the nearer frame at each step rather than
+  averaging two (DECISIONS §25: the only variant passing all four pre-stated tests). Cells
+  forming or dying quickly break that assumption, and that's exactly the convective extremes.
+  The no-blend scheme then switches frames abruptly at the halfway point, so a newly formed
+  cell can appear suddenly instead of growing smoothly. My expectation is that this is a minor
+  effect compared with the beading, but it's an inference, not something measured. It's the
+  assumption that would most change the conclusion. *Check planned:* plain and corrected
+  fields side by side for the same hours, including fast-growing convective cases; if those
+  look wrong, the next step is a growth-aware motion estimate.
 - **A pixel-hour needs all four frames.** Hours with a missing frame are dropped. If radar
   outages correlate with severe weather (power or communication loss in storms), the most
   intense hours are under-sampled. *[verify]*: outage rate as a function of rain intensity
