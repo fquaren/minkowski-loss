@@ -174,6 +174,87 @@ Acceptance (`calib/mask_validate`):
   separate clutter from climatologically wet orographic pixels. The burst rule, keyed on
   temporal structure rather than climatology, is what reduced the tail contamination.
 
+### 5.6 The tail threshold, and why the GPD shape drifts below it (DECISIONS §32)
+
+Added 2026-10-19. Numbers: `scripts/data_quality/pot_threshold.py --version v4` ->
+`quality_v4/pot_threshold/report.md`, `fits.csv`, `fig/`.
+
+**The model and its promise.** Peaks over threshold models the excess Y = X - u of a value X
+above a threshold u as a generalised Pareto distribution (GPD), with a shape xi and a scale
+sigma_u. The justification is a limit theorem (Pickands–Balkema–de Haan [CITE?: Pickands 1975;
+Balkema & de Haan 1974; Coles 2001, ch. 4]). For a wide class of distributions the excess
+distribution approaches a GPD as u approaches the upper end of the distribution. It is a
+statement about a limit. At any finite u the excesses are only approximately GPD.
+
+**What the limit implies, and the test it gives.** If the excesses are exactly GPD above some
+u0, they are GPD above every higher u too, with the same xi and the scale
+sigma_u = sigma_u0 + xi (u - u0). So, above u0:
+- the fitted xi is the same at every u;
+- the modified scale sigma* = sigma_u - xi u is the same at every u.
+Plotting both against u (a threshold-stability plot) shows where the GPD regime begins: from the
+first u above which both are flat within their uncertainty. Below it they drift.
+
+**Why fitted xi drifts at finite thresholds.** A GPD fitted at u describes how fast the
+distribution thins out just above u: the local tail heaviness. Unless the tail is an exact
+power law (or exactly exponential, or exactly bounded), that local heaviness changes with u, and
+the fitted xi follows it. It converges to the asymptotic xi only slowly. The behaviour is
+derivable from the theorem's statement; how slow it is depends on the distribution.
+
+*Worked example with a known answer* (synthetic, 20 M lognormal values; the lognormal's limiting
+xi is exactly 0):
+
+| threshold | exceedances | fitted xi |
+|---|---|---|
+| q90 | 2,000,000 | +0.26 |
+| q99 | 200,000 | +0.23 |
+| q99.9 | 20,000 | +0.20 |
+| q99.99 | 2,000 | +0.16 |
+| q99.999 | 200 | +0.15 |
+
+Four orders of magnitude up the tail, the fit still reads +0.15 for a distribution whose true
+limit is 0, and near the top the decline looks almost flat.
+
+**What v4 shows.** xi(u), train weighted: +0.41 at 5 mm, +0.31 at 10, +0.28 at 20.2, +0.21 at
+31.7, +0.10 at 50.1, then +0.07 to +0.12 up to 100 mm. sigma* rises from 0.3 to ~13 mm and
+then stays within its intervals. Validation, test and NIMBUS have the same shape.
+
+**Why this cause and not the other candidates (§20 criterion 5).**
+- *Not upper truncation.* The 500 mm/h bound applies to 15-min rates; hourly sums sit far below
+  it. A GPD fit truncated at 500 mm gives the same xi at every u.
+- *Not mixing of regions or seasons.* A pool of populations that are each flat but have
+  different xi drifts as the mixture weights change with u. Here xi falls with u inside every
+  latitude band and every season (JJA +0.27 -> +0.08, MAM +0.31 -> +0.11, south of 46 N
+  +0.23 -> +0.10), so the subsets drift themselves.
+- *Sub-asymptotic thresholds.* The drift stops at about 50 mm, as for a distribution whose
+  GPD regime starts there.
+
+**Where the explanation stops.**
+- *"Sub-asymptotic" says where the GPD regime starts, not why the distribution is shaped this
+  way.* Three physical candidates are not separated here: a mixture of rain types (stratiform and
+  convective) within each region and season; a finite physical ceiling on hourly totals, which
+  bends the tail down; and radar underestimation of peaks (attenuation, beam effects; §6.6),
+  which compresses the top.
+- *Flat within intervals is not proof of the limit.* The lognormal example shows that a slow
+  drift can hide inside the uncertainty. Above 50 mm the data thin out (train: 175,937
+  exceedances at 50.1 mm, 15,908 at 100 mm), so xi near +0.1 may itself still be drifting. The
+  claim is that 50 mm is the lowest threshold at which this data cannot detect drift.
+- *Spatial dependence.* Single pixels within one storm are not independent. Cluster maxima give a
+  lower xi above 50 mm (+0.02 to +0.08) than pixels (+0.07 to +0.12), so dependence inflates the
+  pixel-level shape slightly.
+
+**Consequences.**
+- *The evaluation's POT fits use u = 50.1 mm* (pre-stated rule, §32): the lowest grid u whose xi
+  and sigma* intervals contain the estimates at every higher u with >= 1,000 exceedances. It
+  coincides with the hourly equivalent of 89 mm/h. Test, unweighted: 30,589 exceedances on 404
+  days.
+- *A xi fitted below the regime measures the shoulder of the distribution, not its tail.* A
+  model can match it and still get the extremes wrong. The 15-min tables at u = 31 mm/h were in
+  this situation (xi_obs +0.176 there).
+- *xi is only comparable at the same threshold.* Its value depends on u until the regime is
+  reached, so every row of a table uses one u (CLAUDE.md, "POT level must be identical").
+- *A common misreading:* "xi drifts, so the data are contaminated." Contamination by spurious
+  huge values makes the fitted xi *rise* at the highest thresholds. Here it falls.
+
 ## 6. Limitations (for the methods section and the appendix)
 
 Updated 2026-10-13. Each item gives the cause, the direction of the error it introduces, its
@@ -244,6 +325,17 @@ a fact not yet checked against a source.
 - **Contamination remains.** After the burst rule, about a third of kept values ≥ 75 mm over
   Germany are RADKLIM-dry (§5.3). Part of that is RADKLIM missing real peaks, so the true
   contamination rate is not known. It is bounded above by about one third.
+- **Residual false alarms against gauges (readiness gate, criterion 2a; minor).** On the
+  same DWD gauge-hours, screened OPERA reads >= 20 mm with a dry gauge (< 1 mm) 6.3% of the
+  time, against 0.9% for RADKLIM. The difference is +5.4 points [+2.3, +9.9]; the pre-stated
+  bar was +2. Of the 24 such gauge-hours, about 9 are clear artefacts (RADKLIM ~0 mm as well),
+  mostly single-day stationary echoes, such as Kleiner Feldberg/Taunus on 2018-04-30
+  (6 hours of 23–83 mm in a dry ring). The other ~15 sit inside convection. A rule for stationary
+  echoes passed the RADKLIM test but also removed real back-building storms (Valencia 2024,
+  Elvira/Friederike 2016, Emilia-Romagna 2023), so it was not adopted (DECISIONS §31). RADKLIM's
+  rate is optimistic at these gauges, because RADKLIM is adjusted to them, so the excess is an
+  upper estimate. Judged minor: it concerns a few dozen gauge-hours, and the most influential
+  test days are cleaner than ordinary ones (§32, criterion 3).
 - **Real extremes share some error signatures.**
   - An isolated convective cell can look like a burst or an isolated pixel cluster.
   - Stationary orographic rain can look like a persistent clutter pixel.
