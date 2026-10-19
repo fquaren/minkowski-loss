@@ -2247,3 +2247,37 @@ highest, FSS = top three) would be 31.7 / {31.7, 50.1, 79.0}. The POT fits use u
 - *Consequence:* no floor is applied. The pre-break flag stays, and the training-level test (a
   backbone on post-break rows only against one on all rows, evaluated on post-break test rows)
   decides whether pre-break rows stay in training.
+
+## 35. The target is the advection-corrected hourly field (2026-10-19; revises §25)
+
+**Question.** §25 kept the plain ACRR sum as the target and stored the advection-corrected
+field (`noblend_nearest`, the one variant passing its pre-stated tests) alongside, "revisited
+when training".
+
+**Decision (researcher, 2026-10-19, after looking at the v4 gallery,
+`notes/data_analysis_v4/gallery_*.pdf`).** The plain sum is not usable: in many hours the four
+15-min positions of a moving cell are visible one after the other (the beading of §21). The target
+becomes the advection-corrected field. For a structural loss this is decisive: beading adds +2 to
++5 to the Euler characteristic at 2 mm against RADKLIM and 1.2-2x power at 6-16 km (§21), and the
+loss rewards exactly those.
+
+**How (Claude's design).** A separate store, `OPERA/patches_v4_adv`, built from `patches_v4`
+after the build finishes (`scripts/dataset_v2/build_adv_store.py`):
+- `original_precip` = `adv_precip`; coarse and interpolated fields recomputed from it
+  (`coarsen_and_interpolate`); `max_rate` and `n_wet` copied (they describe the 15-min frames);
+- rows whose corrected field has any NaN dropped (no complete H-60..H+15 window), after the §34
+  ownerless exclusion; the dropped share is reported per split;
+- metadata lists rewritten with the corrected tile max and the new store rows; scaler = log1p of
+  the corrected train max; DEM stats copied (same tiles); the pre-break flags carried over;
+- `configs/config_v4_adv.yaml` points to it. Nothing downstream changes: loader, gamma targets,
+  validators and evaluation all read `original_precip` from the configured store, so no code path
+  has to choose between the two fields.
+
+**What carries over, and what is re-derived.**
+- The screening, the gate (§29, §32) and the pre-break flags concern the 15-min frames and the
+  tiles, not how they are summed. They carry over.
+- The hourly thresholds (§33) and u = 50.1 mm (§32) were derived on plain sums. The corrected
+  field lowers slow-tile maxima by ~4% (§25). They are kept for now, and `pot_threshold.py` plus the
+  matched-frequency grid are re-run on the new store before evaluation.
+- §25's gauge check of the corrected field passed narrowly (median ratio on gauge-hours >= 20 mm
+  -6%, interval [-10%, +0.4%]). Stated as a limitation.
