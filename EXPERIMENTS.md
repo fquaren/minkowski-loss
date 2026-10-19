@@ -440,6 +440,29 @@ isoperimetric scatter.
 - [ ] **Competing losses: a fair trial** (roadmap M4). Fix SSIM, calibrate λ, match epochs,
       and use 3 seeds.
 
+### Validation: every stage passes its checks before the next starts (added 2026-10-19)
+`scripts/validate/validate_stage.py <stage>` writes `validation/<stage>/<date>_<commit>.md`
+(each check: PASS / FAIL / INFO with numbers) and exits non-zero on any FAIL, so chain scripts
+stop on it. A missing artefact is a FAIL, not a skip. Each validator has unit tests that corrupt
+a synthetic artefact and confirm the check catches it (`tests/test_validate.py`). Rule: a stage
+is signed off by a passing report; its path goes in DECISIONS / EXPERIMENTS when a result is used.
+- [x] **store** (2026-10-19): structure vs metadata; sampled rows (NaN, max = metadata, sum <=
+      max frame rate, n_wet); coarse / interpolated = coarsen(target); tile-hours recomputed
+      from raw through the chain; DEM orientation by geography; scaler; advection-field coverage.
+- [x] **gamma** (2026-10-19): thresholds file = config; shapes; sampled rows recomputed;
+      invariants (A, P >= 0, A non-increasing and <= patch area, chi integer, zero above the
+      patch max, no unwritten rows). Both gate `scripts/hpc/prep_train_v4.sh`.
+- [ ] **training**: overfit one batch (loss -> ~0); every loss term carries gradient (the CLAUDE.md
+      activity check, automated); seeded runs reproduce; startup lines checked (sigma_r source,
+      loss name and weight); a reloaded checkpoint gives identical outputs.
+- [ ] **evaluation**: known answers (prediction = target gives perfect scores; bicubic reproduces
+      recorded baselines; GPD recovers a known xi); day-block tests exist (`tests/test_day_block.py`).
+- [ ] **splits**: no day / week shared across splits, buffers, events forced into test, inclusion
+      weights sum to population counts (partly in `check_datasets.py`).
+- [ ] **scan / screening**: v3-equivalence with the new rules off; known-failure catalogue;
+      per-rule rates by intensity inside recorded bounds.
+- [ ] **raw archive**: frame counts and gaps per day, NaN fractions, timestamp continuity, era.
+
 ### Evaluation: uncertainty of the tail tables (added 2026-10-19, DECISIONS §32)
 - [x] **Day-block intervals and leave-period-out in `eval_extremes.py`.** *Done 2026-10-19:*
       `--bootstrap B` and `--leave_out 20210616-20210630 @<days file>`, from
