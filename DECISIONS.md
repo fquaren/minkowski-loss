@@ -2008,3 +2008,41 @@ is only a check that the code does what was intended.
   other days, which a fixed target or interference would show but weather would not (Kleiner
   Feldberg was a single day, so this would not catch it); the absence of a growth and decay
   cycle; lightning, as an independent marker of real convection (not on disk).
+
+## 32. Gate criteria 3 and 5 on the v4 build, hourly levels (2026-10-19)
+
+**Question.** §20 states criteria 3 (the evaluation reference is stable) and 5 (residual drift
+of xi(u) is explained) in 15-min terms: levels 31 / 53 / 89 mm/h. What are they on the hourly
+v4 build (`OPERA/patches_v4`, built 2026-10-17)?
+
+**Decision (researcher asked to run them 2026-10-19; Claude fixed the definitions below before
+running).**
+- *Hourly levels, by matched exceedance frequency* (screened fields, 100 random calibration
+  days, full grid, as the provisional u of §30):
+
+  | 15-min level | per-pixel-frame P | hourly level |
+  |---|---|---|
+  | 31 mm/h | 3.99e-5 | **20.2 mm** (the provisional u) |
+  | 53 mm/h | 1.31e-5 | **31.7 mm** |
+  | 89 mm/h | 3.73e-6 | **50.1 mm** |
+
+- *Criterion 3* (`gate_tail.py`), on the ODYSSEY test split, unweighted (what
+  `eval_extremes.py` computes):
+  - Statistics: exceedance rates per valid pixel-hour at 20.2 / 31.7 / 50.1 mm (rates, not
+    counts, because dropping days lowers counts by construction); the GPD fit above u = 20.2 as
+    in `tail_metrics.py` (location 0, unweighted), its xi, and the return levels at
+    lambda = 10 / 100 / 1000 expected exceedances.
+  - Perturbation: drop the 20 non-event days with the largest share of the test split's
+    exceedances >= 20.2 mm; recompute.
+  - Pass: every recomputed statistic lies inside the 95% day-block bootstrap interval (B = 200)
+    of the full-sample statistic.
+- *Criterion 5* (`pot_threshold.py --version v4`): xi(u) and sigma*(u) over an hourly
+  threshold grid (5-100 mm), day-block bootstrap, on train / validation / test / NIMBUS,
+  weighted and unweighted; cluster maxima; latitude bands; seasons; plus a GPD fit truncated at
+  500 mm. Drift of xi(u) above u is "explained" when it is matched by one named cause: upper
+  truncation (the truncated fit removes it), regional or seasonal mixing (the subsets are flat
+  where the pool drifts), or a sub-asymptotic threshold (the drift fades above some u). This is
+  a judgement on the plots; Claude proposes, the researcher decides.
+- *Hourly u for the evaluation tables:* the lowest grid u above which the bootstrap intervals of
+  xi and sigma* (train, weighted) contain the point estimates at every higher u that has
+  >= 1,000 exceedances. 20.2 mm stays provisional until then.
