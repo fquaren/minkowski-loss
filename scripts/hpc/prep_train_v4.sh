@@ -1,7 +1,8 @@
 #!/bin/bash
 # Training preparation on v4 (DECISIONS §33), started after build_v4.sh so it gets all 8 cores:
 # persistence thresholds and gamma targets on the hourly store, dataset checks, and a smoke run
-# (UNet backbone, 1 epoch, 0.5% of train, GPU 1). Rerunnable; gamma skips splits already done.
+# (UNet backbone, 1 epoch, 0.5% of train, GPU 1), with the store and gamma validators as gates.
+# Rerunnable; gamma skips splits already done.
 cd /work/fquareng/ch2/minkowski-loss/.claude/worktrees/radar-day-exclusion
 E=/work/fquareng/.micromamba/envs/dl-stable
 export LD_LIBRARY_PATH=$E/lib OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=$PWD
@@ -14,10 +15,16 @@ until grep -q V4_BUILD_DONE $BUILD_LOG; do
   grep -q "FAILED" $BUILD_LOG && { echo "BUILD FAILED, stopping"; exit 1; }
   sleep 120
 done
+echo "=== 0. validate the store (scripts/validate) $(date)"
+$P scripts/validate/validate_stage.py store --config $CFG --n_days 8 --workers 4 2>&1 | grep -v Warn | tail -25 \
+  || { echo "STORE VALIDATION FAILED: see validation/store/"; exit 1; }
 echo "=== 1. persistence thresholds $(date)"
 $P scripts/preprocess/compute_persistence_thresholds.py $CFG 2>&1 | tail -5 || { echo "PERSISTENCE FAILED"; exit 1; }
 echo "=== 2. gamma targets $(date)"
 $P scripts/preprocess/compute_gamma_targets.py $CFG 2>&1 | grep -v "it/s\]" | tail -15 || { echo "GAMMA FAILED"; exit 1; }
+echo "=== 2b. validate the gamma targets $(date)"
+$P scripts/validate/validate_stage.py gamma --config $CFG 2>&1 | grep -v Warn | tail -25 \
+  || { echo "GAMMA VALIDATION FAILED: see validation/gamma/"; exit 1; }
 echo "=== 3. dataset checks $(date)"
 $P scripts/dataset_v2/check_datasets.py $CFG 2>&1 | tail -25 || { echo "CHECKS FAILED"; exit 1; }
 echo "=== 4. smoke run $(date)"
