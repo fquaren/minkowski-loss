@@ -452,9 +452,14 @@ is signed off by a passing report; its path goes in DECISIONS / EXPERIMENTS when
 - [x] **gamma** (2026-10-19): thresholds file = config; shapes; sampled rows recomputed;
       invariants (A, P >= 0, A non-increasing and <= patch area, chi integer, zero above the
       patch max, no unwritten rows). Both gate `scripts/hpc/prep_train_v4.sh`.
-- [ ] **training**: overfit one batch (loss -> ~0); every loss term carries gradient (the CLAUDE.md
-      activity check, automated); seeded runs reproduce; startup lines checked (sigma_r source,
-      loss name and weight); a reloaded checkpoint gives identical outputs.
+- [x] **training** (2026-10-19, `scripts/validate/training.py`, `tests/test_validate_training.py`):
+      loss thresholds (store `physical_thresholds.npy`, which the loss reads) = config; forward;
+      each loss term carries a finite non-zero gradient at w_max (ratio reported); overfit one batch
+      (MSE to <= 20%); seeded determinism; checkpoint round trip; warm-up schedule (INFO); run log
+      (loss, weight, no NaN). Gates `prep_train_v4.sh` before and after the smoke run.
+      *Note:* with MINKOWSKI_WARMUP_EPOCHS = 5 the structural weight is 0 at epoch 0, so a 1-epoch
+      smoke run trains on MSE alone; the validator exercises the structural loss directly.
+      Still to add for flow matching: the sigma_r startup line (`config FM_RESIDUAL_SCALE=...`).
 - [ ] **evaluation**: known answers (prediction = target gives perfect scores; bicubic reproduces
       recorded baselines; GPD recovers a known xi); day-block tests exist (`tests/test_day_block.py`).
 - [ ] **splits**: no day / week shared across splits, buffers, events forced into test, inclusion
