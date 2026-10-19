@@ -18,7 +18,7 @@ import numpy as np
 from common import REPO, guarded, ok
 
 sys.path.insert(0, REPO)
-from store import groups, store  # noqa: E402
+from store import groups, referenced_rows, store  # noqa: E402
 
 
 def c_setup(cfg):
@@ -61,8 +61,9 @@ def c_recompute(cfg, n_sample, seed=0):
         if g not in z or "gamma_targets" not in z[g]:
             continue
         G = z[g]
-        n = G["original_precip"].shape[0]
-        idx = rng.choice(n, min(n_sample, n), replace=False)
+        rows = referenced_rows(cfg, g)
+        rows = np.arange(G["original_precip"].shape[0]) if rows is None else rows
+        idx = rng.choice(rows, min(n_sample, len(rows)), replace=False)
         worst = 0.0
         for i in idx:
             ref = compute_gamma_matrix(G["original_precip"][i], thr, px, tb0, tb1)
@@ -83,8 +84,9 @@ def c_invariants(cfg, n_sample, seed=1):
         if g not in z or "gamma_targets" not in z[g]:
             continue
         G = z[g]
-        n = G["original_precip"].shape[0]
-        idx = np.sort(rng.choice(n, min(n_sample, n), replace=False))
+        rows = referenced_rows(cfg, g)
+        rows = np.arange(G["original_precip"].shape[0]) if rows is None else rows
+        idx = np.sort(rng.choice(rows, min(n_sample, len(rows)), replace=False))
         bad = {"negative A or P": 0, "A increasing": 0, "A > patch area": 0, "chi not integer": 0,
                "nonzero above max": 0, "unwritten (wet, all zero)": 0}
         for i in idx:

@@ -88,8 +88,20 @@ def c_metadata(cfg, n_sample, seed=0):
             bad["max != metadata"] += abs(float(np.nanmax(t)) - mx[i]) > 1e-3 + 1e-4 * mx[i]
             bad["sum > max_rate"] += bool((t > r + 1e-3).any())
             bad["n_wet out of 0..4"] += bool((w > 4).any())
-        out.append(ok(f"metadata/{g}", sum(bad.values()) == 0, f"{len(idx)} sampled rows", **bad))
+        adv = cfg.get("TARGET_FIELD") == "adv"
+        # the corrected field warps frames H-60..H+15: a core passing between frames can exceed every
+        # stored frame value at a pixel, so the bound holds only for the plain sum
+        crit = {k: v for k, v in bad.items() if not (adv and k == "sum > max_rate")}
+        out.append(ok(f"metadata/{g}", sum(crit.values()) == 0,
+                      f"{len(idx)} sampled rows" + ("; sum > max_rate reported, not checked (adv)" if adv else ""), **bad))
     return out
+
+
+def referenced_rows(cfg, g):
+    """Store rows the split's metadata list uses (all rows if there is no list): checks sample
+    these, since unreferenced rows (excluded tile-hours) may hold anything."""
+    mp = groups(cfg)[g]
+    return read_meta(mp)[4] if os.path.exists(mp) else None
 
 
 def c_coarse(cfg, n_sample, seed=1):
@@ -102,8 +114,9 @@ def c_coarse(cfg, n_sample, seed=1):
         if g not in z:
             continue
         G = z[g]
-        n = G["original_precip"].shape[0]
-        idx = rng.choice(n, min(n_sample, n), replace=False)
+        rows = referenced_rows(cfg, g)
+        rows = np.arange(G["original_precip"].shape[0]) if rows is None else rows
+        idx = rng.choice(rows, min(n_sample, len(rows)), replace=False)
         bad = 0
         for i in idx:
             c, it = coarsen_and_interpolate(G["original_precip"][i], f)
@@ -113,14 +126,22 @@ def c_coarse(cfg, n_sample, seed=1):
 
 
 def _reproduce(args):
-    day, rows, quality = args
+    day, rows, quality, adv = args
     import scan_tiles as st
+    from build_store_hourly import ADVECTION
     from src.data import cleaning as C
     from src.data.hourly import HourlyDay
     q, ceil = st._quality(quality)
+    boxes = None
+    if adv:                                   # the corrected field, exactly as build_store_hourly makes it
+        boxes = {}
+        for g, i, t, y, x, *_ in rows:
+            e = int(np.datetime64(f"{t[:4]}-{t[4:6]}-{t[6:8]}T{t[8:10]}:{t[10:12]}:{t[12:14]}", "ns").astype(np.int64))
+            boxes.setdefault(e, []).append((y, y + 128, x, x + 128))
     hd = HourlyDay(f"{D}/raw/OPERA", day, "TOT_PREC", hot=lambda y: st._hot(f"{Q2}/clutter_climatology.npz", y),
                    ring=lambda y: st._ring(f"{Q2}/ring_mask.npz", y), sites_rc=st._sites(), ceilings=ceil,
-                   cfg={**q.get("hourly", {}), "advection": None}).run()
+                   cfg={**q.get("hourly", {}), "advection": ADVECTION if adv else None},
+                   adv_boxes=boxes).run()
     hours = {np.datetime_as_string(h["end"], unit="s").replace("-", "").replace("T", "").replace(":", ""): h for h in hd.hours}
     res = []
     for g, i, t, y, x, tgt, mr, nw in rows:
@@ -128,7 +149,7 @@ def _reproduce(args):
         if h is None:
             res.append((g, i, np.inf, np.inf, 99)); continue
         sl = (slice(y, y + 128), slice(x, x + 128))
-        tile = np.nan_to_num(h["sum"][sl], nan=0.0)
+        tile = h["sum_adv"][sl] if adv else np.nan_to_num(h["sum"][sl], nan=0.0)
         f4 = np.nan_to_num(hd.fin[h["idx"]][(slice(None),) + sl], nan=0.0)
         res.append((g, i, float(np.abs(tile - tgt).max()),
                     float(np.abs(np.nan_to_num(h["max_rate"][sl], nan=0.0) - mr).max()),
@@ -153,7 +174,8 @@ def c_reproduction(cfg, n_days, workers, quality, seed=2):
         G = z[g]
         jobs.setdefault(day, []).append((g, i, t, y, x, G["original_precip"][i], G["max_rate"][i], G["n_wet"][i]))
     with ProcessPoolExecutor(workers) as ex:
-        res = [r for rr in ex.map(_reproduce, [(d, r, quality) for d, r in jobs.items()]) for r in rr]
+        adv = cfg.get("TARGET_FIELD") == "adv"
+        res = [r for rr in ex.map(_reproduce, [(d, r, quality, adv) for d, r in jobs.items()]) for r in rr]
     d_t = max(r[2] for r in res); d_m = max(r[3] for r in res); d_w = max(r[4] for r in res)
     return [ok("reproduction", d_t <= 1e-4 and d_m <= 1e-3 and d_w == 0,
                f"{len(res)} tile-hours on {len(jobs)} days recomputed from raw (full grid)",
