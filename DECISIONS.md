@@ -683,6 +683,10 @@ exclusions come from a pre-stated score (§24).
 
 **Status 2026-10-08:** criterion 2 (100 tiles looked at by eye) is replaced by gauge-based
 tail false-alarm and miss rates (§24).
+**Status 2026-10-19:** criterion 3 is replaced (§32) by a contamination test of the most
+influential test days, plus day-block intervals and a leave-period-out variant reported with
+every tail statistic. The original rule failed by construction on heavy-tailed daily
+contributions.
 
 **Question.** Without labels, cleanliness cannot be measured, and §17 keeps imperfections on
 purpose. When do we stop cleaning and train?

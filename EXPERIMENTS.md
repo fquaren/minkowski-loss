@@ -425,6 +425,17 @@ isoperimetric scatter.
 - [ ] **Competing losses: a fair trial** (roadmap M4). Fix SSIM, calibrate λ, match epochs,
       and use 3 seeds.
 
+### Evaluation: uncertainty of the tail tables (added 2026-10-19, DECISIONS §32)
+- [ ] **Day-block intervals and leave-period-out in `eval_extremes.py`.** On v4 test, 20 of 486
+      days hold 27% of the pixel-hours >= 20.2 mm (June 2021, June 2024, August 2022 outbreaks), so
+      tail numbers are driven by a few outbreaks. For every tail statistic (exceedance rates and
+      ratio, xi, return levels and RL bias, FSS at the top thresholds), report:
+      - the 95% day-block bootstrap interval, resampling processing days and applying the same
+        day weights to prediction and observation, so the comparison stays paired;
+      - a leave-period-out variant: without 16-30 June 2021, and without the 20 most influential
+        days (`quality_v4/gate_tail/summary.md` lists them).
+      Model differences smaller than the interval are not claimed.
+
 ### Evaluation: generalisation to unseen products and regions (added 2026-10-14)
 - [ ] **Cross-dataset test with a product × region ablation (roadmap M6).** Test the
       v4-trained model on Italian radar data. No Italian radar contributes to OPERA
