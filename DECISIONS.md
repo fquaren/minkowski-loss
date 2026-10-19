@@ -2218,3 +2218,32 @@ highest, FSS = top three) would be 31.7 / {31.7, 50.1, 79.0}. The POT fits use u
      closes the gap. This says how much of the low-threshold target is noise.
    - *Training level, after the first v4 runs:* a backbone trained on post-break rows only
      against one trained on all, both evaluated on post-break test rows. A to-do, not run now.
+
+**Results (2026-10-19).**
+- *Exclusion applied* (`scripts/dataset_v2/filter_meta_v4.py`, `patches_v4/meta/filter_report.txt`):
+  train 13,441 / validation 842 / test 3,033 / NIMBUS 0 rows dropped. The kept lists hold train
+  1,308,448, validation 172,618, test 215,480, NIMBUS 381,736. The store validator passes on them
+  (`validation/store/20261019_1621_9b51580.md`). Pre-break rows among the kept: train 313,644
+  (24%), validation 24,005, test 68,261.
+- *Speckle effect, data level* (`notes/data_analysis_v4/speckle_effect.md`, 300 rows per era and
+  tile-mean bin, medians):
+
+  | tile mean (mm) | chi @0.1 post / pre / pre with < 0.2 zeroed | single-pixel components post / pre | A @0.1 (km²) post / pre zeroed at 0.2 |
+  |---|---|---|---|
+  | < 0.005 | 2 / 13 / 4 | 1 / 7 | 20 / 36 |
+  | 0.005-0.02 | 31.5 / 58 / 29 | 16 / 29 | 1,610 / 490 |
+  | 0.02-0.1 | 41 / 81.5 / 56 | 23 / 50 | 6,290 / 3,070 |
+  | 0.1-0.5 | 39 / 59 / 60 | 26 / 46 | 19,700 / 14,400 |
+  | >= 0.5 | 22.5 / 28.5 / 35.5 | 21 / 34 | 39,600 / 34,000 |
+
+  - At matched tile mean, pre-break fields are 1.3-6.5x more fragmented at 0.1 mm (chi), with ~2x
+    the single-pixel components. This is the threshold range that carries most of the loss
+    gradient (CLAUDE.md: 83% from thresholds <= 0.28).
+  - *A noise floor does not map pre onto post.* Zeroing below 0.2 mm brings chi down in the light
+    bins but cuts the area at 0.1 mm to a third of post-break: real light rain sits at 0.1-0.2 mm too.
+  - *Not only the lowest threshold:* at 0.31 mm, pre-break chi is still ~1.5x post in the middle
+    bins. The early fields are noisier in texture, not only speckled. Matching by tile mean leaves
+    season and radar-network differences uncontrolled (inference).
+- *Consequence:* no floor is applied. The pre-break flag stays, and the training-level test (a
+  backbone on post-break rows only against one on all rows, evaluated on post-break test rows)
+  decides whether pre-break rows stay in training.
