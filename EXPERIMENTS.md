@@ -380,6 +380,12 @@ isoperimetric scatter.
           - [x] hourly `PHYSICAL_THRESHOLDS` and `configs/config_v4.yaml` (DECISIONS §33);
           - [ ] persistence thresholds, gamma targets, dataset checks, smoke run: queued after the
                 build (`scripts/hpc/prep_train_v4.sh`, `logs/prep_train_v4.log`);
+          - [x] ownerless tile-hours excluded via `*_owned.txt` lists (DECISIONS §34);
+          - [ ] **pre-break ablation (DECISIONS §34):** vanilla backbone on post-2015-12-12 train rows
+                only vs on all rows, same budget and seed, both evaluated on post-break test rows
+                (`full_<split>_flags.csv.gz` has `pre_break`). Pre-break fields are 1.3-6.5x more
+                fragmented at 0.1 mm, where most of the Minkowski gradient sits; this decides whether
+                24% of train stays;
           - [ ] recompute sigma_r (`compute_residual_stats.py`) for each new backbone;
           - [ ] a v4 config (store path, scaler, DEM stats) and a smoke run.
       Small items:
