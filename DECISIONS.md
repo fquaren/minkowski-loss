@@ -2118,3 +2118,39 @@ test's result). §20 criterion 3 is replaced.**
   outbreak period (on v4 test, 16-30 June 2021), and without the 20 most influential days. The
   paper states how much a few outbreaks drive each number.
 - *The old rule's result stays recorded above* (fail; 5 of 7 statistics outside their intervals).
+
+**Results (2026-10-19).**
+
+*New criterion 3: PASS* (`gate_tail/dropped_check/summary.md`):
+- RADKLIM (Germany): pixel-hours >= 20.2 mm that are RADKLIM-dry are 2.2% on the dropped days
+  (n = 20,137, 20 days) against 6.0% on control days (n = 2,585, 30 days with RADKLIM);
+  difference -3.7 points [-12.4, -1.0]. The dropped days are cleaner than ordinary days.
+- Gauges (DE + CH): test gauge-hours with C >= 20.2 mm and gauge < 1 mm are 3.7% (n = 298)
+  against 2.1% (n = 48); difference +1.6 points [-5.8, +6.0]. Small control sample.
+- Descriptive: the gauges themselves record >= 20.2 mm 15.3x more often on the dropped days
+  than on control days (OPERA 17.9x). The concentration is weather, not contamination.
+
+*Criterion 5: drift explained, by a sub-asymptotic threshold* (Claude's reading of
+`pot_threshold/report.md` and `fig/`; the researcher decides):
+- xi(u), train weighted: 0.41 at 5 mm, 0.31 at 10, 0.28 at 20.2, 0.21 at 31.7, 0.10 at 50.1,
+  then 0.07-0.12 up to 100 mm. Validation, test and NIMBUS show the same shape.
+- *Not truncation:* the GPD truncated at 500 mm gives the same xi at every u.
+- *Not regional or seasonal mixing:* xi falls with u inside every latitude band and season
+  (JJA 0.27 -> 0.08, MAM 0.31 -> 0.11, south of 46N 0.23 -> 0.10). The pool is not a mixture of
+  flat subsets.
+- *Sub-asymptotic:* the drift stops at ~50 mm. Cluster maxima give a lower xi at high u
+  (0.02-0.08 above 50 mm) than single pixels (0.07-0.12): dependence within storms inflates the
+  pixel-level shape slightly.
+
+*Hourly evaluation threshold, by the pre-stated rule: u = 50.1 mm.* It is the lowest grid u
+whose xi and sigma* intervals (train, weighted) contain the point estimates at every higher u
+with >= 1,000 exceedances. (At 60 mm the 100 mm point falls just outside, but the rule takes the
+lowest passing u.) It coincides with the hourly equivalent of 89 mm/h. Exceedances above it:
+train 175,937 (2,414 days); test, unweighted, 30,589 (404 days). 20.2 mm stays the level of the
+split strata and the exceedance-rate columns. The POT fits of the evaluation tables use 50.1 mm.
+
+*Gate status on v4:* 1 pass; 2a fail (+5.4 points over RADKLIM, residual stationary echoes; the
+rule tried in §31 was not adopted); 2b pass; 3 (new) pass; 4 pass (event losses only on
+radar-days shown to be bad); 5 explained (pending the researcher). By §20 "Where we stop": train
+on v4 and report 2a's measured contamination as a limitation, unless a v5 for the named type
+(stationary echoes) is judged worth its cost.
