@@ -2161,3 +2161,33 @@ on v4 and report 2a's measured contamination as a limitation, unless a v5 for th
 - *Train on v4.* The 2a failure is reported as a minor limitation (methods draft §6.3): about 9
   residual artefact gauge-hours, single-day stationary echoes, +5.4 points of false alarms at
   20 mm over RADKLIM. No v5. The gate closes with this.
+
+## 33. Training on v4: hourly thresholds, config and data preparation (2026-10-19)
+
+**Question.** The loss, the gamma targets and the FSS levels use `PHYSICAL_THRESHOLDS`, 15 levels
+in mm/h from 0.1 to 150 set for 15-min rates. The v4 store's `physical_thresholds.npy` still
+holds them. What are they for the hourly target?
+
+**Decision (researcher said go ahead with the training preparation, 2026-10-19; Claude chose the
+rule).** Each level is mapped to the hourly level with the same exceedance frequency (screened
+15-min frames against screened hourly sums, 100 random calibration days, full grid: the rule of
+§30 and §32, so each level keeps its rarity and its role in the loss):
+
+| mm/h (15-min) | 0.1 | 0.17 | 0.28 | 0.48 | 0.81 | 1.4 | 2.3 | 3.9 | 6.5 | 11 | 19 | 31 | 53 | 89 | 150 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **mm in 1 h** | 0.1 | 0.192 | 0.314 | 0.509 | 0.828 | 1.35 | 2.11 | 3.43 | 5.36 | 8.61 | 13.5 | 20.2 | 31.7 | 50.1 | 79.0 |
+
+The ratio falls from ~1 in light rain to 0.53 at the top: light rain lasts the whole hour, intense
+peaks a frame or two. With these levels, the evaluation defaults (`--pot_threshold` = third
+highest, FSS = top three) would be 31.7 / {31.7, 50.1, 79.0}. The POT fits use u = 50.1 instead
+(§32), so `eval_extremes.py` is run with `--pot_threshold 50.1`.
+
+- *Config:* `configs/config_v4.yaml` = `config_v3.yaml` with the v4 store and metadata paths and
+  this grid. Every precipitation value and threshold is in mm per hour of accumulation.
+- *Persistence thresholds* (the B0 / B1 noise floor of the gamma targets) are recomputed on the
+  hourly store. In `TOPOLOGY_MODE: euler` they are diagnostics only.
+- *Gamma targets:* computed after the store build (`scripts/hpc/prep_train_v4.sh`), 8 workers.
+- *Smoke run:* the UNet backbone, 1 epoch on 0.5% of train, GPU 1. It checks loading, finite
+  losses and the startup lines, nothing about skill.
+- *Not yet:* sigma_r (`compute_residual_stats.py`) is recomputed per new backbone, before any
+  flow-matching run.
