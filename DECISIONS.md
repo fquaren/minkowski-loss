@@ -2191,3 +2191,30 @@ highest, FSS = top three) would be 31.7 / {31.7, 50.1, 79.0}. The POT fits use u
   losses and the startup lines, nothing about skill.
 - *Not yet:* sigma_r (`compute_residual_stats.py`) is recomputed per new backbone, before any
   flow-matching run.
+
+## 34. Ownerless tile-hours excluded; the pre-December-2015 speckle floor flagged and measured (2026-10-19)
+
+**Findings** (`notes/data_analysis_v4/stats.md`, the full-archive scan):
+- *A step change on 2015-12-12.* The daily share of completely dry tile-hours (max < 0.1 mm) goes
+  from ~0.02-0.07 up to 2015-12-11 to 0.20-0.29 from 2015-12-12 on. Before it, tiles that look
+  dry still carry scattered values (median maximum 0.2 mm where the wet fraction is < 0.2%);
+  after it they are 0. A low-level speckle floor in the earlier ODYSSEY processing (inference;
+  the processing change itself is not identified).
+- *58,124 tile-hours have no owning radar* (6 tile positions, all 2012-2015: rows 512-768 x
+  cols 1536-1664, and 1792 / 128). Rule 5 (radar-day exclusion) and rule 3 (radar-frame flags)
+  cannot act on them, so they are an unscreened path for contamination. In the store: train
+  13,441, validation 842, test 3,033, NIMBUS 0.
+
+**Decision (researcher, 2026-10-19).**
+1. *Ownerless tile-hours are excluded,* at the metadata level (the store is unchanged):
+   `patches_v4/meta/*_owned.txt` (5 columns, the 5th = store row), which `configs/config_v4.yaml`
+   points to. The original lists stay for provenance.
+2. *Pre-2015-12-12 tile-hours are flagged, not removed* (`patches_v4/meta/full_<split>_flags.csv.gz`:
+   store_row, ownerless, pre_break), and their effect is measured:
+   - *Data level, now* (`scripts/analysis/speckle_effect.py`, Claude's design, descriptive): on
+     train rows sampled before and after the break and matched by tile mean rain, the Minkowski
+     functionals at the lowest thresholds (A, P, chi at 0.1 / 0.192 / 0.314 mm), the count of
+     single-pixel components, and how far zeroing values below 0.2 or 0.3 mm in pre-break rows
+     closes the gap. This says how much of the low-threshold target is noise.
+   - *Training level, after the first v4 runs:* a backbone trained on post-break rows only
+     against one trained on all, both evaluated on post-break test rows. A to-do, not run now.
