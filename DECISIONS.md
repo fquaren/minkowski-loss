@@ -2327,3 +2327,24 @@ the test does not measure what the question needs.** 1,987 radar-years; top-5% c
   with a tail-focused boundary test (frequency of rates >= 10 / 31 mm/h in the inner vs outer band),
   which needs band statistics recomputed from the frames (a new radar pass, ~8 h), with its own
   criterion fixed before running; (c) no radar exclusion, stated as a limitation.
+
+**Decision (researcher, 2026-10-20): option (b), a tail-focused boundary test. Criteria fixed by
+Claude before running** (`scripts/analysis/radar_band_tail.py`):
+- *Data:* every second day of the archive (even day index from 2012-09-04), every frame, the
+  `clean_frame` field (as the radar pass), contributing geometry (§27). Per radar and frame, in the
+  6 km band just inside its owned area and the 6 km band just outside it: valid pixels, pixels
+  >= 10 mm/h and >= 31 mm/h.
+- *Statistic per radar-year:* R10 = (inside >= 10 / inside valid) / (outside >= 10 / outside valid),
+  summed over the year's frames; 95% day-block bootstrap interval of log R10 (B = 500). R31 reported
+  too (fewer pixels; descriptive).
+- *Flagged radar-year:* R10 >= 2 (heavy rain twice as frequent just inside the radar's boundary as
+  just outside it) AND the interval's lower end >= 1.25, with >= 20 days having a pixel >= 10 mm/h in
+  either band. An absolute bar, so the test cannot flag radars by construction (unlike the top-5% cut).
+- *Why 2:* 12 km apart, real heavy-rain frequency rarely doubles; a radar overestimating heavy rates
+  makes it jump at its own boundary. *Limitation:* a boundary along a steep orographic gradient can
+  double it too; such cases are checked by name before excluding.
+- *Consequence:* flagged radar-years' tile-hours (owner share >= 10%) excluded at the metadata level
+  (`filter_meta_v4.py` -> `build_adv_store.py --meta_only`); the excluded share of tile-hours and of
+  the tail reported.
+
+**Decision (researcher, 2026-10-20): the pre-break ablation (§34) runs right after the smoke run.**
