@@ -2347,4 +2347,17 @@ Claude before running** (`scripts/analysis/radar_band_tail.py`):
   (`filter_meta_v4.py` -> `build_adv_store.py --meta_only`); the excluded share of tile-hours and of
   the tail reported.
 
+*Status (2026-10-20 09:00):* radar pass running (`scripts/hpc/run_band_tail.sh`, 2 workers beside the
+v4 build, `logs/band_tail.log` -> `BAND_TAIL_DONE`, ~12-18 h); per-day counts in
+`quality_v4/band_tail/days/`, table in `notes/data_analysis_v4/radar_band_tail.md`, flagged list in
+`quality_v4/biased_radar_years_tail.csv`. Smoke day 2021-07-14: 156 radars with both bands valid;
+inside and outside >= 10 mm/h counts within ~10% on the top radars of a widespread convective day,
+as expected without bias. The exclusion path is ready: `filter_meta_v4.py --biased <csv>` (opt-in;
+default unchanged) drops tile-hours where a flagged radar-year owns >= 10%, then
+`build_adv_store.py --meta_only`. Side effect to report: `--meta_only` re-derives the scaler from the
+remaining train maximum.
+
 **Decision (researcher, 2026-10-20): the pre-break ablation (§34) runs right after the smoke run.**
+Lists: `scripts/dataset_v2/postbreak_lists.py` writes `<list>_postbreak.txt` in the adv store's meta
+(on the v4 owned lists: train 76.0%, val 86.1%, test 68.3% post-break). Both arms validate and are
+evaluated on the post-break val / test lists; matched step budget and seed.
