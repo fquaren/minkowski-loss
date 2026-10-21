@@ -531,7 +531,65 @@ the yearly ownership of the contributing radars (§27).
 of noise over Serbia in 2023 only (97,000 km²). Its arc and straight edge both centre on Jastrebac
 (rsjas), 4 km away, with the composite's 250 km range as radius
 (`notes/data_analysis_v4/noise_radar_2023.md`). No boundary test is designed for this; whether the
-screen removes it is measured on the raw-vs-corrected climatology.
+screen removes it is measured on the raw-vs-corrected climatology (§6.8): it does not, and the
+radar-year is excluded.
+
+### 6.8 What the screen removes, pixel by pixel (for the appendix; DECISIONS §36)
+
+Added 2026-10-21. Code: `scripts/data_quality/rate_climatology.py`. Figures:
+`notes/data_analysis_v4/rate_freq31_raw_vs_corrected.pdf` and `rate_freq1_raw_vs_corrected.pdf`
+(whole domain, the Hungary-Slovakia-Romania window, nine subdomains; raw and corrected side by side
+on one colour scale). Per-radar numbers: `rate_clim_per_radar.csv`. A browsable version of the same
+figures and tables is on a private page (https://claude.ai/artifact/XKvwoY6qkoDsMxuGPK9GL7).
+
+**Method.** The hourly screening chain is replayed on every 7th day from 2016 to 2025 (520 days,
+49,864 15-min frames). Per pixel, two frequencies are counted on the same frames:
+- *raw:* rates at or above 1 and 31 mm/h in the composite as archived;
+- *corrected:* the same in the chain's final frames, with a pixel removed where its owning radar is
+  excluded for that frame (rule 3), day (rule 5) or year (§36b/c). The dataset removes whole
+  tile-hours by owner share; owner masking is the per-pixel equivalent. Tile-level rules (ownerless
+  tiles, unphysical tile maxima) are not applied here.
+The raw climatology used to find the suspects (`clutter_climatology.py`) counts every frame; this
+sample is one day in seven, so its maps are noisier but compare raw and corrected on identical frames.
+
+**Overall.** The screen and the exclusions remove 31.7% of the exceedances at or above 31 mm/h, 2.0%
+of those at or above 1 mm/h, and 0.60% of the valid pixel-frames. Heavy rates are where the
+artefacts are; moderate rain is almost untouched.
+
+**By radar** (frequency of rates >= 31 mm/h over the area each radar owns, against the median radar's
+corrected frequency, 3.3 per 10⁵ frames):
+
+| radar | raw x median | corrected x median | removed |
+|---|---|---|---|
+| Fruska Gora (rsfrg, Serbia) | 37 | 2.5 | 94% |
+| Debeljak (hrdeb, Croatia) | 14 | 2.6 | 82% |
+| Jastrebac (rsjas, Serbia), all years | 14 | 7.4 | 48% |
+| Maly Javornik (skjav, Slovakia) | 8.9 | 3.8 | 59% |
+| Bucuresti (robuc, Romania) | 8.1 | 7.3 | 11% |
+| Budapest (hubud, Hungary) | 1.6 | 1.3 | 19% |
+
+- *Spokes and beams* (hrdeb, rsfrg, skjav, the beams near hrulj) are largely removed. These are the
+  ray and persistence rules at work.
+- *Jastrebac in 2023 is not.* Its raw frequency of rates >= 31 mm/h that year is 385 per 10⁵ frames,
+  against 2 to 16 in its other years; the screen removes 49%, leaving about 60 times the median radar.
+  The half-disk is the strongest feature left in the south-east. Why the rules miss it is not yet
+  checked (with `scripts/data_quality/tile_hour_corrections.py` on a few 2023 tile-hours); a likely
+  reason, unverified, is that its noise moves from frame to frame (so the persistence rule and the
+  hot-pixel mask do not see it) and covers too much area to be an isolated spike or burst.
+  **The radar-year is excluded** (researcher,
+  2026-10-21): 806 train, 107 validation and 312 test tile-hours, of which 24% reach 20.2 mm against
+  about 6% overall.
+- *Budapest is not anomalous* over its own area. The spokes near its label on the regional map come
+  from Maly Javornik.
+- *What remains highest after correction* is Jastrebac (before its exclusion), Bucuresti, whose
+  straight streaks south of the site survive, and the other Romanian radars at 4 to 5 times the
+  median. The boundary tests (§6.7) find no jump at Romania's borders, so this is partly the region's
+  convective climate and partly intermittent artefacts; it is stated as a limitation, not removed.
+
+**Limitations of this check.** A radar's frequency over its own area mixes climate and artefacts;
+the removed share and the maps separate them, but only by eye for the residual. Ownership is the
+nearest contributing radar; the composite's own weighting is not known. The sample is one day in
+seven, so single short events (one storm, one bad day) may be missed or over-weighted.
 
 **What the tests cannot see.**
 - A bias shared by two neighbouring networks cancels at their common seam (if Hungary and Slovakia

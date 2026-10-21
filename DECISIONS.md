@@ -2514,3 +2514,10 @@ exceedances >= 31 mm/h, 2.0% of those >= 1 mm/h and 0.60% of valid pixel-frames.
 - Highest after correction: rsjas, robuc (11% removed; straight streaks south of the site remain),
   rocra, hrulj, and the other Romanian radars at 4-5x; the boundary tests found no jump at Romania's
   borders, so part of this is climate.
+- **Decision (researcher, 2026-10-21): rsjas 2023 excluded** as a radar-year (owner share >= 10%):
+  `quality_v4/biased_radar_years_all.csv` = §36b's three + ltlau/ltvil 2026 + rsjas 2023, applied by
+  `scripts/hpc/exclude_then_vanilla.sh` (exclusion, store re-validation, then the baseline). Expected
+  from the dry run: 806 train, 107 validation, 312 test tile-hours (24% with a maximum >= 20.2 mm).
+- *The vanilla baseline was restarted* (researcher): the run started 14:57 (`logs/unet_ana_20261021_145706.log`,
+  4 of 25 epochs, ~45 min each, no NaN) was stopped at 18:00 so that every Study-1 run trains on the
+  same final lists. Its run directory is kept but is not a result.
