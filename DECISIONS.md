@@ -2383,6 +2383,44 @@ whole national network, which only a national-border test would see.
 - *Pending the researcher (2026-10-21):* apply the pre-stated exclusion (0.3% of rows, no effect on
   any suspect) or drop it as orography / small sample.
 
+**Decision (researcher, 2026-10-21): the exclusion is applied as pre-stated.** The three flagged
+radar-years' tile-hours (owner share >= 10%) are removed at the metadata level:
+`scripts/hpc/apply_radar_exclusion.sh` = `filter_meta_v4.py --biased quality_v4/biased_radar_years_tail.csv`
+-> `build_adv_store.py --meta_only` -> post-break lists -> persistence thresholds -> store validation
+(`logs/apply_radar_exclusion.log`). Fields and gamma targets are per store row and unchanged.
+
+### 36c. National-border extension (pre-registered 2026-10-21, before running)
+
+**Why.** §36b compares each radar with its immediate neighbours, which for the suspects are mostly
+radars of the same national network. A bias shared by a whole network (one calibration practice,
+one Z-R relation, one processing chain) cancels at those boundaries and appears only where the
+network meets another. The researcher asked for the test at national borders.
+
+**Criteria (Claude, fixed before running; `scripts/analysis/radar_band_tail.py run_national /
+analyze_national`).**
+- *Data:* as §36b: every second day, every frame, `clean_frame`, contributing geometry, the yearly
+  nearest-radar ownership of `RadarGeometry`.
+- *Bands:* a pixel's country is its owning radar's ODIM country prefix (first two letters). For two
+  countries A and B whose owned areas touch, the A-side band is A's pixels within 6 km (3 px,
+  `BAND_PX`) of a B pixel, and the B-side band likewise. Counts per frame: valid, >= 10, >= 31 mm/h.
+- *Statistic per border side and year:* R10(A|B) = (A-side >= 10 / A-side valid) / (B-side >= 10 /
+  B-side valid), summed over the year; 95% day-block bootstrap interval of log R10 (B = 500); R31
+  descriptive. A border side *qualifies* if both bands have >= 150 px (about 100 km of border) and
+  >= 20 days have a pixel >= 10 mm/h in either band.
+- *Border side flagged:* R10 >= 2 AND lower bound >= 1.25 (the §36b bar).
+- *Country-year flagged:* at least 2 of its qualifying border sides flagged. One border alone can be
+  an orographic crest (Carpathians, Alps, Pyrenees) or a coast; a network bias appears on every
+  border with an unbiased neighbour. A single flagged border is reported, not acted on; the mean
+  DEM height of both bands is reported for every flagged border.
+- *Consequence:* a flagged country-year's radar-years (every radar of that country active that year)
+  go into the exclusion list, applied as in §36b (owner share >= 10%; same script). The excluded
+  share of tile-hours and of tile-hours >= 20.2 mm is reported.
+- *Limitations, stated in advance:* (1) neighbouring networks with the same bias cancel at their
+  common border (if HU and SK both read high, only their borders with other networks show it);
+  (2) a country with one qualifying border cannot be flagged; (3) ownership is nearest-radar within
+  250 km, so the "national border" is the composite's network seam, not the political border; over
+  sea both sides are sea.
+
 **Decision (researcher, 2026-10-20): the pre-break ablation (§34) runs right after the smoke run.**
 Lists: `scripts/dataset_v2/postbreak_lists.py` writes `<list>_postbreak.txt` in the adv store's meta
 (on the v4 owned lists: train 76.0%, val 86.1%, test 68.3% post-break). Both arms validate and are

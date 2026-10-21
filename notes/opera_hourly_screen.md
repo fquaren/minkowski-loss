@@ -483,6 +483,55 @@ Gauge-hours >= 5 mm: gauges 26,945, RADKLIM 25,338, OPERA 15,919. On the 1,025 h
   set on this dataset's own distribution, not on gauge-based levels (recommendation, not yet
   decided).
 
+### 6.7 Radars biased against their neighbours (for the appendix; DECISIONS §36)
+
+Added 2026-10-21. Numbers: `notes/data_analysis_v4/radar_tail.md`, `radar_boundary.md`,
+`radar_band_tail.md`, `radar_band_national.md`; images of the suspects in `suspect_radars.pdf`.
+
+**The suspicion.** A per-radar tail diagnostic (post-break tile-hours by owning radar) put a few
+Romanian, Hungarian and Slovak radars near the top: Bobohalma (robob) has the second-highest
+frequency of tile-hours >= 20 mm of all 116 radars, with 46% of its radar-days having one; Napkor
+(hunap), Szentes (husze) and Kojsovska hola (skkoj) combine a high tail with few dry tile-hours. A
+high tail can be climate (the Pannonian basin and the Carpathian foreland are convective in summer)
+or a radar reading high. A per-radar total cannot tell the two apart.
+
+**The test: a jump at the boundary.** Real rain does not know which radar owns a pixel, so 12 km
+apart, inside and outside a radar's ownership boundary, its climate is nearly the same. A radar that
+reads high makes the rain jump where its ownership begins. All tests are fixed before running
+(DECISIONS §24) and use every second day of the archive, every 15-min frame after `clean_frame`, and
+the yearly ownership of the contributing radars (§27).
+
+1. *Mean jump (§36, first version).* The median wet-frame mean of log(1 + rate) in the 6 km bands
+   either side of each radar's boundary; flagged: the top 5% with a positive interval. It flagged
+   100 radar-years of 49 radars with 2–4% offsets (many Swedish radars 2024–2026, Swiss radars along
+   the Alpine crest) and none of the suspects: the median is set by light rain. **Not applied.**
+2. *Tail jump at each radar's boundary (§36b, adopted).* Per radar-year,
+   R10 = (frequency of >= 10 mm/h just inside) / (just outside), with a 95% day-block bootstrap
+   interval. Flagged if R10 >= 2 and the lower bound >= 1.25, with >= 20 days having a pixel >= 10 mm/h.
+   An absolute bar, so the test can flag nothing. Result: of 2,024 radar-years (median R10 0.98),
+   three are flagged: Crug-y-Gorllwyn (UK) 2023, Bjolfur (Iceland) 2024, Pastewnik (Poland) 2012
+   (23 days). The suspects lie at 0.78–1.12. **Applied** (researcher, 2026-10-21): tile-hours where a
+   flagged radar-year owns >= 10% are removed from the lists: 4,108 train (0.31%; 88 with a maximum
+   >= 20.2 mm), 143 validation and 1,262 test tile-hours. All three are hill or fjord sites, so an
+   orographic boundary cannot be excluded as the cause; the removal is small either way.
+3. *Tail jump at national seams (§36c, pre-registered, running).* A bias shared by a whole national
+   network (one calibration practice, one Z–R relation, one processing chain) cancels between two
+   radars of that network and appears only where it meets another network. The same R10, computed in
+   the 6 km bands either side of each seam between two countries' owned areas; a border side is
+   flagged as in test 2, and a country-year when at least two of its borders are flagged (one border
+   alone can be a mountain crest or a coast). Flagged country-years lose their radars' tile-hours as in
+   test 2. *Result: pending.*
+
+**What the tests cannot see.**
+- A bias shared by two neighbouring networks cancels at their common seam (if Hungary and Slovakia
+  both read high, only their borders with other networks show it).
+- A boundary along a strong climate gradient (crest, coast) gives a jump without bias; test 3 needs
+  two borders to guard against this, test 2 relies on the interval and a check of the flagged sites.
+- An overall bias that is the same everywhere in the composite is invisible to any boundary test;
+  that is the gauge comparison of §6.6.
+- Ownership is the nearest contributing radar within 250 km, as in the screen; the true composite
+  weights radars by quality and distance, so the seam is approximate.
+
 ## 7. Open items (EXPERIMENTS §5)
 
 - *Detection ideas not yet implemented:* satellite cloud-top veto for candidate extremes,
