@@ -534,6 +534,13 @@ is signed off by a passing report; its path goes in DECISIONS / EXPERIMENTS when
         for more (event email to Lionel Moret, 2026-10-14).
 
 ### Paper
+- [ ] **Systematic literature search before claiming any contribution (2026-10-21, researcher).**
+      Candidates so far, from a targeted web search only: transferring a validated loss weight
+      across datasets by gradient share, and hacking-bounded weight selection for a structural loss
+      in precipitation SR (DECISIONS §37). Search plan, sources found and what each covers:
+      `notes/weight_selection_literature.md`. Until done, the paper motivates the procedure from the
+      established work (GradNorm; Wang, Teng & Perdikaris; Zhong & Maki; Blau & Michaeli; Goodhart
+      literature) and claims nothing as new.
 - [ ] Add the W₁ identity to the theory section (DECISIONS §13).
 - [ ] Report exceedance ratio + RL bias as tail columns. Demote ξ to the text, with the
       confound explained.

@@ -2437,3 +2437,37 @@ analyze_national`).**
 Lists: `scripts/dataset_v2/postbreak_lists.py` writes `<list>_postbreak.txt` in the adv store's meta
 (on the v4 owned lists: train 76.0%, val 86.1%, test 68.3% post-break). Both arms validate and are
 evaluated on the post-break val / test lists; matched step budget and seed.
+*Amendment (Claude, 2026-10-21, before either arm runs):* both arms validate on the **full** validation
+list and are evaluated on the post-break test list. The vanilla v4_adv baseline (`run_vanilla_v4adv.sh`,
+same seed and budget) is then the all-data arm, so the ablation costs one extra run, not two. Using the
+same validation list for both arms keeps the comparison fair; only the training lists differ.
+
+## 37. The structural-loss weight on hourly data (2026-10-21)
+
+**Question.** `STRUCTURAL_LOSS_WEIGHTS.minkowski = 1e-4` was validated on 15-min rates (active at
++3.8% MAE, below the reward-hacking onset at 1e-3; §2). The hourly corrected target differs in scale,
+scaler and threshold grid, so the weight must be re-established (status note, next step 2).
+
+**Method (researcher approved step 1 on 2026-10-21; step 2's criteria are written before it runs).**
+- *Step 1, calibration (Claude's rule, fixed before results).* Transfer the validated weight by the
+  structural term's share of the gradient, measured with `tools/gradient_audit.py` exactly as the
+  15-min audit of 2026-09-23 (512 x 128 patches, anneal 0.1, 10% of the data, jackknife errors):
+  - 1a, at initialisation: parity weight lambda* = ||grad MSE|| / ||grad L_mink||; the hourly
+    centre is w_init = 1e-4 x lambda*_hourly / lambda*_15min (15-min: lambda* = 1.05e-3);
+  - 1b, at the trained vanilla checkpoint, with its own Adam moments: the weight giving the same
+    Adam share as 1e-4 at the 15-min vanilla checkpoint (Adam share 16.1); the checkpoint is the
+    hourly vanilla baseline (`run_vanilla_v4adv.sh`, starts when the climatology run ends).
+  - **1b governs** if 1a and 1b disagree: the Adam share is what shapes the actual update, and the
+    15-min weight was validated on trained models. 1a is reported as the cheap first estimate. A
+    disagreement of more than 3x is reported as a finding (the share is not stable across training).
+- *Step 2, bracketing sweep.* Vanilla plus four weights log-spaced around the step-1 centre
+  (w/3, w, 3w, 10w), same seed and reduced budget, judged on validation: active (MAE >= +1% over
+  vanilla), not gaming the loss (anisotropy, peak overshoot, images), largest such weight chosen.
+  Criteria to be fixed here before it runs.
+- *Literature (2026-10-21, web search, not systematic):* gradient balancing is established (GradNorm,
+  Chen et al. 2018; Wang, Teng & Perdikaris 2020; Zhong & Maki 2020, closest: weight from a target
+  gradient-norm ratio). No prior found for transferring a fixed weight across datasets by gradient
+  share, nor for a hacking-bounded weight selection in precipitation SR. **No contribution is claimed
+  before a systematic search** (EXPERIMENTS §5 Paper). Notes: `notes/weight_selection_literature.md`.
+- *Follow-up kept, not adopted:* setting the weight every step from the gradient share (EXPERIMENTS
+  "To explore").

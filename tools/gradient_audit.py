@@ -344,7 +344,15 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no_adam", dest="adam", action="store_false")
     ap.add_argument("--skip_eval", action="store_true")
+    ap.add_argument("--run", nargs="*", default=[], metavar="TAG=RUN[:LOSS]",
+                    help="register further checkpoints (run name under runs/sr_analytical, or an "
+                         "absolute run directory), usable in --grad_at / --runs; e.g. the hourly "
+                         "vanilla backbone for the structural-weight calibration (DECISIONS §37)")
     args = ap.parse_args()
+    for spec in args.run:
+        tag, run = spec.split("=", 1)
+        run, own = (run.split(":", 1) + [None])[:2] if ":" in run else (run, None)
+        RUNS[tag] = (run, own)
     if args.num_workers > 4:
         sys.exit("--num_workers > 4 would break the 8-core node budget alongside other jobs")
 
