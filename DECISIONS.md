@@ -2282,6 +2282,17 @@ after the build finishes (`scripts/dataset_v2/build_adv_store.py`):
 - §25's gauge check of the corrected field passed narrowly (median ratio on gauge-hours >= 20 mm
   -6%, interval [-10%, +0.4%]). Stated as a limitation.
 
+**Measured on the built store (2026-10-21): the correction lowers tile maxima far more than ~4%.**
+Corrected / plain tile max, train (test alike): median 0.66-0.78 in every intensity bin from 1 mm to
+> 50 mm, q10 0.29-0.41, q90 0.96-1.00. Tile-hours >= 50.1 mm: 26,072 -> 14,196 (train), 5,293 -> 2,398
+(test); >= 20.2 mm: 152,947 -> 84,380. The ~4% of §25 was for slow tiles. The plain sum credits a cell's
+full 15-min rate to each of its four positions, so a fast cell's beads hold more mass per pixel than
+its track does; the correction spreads it. At gauges the effect is small (-6% median at >= 20 mm,
+above), which fits beads being where the tile max sits, not where the mass is. Consequences: u = 50.1
+mm and the matched-frequency thresholds must be re-derived on this store (already planned), and the
+extremes subsets (selected by tile max) shrink. The gallery (`gallery_plain_vs_adv.pdf`) shows the
+same: Euler characteristic lower at all levels, maxima 13-25% lower on the convective pages shown.
+
 ## 36. Radars biased against their neighbours: the boundary-jump test (2026-10-19)
 
 **Question.** In the v4 climatology the Romanian, Hungarian and Slovak radars stand out
@@ -2356,6 +2367,21 @@ as expected without bias. The exclusion path is ready: `filter_meta_v4.py --bias
 default unchanged) drops tile-hours where a flagged radar-year owns >= 10%, then
 `build_adv_store.py --meta_only`. Side effect to report: `--meta_only` re-derives the scaler from the
 remaining train maximum.
+
+**Result (2026-10-21; `notes/data_analysis_v4/radar_band_tail.md`).** 2,024 radar-years qualify; median
+R10 0.98. **3 radar-years flagged:** ukcyg 2023 (R10 2.51, interval 2.00-2.91), isbjo 2024 (2.39,
+1.79-3.59), plpas 2012 (2.17, 1.48-3.57; 23 days, the archive's first months). **None of the tail
+suspects is flagged:** robob, hunap, husze, skkoj all have R10 0.78-1.12; the highest suspect is sklaz
+2017-18 (1.56-1.63, under the bar). So the heavy-rain excess of the Hungarian / Slovak / Romanian
+radars does not jump at their own boundaries: either it is regional climate, or a bias shared by the
+whole national network, which only a national-border test would see.
+- *Size of the exclusion if applied:* train 4,108 tile-hours (0.31%; 88 with max >= 20.2 mm), val 143,
+  test 1,262 (14 >= 20.2 mm), nimbus and events 0.
+- *Orographic check by name (pre-stated):* all three are hill or fjord sites by their codes (UK
+  Crug-y-Gorllwyn in Wales, Bjolfur in east Iceland, Pastewnik in the Sudetes foothills), so an
+  orographic boundary cannot be ruled out by name; plpas 2012 also rests on 23 days.
+- *Pending the researcher (2026-10-21):* apply the pre-stated exclusion (0.3% of rows, no effect on
+  any suspect) or drop it as orography / small sample.
 
 **Decision (researcher, 2026-10-20): the pre-break ablation (§34) runs right after the smoke run.**
 Lists: `scripts/dataset_v2/postbreak_lists.py` writes `<list>_postbreak.txt` in the adv store's meta
