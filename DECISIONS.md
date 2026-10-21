@@ -2471,3 +2471,11 @@ scaler and threshold grid, so the weight must be re-established (status note, ne
   before a systematic search** (EXPERIMENTS §5 Paper). Notes: `notes/weight_selection_literature.md`.
 - *Follow-up kept, not adopted:* setting the weight every step from the gradient share (EXPERIMENTS
   "To explore").
+
+**Result 1a (2026-10-21; `eval_results/gradient_audit/2026-10-21_v4adv_init/`).** At initialisation,
+hourly corrected data, same settings as the 15-min audit: parity lambda* = 8.90e-4 (± 3.7e-6),
+against 1.05e-3 (± 1.4e-5) on 15-min data. **w_init = 1e-4 x 8.90e-4 / 1.05e-3 = 8.5e-5 (± ~0.1e-5).**
+At 1e-4 the share is 0.112 hourly vs 0.095 on 15-min (cos with the MSE gradient +0.86 vs +0.78). So at
+initialisation the validated 1e-4 carries over within 15%: hourly aggregation barely changes the
+balance of the two terms at the start of training. Step 1b (trained vanilla checkpoint, Adam share)
+decides; the vanilla baseline is queued behind the climatology run.
