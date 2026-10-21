@@ -2499,3 +2499,18 @@ At 1e-4 the share is 0.112 hourly vs 0.095 on 15-min (cos with the MSE gradient 
 initialisation the validated 1e-4 carries over within 15%: hourly aggregation barely changes the
 balance of the two terms at the start of training. Step 1b (trained vanilla checkpoint, Adam share)
 decides; the vanilla baseline is queued behind the climatology run.
+
+**Raw vs corrected climatology (2026-10-21; `scripts/data_quality/rate_climatology.py`, every 7th day
+2016-2025, 520 days, 49,864 frames; `notes/data_analysis_v4/rate_freq{31,1}_raw_vs_corrected.pdf`,
+`rate_clim_per_radar.csv`).** The screening plus the radar exclusions remove 31.7% of the 15-min
+exceedances >= 31 mm/h, 2.0% of those >= 1 mm/h and 0.60% of valid pixel-frames.
+- Spokes and beams are largely removed: hrdeb from 13.9x to 2.6x the median radar's corrected
+  frequency (82% of its exceedances removed), rsfrg 37x -> 2.5x (94%), skjav 8.9x -> 3.8x (59%).
+- **rsjas 2023 is not handled:** raw 3.85e-3 (other years 1.9e-5 to 1.6e-4), corrected 2.07e-3 (49%
+  removed), about 60x the median radar. *Pending the researcher:* exclude rsjas 2023 as a radar-year
+  (same path as §36b; years 2017-2023 are in train/val/test).
+- hubud is not anomalous over its own area (1.6x raw, 1.3x corrected); the spokes near its label on
+  the suspect page belong to skjav.
+- Highest after correction: rsjas, robuc (11% removed; straight streaks south of the site remain),
+  rocra, hrulj, and the other Romanian radars at 4-5x; the boundary tests found no jump at Romania's
+  borders, so part of this is climate.
