@@ -40,6 +40,8 @@ def main():
         kw = dict(split=group_of[split], topology_mode="euler")
         full = DeterministicSRDataset(cfg["PREPROCESSED_DATA_DIR"], full_f, st, sv, **kw)
         full.is_train = False                         # compare without random flips
+        # store row -> position in the full list (5-column lists cover a subset of the store, §34)
+        pos = {int(s): i for i, s in enumerate(full._store_rows)}
         rng = np.random.default_rng(0)
         for name in [f"full_{split}", f"light_{split}", f"extremes_{split}"] + (
                 [f"events_{split}"] if split in ("test", "nimbus") else []):
@@ -53,7 +55,9 @@ def main():
             for k in ks:
                 x, y, g = ds[int(k)]
                 r = int(ds._store_rows[k])
-                xf, yf, gf = full[r]
+                if r not in pos:                      # a subset row missing from the full list
+                    continue
+                xf, yf, gf = full[pos[r]]
                 same += torch.equal(x, xf) and torch.equal(y, yf) and torch.equal(g, gf)
                 _, yy, xx, _ = ds.metadata[int(k)]
                 exp = np.clip((dem[yy:yy + P, xx:xx + P] - st[0]) / (st[1] + 1e-8), -3, 3)
@@ -76,8 +80,13 @@ def main():
             days[split] = np.array([], dtype="datetime64[D]"); continue
         ts = pd.read_csv(os.path.join(meta_dir, f"full_{split}.txt"), header=None, usecols=[0],
                          dtype=str)[0] if os.path.getsize(os.path.join(meta_dir, f"full_{split}.txt")) else pd.Series([], dtype=str)
-        # parse explicitly: np.datetime64("20210712") would read the whole string as a year
-        days[split] = np.unique(pd.to_datetime(ts.str[:8], format="%Y%m%d").values.astype("datetime64[D]"))
+        # processing day of each tile-hour, as make_splits_hourly.py assigns it: the hour ending at
+        # 00:00 belongs to the previous day. Date-only (8-digit) timestamps are taken as they are.
+        full_ts = ts.str.len() >= 14
+        t = pd.to_datetime(ts.str[:8], format="%Y%m%d")
+        t[full_ts] = (pd.to_datetime(ts[full_ts].str[:14], format="%Y%m%d%H%M%S")
+                      - pd.Timedelta(minutes=1)).dt.normalize()
+        days[split] = np.unique(t.values.astype("datetime64[D]"))
     for a, b in (("train", "val"), ("train", "test"), ("val", "test"),
                  ("train", "nimbus"), ("val", "nimbus"), ("test", "nimbus")):
         inter = np.intersect1d(days[a], days[b])

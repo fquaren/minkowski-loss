@@ -2389,6 +2389,18 @@ radar-years' tile-hours (owner share >= 10%) are removed at the metadata level:
 -> `build_adv_store.py --meta_only` -> post-break lists -> persistence thresholds -> store validation
 (`logs/apply_radar_exclusion.log`). Fields and gamma targets are per store row and unchanged.
 
+**Observation (2026-10-21, from the researcher's reading of the raw >= 31 mm/h climatology,
+`suspect_radars.pdf` p. 1): Jastrebac (rsjas, Serbia) produced a half-disk of noise in 2023.**
+`scripts/analysis/locate_noise_radar.py` -> `notes/data_analysis_v4/noise_radar_2023.{md,png}`: the
+2023 anomaly (97,400 km², frequency > 1e-3 and > 5x the 2021-25 median) has a circular western arc
+centred 4 km from rsjas (next site 31 km) with a 248 km radius, and a straight eastern edge that is
+a diameter through the same point. It is absent in the other years. rsjas is in the node lists
+2017-2023 only, hence unlabelled on the 2024 ownership map. Rule 5 excluded 12 of its 2023 radar-days.
+Whether the hourly chain removes the half-disk is measured by the raw-vs-corrected climatology
+(`scripts/data_quality/rate_climatology.py`, running); any exclusion of rsjas 2023 waits for that
+map and is the researcher's decision. The researcher also named hubud and hrdeb as the two worst
+radars on that page; the same climatology shows what the chain leaves of them.
+
 ### 36c. National-border extension (pre-registered 2026-10-21, before running)
 
 **Why.** §36b compares each radar with its immediate neighbours, which for the suspects are mostly
