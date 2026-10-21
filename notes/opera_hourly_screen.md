@@ -347,6 +347,16 @@ a fact not yet checked against a source.
   cannot separate a radar that is always noisy from one that has failed. Against the
   neighbours only it flags 3,029 radar-days, mostly on coastal and island radars. Against the
   radar's own q99 it misses radars that fail often. Pending a RADKLIM test.
+- **Radars that fail together hide each other** (found 2026-10-21, §6.8). Rule 5 compares a
+  radar-day with the median of its five nearest radars that day (and, for two of its signals, with
+  the radar's own seasonal q99). In 2023 three neighbouring radars in Serbia and Croatia produced
+  noise on the same days, so the neighbour median was itself noisy: Jastrebac and Uljenje were only
+  3-8 times above it and escaped the score bar of 10 times. The own-q99 reference is inflated the
+  same way by a radar's own bad weeks. Such cases are found only by the per-pixel raw-vs-corrected
+  climatology (§6.8), and are excluded by hand as radar-years.
+- **Widespread moving noise of moderate intensity passes every pixel rule** (§6.8): it is not
+  isolated, not persistent, not a single-frame burst in quiet surroundings and not without
+  temporal support. Only its unphysical part (> 500 mm/h) is caught, at tile level.
 
 ### 6.4 Coverage and product changes
 
@@ -572,11 +582,7 @@ corrected frequency, 3.3 per 10⁵ frames):
   ray and persistence rules at work.
 - *Jastrebac in 2023 is not.* Its raw frequency of rates >= 31 mm/h that year is 385 per 10⁵ frames,
   against 2 to 16 in its other years; the screen removes 49%, leaving about 60 times the median radar.
-  The half-disk is the strongest feature left in the south-east. Why the rules miss it is not yet
-  checked (with `scripts/data_quality/tile_hour_corrections.py` on a few 2023 tile-hours); a likely
-  reason, unverified, is that its noise moves from frame to frame (so the persistence rule and the
-  hot-pixel mask do not see it) and covers too much area to be an isolated spike or burst.
-  **The radar-year is excluded** (researcher,
+  The half-disk is the strongest feature left in the south-east. **The radar-year is excluded** (researcher,
   2026-10-21): 806 train, 107 validation and 312 test tile-hours, of which 24% reach 20.2 mm against
   about 6% overall.
 - *Budapest is not anomalous* over its own area. The spokes near its label on the regional map come
@@ -586,7 +592,43 @@ corrected frequency, 3.3 per 10⁵ frames):
   median. The boundary tests (§6.7) find no jump at Romania's borders, so this is partly the region's
   convective climate and partly intermittent artefacts; it is stated as a limitation, not removed.
 
-**Limitations of this check.** A radar's frequency over its own area mixes climate and artefacts;
+**Why the screen misses the Jastrebac noise** (`scripts/data_quality/why_missed.py` on the two worst
+days of 2023, 10 March and 22 July; `notes/data_analysis_v4/why_missed_rsjas_2023.md`).
+- *What the noise is.* It comes in episodes of days to weeks (17 Feb - 24 Mar, 23 Jun - 28 Jul,
+  Aug - Sep and Nov 2023; the other periods are clean). In those days it appears in 67% of frames,
+  in small clusters (median 2 px), moving from frame to frame, and in bursts that cover up to ~40%
+  of the half-disk. It is mostly outside real rain: 5-7% of a 50 km ring around it is wet.
+  Values range from moderate (31-150 mm/h) to absurd (up to ~3e4 mm/h), with the reflectivity
+  ceiling of 64 dBZ (364.63 mm/h) common.
+- *The pixel rules.* Of ~200,000 raw pixel-frames >= 31 mm/h per day in the half-disk, ~125,000 are
+  still >= 31 after the chain. Each rule misses them for a stated reason:
+  - isolated spike: < 1% are isolated (clusters, not single pixels);
+  - persistence: < 0.1% are local peaks on >= 24 frames of the day (the noise moves);
+  - burst: 50,000-59,000 pixel-hours meet the rate and share conditions, but < 1% have quiet
+    surroundings (the hour's 5x5 median is noise too);
+  - temporal support: 2-3% lack echo within 30 km in the previous or next frame (the noise in
+    those frames supports it);
+  - ceiling: ~23,000 ceiling-valued pixel-frames per day are repaired, but from noisy neighbours,
+    so 4,000-6,000 stay >= 31;
+  - footprint: every pixel left above 500 mm/h (12,000-51,000 per day) is *refused* (the area to
+    fill exceeds the 500 px guard), and every tile-hour that contains a refused pixel is rejected
+    at tile level. So the absurd part never reaches the dataset; the moderate part (39,000-83,000
+    pixel-frames per day at 31-150 mm/h) does.
+- *Rule 5 (radar-days).* No 2023 day scores >= 1; the worst (10 March, 112,000 pixel-frames
+  >= 31 mm/h) scores 0.90. Its neighbour reference was noisy: of Jastrebac's five neighbours,
+  Fruska Gora (rsfrg), Uljenje (hrulj) and Gradiste (hrgra) produced thousands of isolated
+  >= 31 mm/h pixels on the same days, so the median (1,300-6,000) was within a factor 3-8 of
+  Jastrebac. Fruska Gora and Gradiste, whose own neighbourhoods were cleaner, were caught (83 and 77
+  radar-days); Uljenje was not (2 radar-days).
+- *What reached training before the exclusion.* 1,226 of Jastrebac's 3,379 tile-hours of 2023 were in
+  the lists; none had a refused pixel, but 5.4% had a 15-min rate >= 150 mm/h, against 0.8-1.1% of
+  its tile-hours in 2021-2022, and 46-51% of those in February-March had a rate >= 31 mm/h.
+- *Uljenje (hrulj) 2023* shows the same pattern (corrected ~11 times the median radar, against
+  1.7-2.1 in 2024-25) and is a candidate for the same exclusion (decision pending).
+
+**Limitations of this check.** The corrected maps apply the pixel repairs and the radar exclusions,
+not the tile-hour rejections (refused repairs, ceilings, repeated values), so they overstate what
+reaches the dataset: the worst tile-hours are rejected whole. A radar's frequency over its own area mixes climate and artefacts;
 the removed share and the maps separate them, but only by eye for the residual. Ownership is the
 nearest contributing radar; the composite's own weighting is not known. The sample is one day in
 seven, so single short events (one storm, one bad day) may be missed or over-weighted.

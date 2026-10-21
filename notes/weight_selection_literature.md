@@ -12,9 +12,10 @@ EXPERIMENTS §5 (Paper) is done.
    preconditioned at the trained vanilla checkpoint). Tool: `tools/gradient_audit.py`; maths in
    `notes/gradient_audit.pdf`. The same tool already set the competing losses' weights by Adam-share
    matching to Minkowski (2026-09-23, `src/losses/competing.py`).
-2. **Bracketing sweep.** Log-spaced weights around the calibrated centre; lower bound = activity
-   (MAE >= +1% over vanilla), upper bound = loss gaming (anisotropy, peak overshoot, images); the
-   largest active, non-gaming weight is chosen.
+2. **Bracketing sweep.** The calibrated bracket of DECISIONS §16 / RESEARCH_NOTES §5:
+   {λ*/3, λ*, 3λ*, 10λ*}, one fixed epoch budget, last checkpoint; the point chosen is the best
+   exceedance ratio with ΔMAE <= +5% and anisotropy <= 1.2x vanilla (the anisotropy cap is the
+   guard against loss gaming), then 3 seeds there. Activity floor: ΔMAE >= +1% (CLAUDE.md).
 
 ## What is established (cite)
 
@@ -33,9 +34,9 @@ EXPERIMENTS §5 (Paper) is done.
 
 - **Transfer of a fixed weight across datasets / temporal aggregations by gradient share** (15-min ->
   hourly). Probably a modest methodological point rather than a headline.
-- **Hacking-bounded weight selection for a structural loss in precipitation SR**: lower bound by
-  activity, upper bound by documented loss gaming judged on metrics the loss does not optimise
-  (anisotropy, peak overshoot, images), with the w = 1e-3 episode as evidence. In precipitation SR,
+- **Hacking-bounded weight selection for a structural loss in precipitation SR**: the §16 rule
+  (best tail with an accuracy cap and an anisotropy cap that guards against loss gaming), judged
+  on metrics the loss does not optimise, with the w = 1e-3 episode as evidence. In precipitation SR,
   weights are tuned without such a bound (e.g. MSRGAN, [doi](https://doi.org/10.3390/rs17132281)) or
   fixed; a review of an EGUsphere preprint asks for exactly such a sensitivity test
   ([EGUsphere](https://egusphere.copernicus.org/preprints/2026/egusphere-2026-861/)). Most defensible claim.

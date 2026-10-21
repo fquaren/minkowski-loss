@@ -2521,3 +2521,30 @@ exceedances >= 31 mm/h, 2.0% of those >= 1 mm/h and 0.60% of valid pixel-frames.
 - *The vanilla baseline was restarted* (researcher): the run started 14:57 (`logs/unet_ana_20261021_145706.log`,
   4 of 25 epochs, ~45 min each, no NaN) was stopped at 18:00 so that every Study-1 run trains on the
   same final lists. Its run directory is kept but is not a result.
+
+*Note on §37 step 2 (Claude, 2026-10-21, later the same day).* The selection rule for the bracket
+already exists: DECISIONS §16 / RESEARCH_NOTES §5 propose the calibrated bracket {λ*/3, λ*, 3λ*, 10λ*}
+with one fixed epoch budget, the last checkpoint evaluated, and the point chosen as **the best
+exceedance ratio with ΔMAE <= +5% and anisotropy <= 1.2x vanilla**, then 3 seeds at that point and the
+whole bracket reported. Step 2 uses that rule (with the activity floor of CLAUDE.md, ΔMAE >= +1%,
+as a validity check) unless the researcher changes it; the wording "largest active, non-gaming
+weight" above was a loose paraphrase, superseded by this rule.
+
+**Why the screen missed rsjas 2023 (2026-10-21; `scripts/data_quality/why_missed.py`,
+`notes/data_analysis_v4/why_missed_rsjas_2023.md`, methods §6.8).** Checked on the two worst days
+(10 March, 22 July) and on the radar-day ranking.
+- *Rule 5:* no 2023 day reaches score 1 (worst 0.90). The iso31 reference is the median of the five
+  nearest contributing radars (rsfrg, hrgra, hrulj, husze, huhar); three of them were noisy on the
+  same days, so the median (1,300-6,000 isolated >= 31 mm/h pixels) was within 3-8x of rsjas. The
+  ceiling and f150 references include rsjas's own seasonal q99, inflated by its bad weeks. rsfrg and
+  hrgra were caught (83 and 77 radar-days); hrulj was not (2).
+- *Pixel rules:* ~125,000 of ~200,000 raw pixel-frames >= 31 mm/h per day stay >= 31. The noise is
+  clustered (not isolated), moving (not persistent), surrounded by noise (not a burst in quiet
+  surroundings) and supported by noise in adjacent frames (not unsupported). Everything left above
+  500 mm/h is coded refused (larger than the 500 px repair guard), and refused tile-hours are rejected
+  whole; the moderate part (31-150 mm/h) reaches the dataset.
+- *Effect before the exclusion:* 1,226 rsjas 2023 tile-hours in the lists, 5.4% with a 15-min rate
+  >= 150 mm/h (2021-22: 0.8-1.1%). Excluded now (above).
+- **Pending the researcher: hrulj 2023** (same pattern, corrected ~11x the median radar vs 1.7-2.1x in
+  2024-25; only 2 radar-days excluded). A future rule-5 revision should not take its reference from
+  neighbours that can fail together, nor from the radar's own record (EXPERIMENTS §5).

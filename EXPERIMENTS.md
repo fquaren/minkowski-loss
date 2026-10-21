@@ -373,21 +373,42 @@ isoperimetric scatter.
           3 replaced and passing, 4 pass, 5 explained (sub-asymptotic). **Decision: train on v4.**
           Hourly levels: u = 50.1 mm for POT fits; 20.2 / 31.7 / 50.1 mm as the hourly
           equivalents of 31 / 53 / 89 mm/h. Before the first v4 training run:
-          - [ ] hourly `PHYSICAL_THRESHOLDS` for the loss and FSS levels. The store's
-                `physical_thresholds.npy` still holds the 15-min levels (build log, aux stage);
+          *Status 2026-10-21 (target = advection-corrected field, `patches_v4_adv`, `configs/config_v4_adv.yaml`,
+          DECISIONS §35):* store, gamma targets, dataset checks, training validator and 1-epoch smoke run
+          all pass (`logs/prep_train_v4_adv.log`; two bugs in `check_datasets.py` fixed; the overfit check
+          needs 600 steps on real hourly data). Radar exclusions applied (§36b/c and rsjas 2023, list
+          `quality_v4/biased_radar_years_all.csv`): final lists train 1,302,352 / val 172,248 /
+          test 213,800 / nimbus 378,567. **Vanilla baseline running** since 2026-10-21 18:11
+          (`logs/unet_ana_20261021_181139.log`, w = 0, 25 epochs, ~41 min each).
+          - [x] hourly `PHYSICAL_THRESHOLDS` for the loss and FSS levels: the gamma step wrote them to the
+                `patches_v4_adv` store (validated 2026-10-21);
+          - [ ] **structural-loss weight on hourly data (DECISIONS §37).** Step 1a done: w_init = 8.5e-5
+                (1e-4 transfers within 15% at initialisation). Step 1b at the trained vanilla
+                checkpoint (Adam share; `tools/gradient_audit.py --run vanilla_v4=<run>`). Step 2:
+                the calibrated bracket with the §16 selection rule (best exceedance ratio with
+                ΔMAE <= +5% and anisotropy <= 1.2x vanilla; 3 seeds at the chosen point);
+          - [ ] re-derive the POT level on `patches_v4_adv` (`pot_threshold.py`) before any evaluation:
+                the corrected field lowers tile maxima by a median ~30% (§35);
+          - [x] radar exclusions: §36b (3 radar-years), §36c (Lithuania 2026), rsjas 2023 (researcher);
+          - [ ] rule 5 is blind to a radar that is bad for weeks: its reference is the radar's own
+                seasonal q99 (DECISIONS §36, rsjas). Consider a reference that excludes the radar's own
+                record (neighbours only, or the radar's other years) in a future screening revision;
           - [x] `eval_extremes.py`: `--pot_threshold 50.1` on v4, plus the day-block intervals and
                 leave-period-out variants (done 2026-10-19);
           - [x] hourly `PHYSICAL_THRESHOLDS` and `configs/config_v4.yaml` (DECISIONS §33);
-          - [ ] persistence thresholds, gamma targets, dataset checks, smoke run: queued after the
-                build (`scripts/hpc/prep_train_v4.sh`, `logs/prep_train_v4.log`);
+          - [x] persistence thresholds, gamma targets, dataset checks, smoke run: done 2026-10-21 on the
+                corrected store (`scripts/hpc/prep_train_v4_adv.sh`, resumed by `prep_train_v4_adv_from8.sh`);
           - [x] ownerless tile-hours excluded via `*_owned.txt` lists (DECISIONS §34);
           - [ ] **pre-break ablation (DECISIONS §34):** vanilla backbone on post-2015-12-12 train rows
                 only vs on all rows, same budget and seed, both evaluated on post-break test rows
                 (`full_<split>_flags.csv.gz` has `pre_break`). Pre-break fields are 1.3-6.5x more
                 fragmented at 0.1 mm, where most of the Minkowski gradient sits; this decides whether
-                24% of train stays;
+                24% of train stays. *2026-10-21:* the running vanilla baseline is the all-data arm (both
+                arms select on the full val list, DECISIONS §34 amendment); the post-break arm runs after
+                it on GPU 1 (`<list>_postbreak.txt` lists ready);
           - [ ] recompute sigma_r (`compute_residual_stats.py`) for each new backbone;
-          - [ ] a v4 config (store path, scaler, DEM stats) and a smoke run.
+          - [x] a v4 config (store path, scaler, DEM stats) and a smoke run (`configs/config_v4_adv.yaml`,
+                2026-10-21).
       Small items:
       - Fix slide 10 of `notes/mch_slides.pdf` (a front, not a ray).
       - Lagrangian version of the decorrelation table (DECISIONS §21 caveat).
