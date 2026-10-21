@@ -164,7 +164,7 @@ Check in this order:
   - Config: `configs/config_v4_adv.yaml` (store `patches_v4_adv`).
   - The lists exclude ownerless tile-hours (§34) and the flagged radar-years in
     `quality_v4/biased_radar_years_all.csv` (§36: three from the tail boundary test, Lithuania 2026,
-    rsjas 2023). Apply changes with `scripts/hpc/apply_radar_exclusion.sh <csv>`, which rewrites the
+    rsjas 2023, hrulj 2023). Apply changes with `scripts/hpc/apply_radar_exclusion.sh <csv>`, which rewrites the
     lists and re-validates the store; then retrain, since the lists changed.
   - **Rule 5 cannot see radars that fail together.** Its reference is the median of 5 neighbours
     plus the radar's own seasonal q99, so neighbours failing at the same time hide each other (rsjas

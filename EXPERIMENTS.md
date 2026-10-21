@@ -377,9 +377,9 @@ isoperimetric scatter.
           DECISIONS §35):* store, gamma targets, dataset checks, training validator and 1-epoch smoke run
           all pass (`logs/prep_train_v4_adv.log`; two bugs in `check_datasets.py` fixed; the overfit check
           needs 600 steps on real hourly data). Radar exclusions applied (§36b/c and rsjas 2023, list
-          `quality_v4/biased_radar_years_all.csv`): final lists train 1,302,352 / val 172,248 /
-          test 213,800 / nimbus 378,567. **Vanilla baseline running** since 2026-10-21 18:11
-          (`logs/unet_ana_20261021_181139.log`, w = 0, 25 epochs, ~41 min each).
+          `quality_v4/biased_radar_years_all.csv`, incl. rsjas and hrulj 2023): final lists train 1,299,686 / val 172,050 /
+          test 212,803 / nimbus 378,567. **Vanilla baseline running** since 2026-10-21 ~21:20
+          (`logs/exclude_then_vanilla_hrulj.log`, w = 0, 25 epochs, ~42 min each).
           - [x] hourly `PHYSICAL_THRESHOLDS` for the loss and FSS levels: the gamma step wrote them to the
                 `patches_v4_adv` store (validated 2026-10-21);
           - [ ] **structural-loss weight on hourly data (DECISIONS §37).** Step 1a done: w_init = 8.5e-5
@@ -389,7 +389,7 @@ isoperimetric scatter.
                 ΔMAE <= +5% and anisotropy <= 1.2x vanilla; 3 seeds at the chosen point);
           - [ ] re-derive the POT level on `patches_v4_adv` (`pot_threshold.py`) before any evaluation:
                 the corrected field lowers tile maxima by a median ~30% (§35);
-          - [x] radar exclusions: §36b (3 radar-years), §36c (Lithuania 2026), rsjas 2023 (researcher);
+          - [x] radar exclusions: §36b (3 radar-years), §36c (Lithuania 2026), rsjas and hrulj 2023 (researcher);
           - [ ] rule 5 is blind to a radar that is bad for weeks: its reference is the radar's own
                 seasonal q99 (DECISIONS §36, rsjas). Consider a reference that excludes the radar's own
                 record (neighbours only, or the radar's other years) in a future screening revision;

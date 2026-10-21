@@ -624,7 +624,8 @@ days of 2023, 10 March and 22 July; `notes/data_analysis_v4/why_missed_rsjas_202
   the lists; none had a refused pixel, but 5.4% had a 15-min rate >= 150 mm/h, against 0.8-1.1% of
   its tile-hours in 2021-2022, and 46-51% of those in February-March had a rate >= 31 mm/h.
 - *Uljenje (hrulj) 2023* shows the same pattern (corrected ~11 times the median radar, against
-  1.7-2.1 in 2024-25) and is a candidate for the same exclusion (decision pending).
+  1.7-2.1 in 2024-25) and is **excluded as well** (researcher, 2026-10-21): 2,666 train, 198
+  validation and 997 test tile-hours.
 
 **Limitations of this check.** The corrected maps apply the pixel repairs and the radar exclusions,
 not the tile-hour rejections (refused repairs, ceilings, repeated values), so they overstate what

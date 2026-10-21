@@ -2548,3 +2548,9 @@ weight" above was a loose paraphrase, superseded by this rule.
 - **Pending the researcher: hrulj 2023** (same pattern, corrected ~11x the median radar vs 1.7-2.1x in
   2024-25; only 2 radar-days excluded). A future rule-5 revision should not take its reference from
   neighbours that can fail together, nor from the radar's own record (EXPERIMENTS §5).
+- **Decision (researcher, 2026-10-21 21:00): hrulj 2023 excluded** as a radar-year, like rsjas 2023
+  (`biased_radar_years_all.csv` now 7 radar-years). Removed: 2,666 train, 198 validation, 997 test
+  tile-hours. **Final lists: train 1,299,686 / val 172,050 / test 212,803 / nimbus 378,567**;
+  scaler unchanged (corrected train max 613.3 mm). The vanilla baseline restarted at 18:11 was stopped
+  at 21:06 (3 of 25 epochs, no NaN) and restarts on these lists after the store re-validation
+  (`logs/exclude_then_vanilla_hrulj.log`).

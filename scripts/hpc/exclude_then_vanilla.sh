@@ -1,5 +1,5 @@
 #!/bin/bash
-# DECISIONS §36 (researcher, 2026-10-21): exclude rsjas 2023, then restart the vanilla v4_adv baseline on
+# DECISIONS §36 (researcher, 2026-10-21): exclude the listed radar-years (rsjas 2023, then hrulj 2023), then restart the vanilla v4_adv baseline on
 # the final lists. The baseline starts only if the exclusion and the store re-validation pass.
 cd "$(dirname "$0")/../.."
 CSV=/home/fquareng/work/data/extremes/OPERA/quality_v4/biased_radar_years_all.csv
