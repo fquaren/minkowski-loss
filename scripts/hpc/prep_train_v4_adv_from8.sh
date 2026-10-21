@@ -21,6 +21,6 @@ bash scripts/hpc/launch_unet_analytical.sh configs/unet_analytical.yaml config 0
 SMOKE_LOG=$(ls -t logs/unet_ana_*.log | head -1)
 echo "=== smoke log: $SMOKE_LOG"; tail -20 "$SMOKE_LOG"
 echo "=== 10. validate the smoke run's log $(date)"
-$GPU $P scripts/validate/validate_stage.py training --config $CFG --batch 4 --steps 30 --log "$SMOKE_LOG" 2>&1 \
+$GPU $P scripts/validate/validate_stage.py training --config $CFG --batch 8 --steps 600 --log "$SMOKE_LOG" 2>&1 \
   | grep -v Warn | tail -20 || { echo "SMOKE LOG VALIDATION FAILED: see validation/training/"; exit 1; }
 echo "=== PREP_TRAIN_V4_ADV_DONE $(date)"
