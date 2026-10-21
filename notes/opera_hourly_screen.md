@@ -520,7 +520,18 @@ the yearly ownership of the contributing radars (§27).
    the 6 km bands either side of each seam between two countries' owned areas; a border side is
    flagged as in test 2, and a country-year when at least two of its borders are flagged (one border
    alone can be a mountain crest or a coast). Flagged country-years lose their radars' tile-hours as in
-   test 2. *Result: pending.*
+   test 2. *Result:* of 1,034 border sides x years (median R10 1.00), one country-year is flagged,
+   Lithuania 2026 (R10 2.3 against Poland and 2.2 against Sweden), and its tile-hours are removed
+   (1,888, all in the 2024-26 NIMBUS evaluation set). Hungary, Slovakia and Romania show no network
+   bias (median R10 0.99, 1.02, 1.11 over their borders; maximum 1.7). Together with test 2, the
+   heavy-rain excess of the suspect radars does not jump at any boundary: it is attributed to the
+   region's climate and to intermittent artefacts, not to a consistent radar excess.
+
+**A radar that misbehaves for one year.** The raw climatology of rates >= 31 mm/h shows a half-disk
+of noise over Serbia in 2023 only (97,000 km²). Its arc and straight edge both centre on Jastrebac
+(rsjas), 4 km away, with the composite's 250 km range as radius
+(`notes/data_analysis_v4/noise_radar_2023.md`). No boundary test is designed for this; whether the
+screen removes it is measured on the raw-vs-corrected climatology.
 
 **What the tests cannot see.**
 - A bias shared by two neighbouring networks cancels at their common seam (if Hungary and Slovakia

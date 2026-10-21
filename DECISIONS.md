@@ -2433,6 +2433,26 @@ analyze_national`).**
   250 km, so the "national border" is the composite's network seam, not the political border; over
   sea both sides are sea.
 
+**Result (2026-10-21; `notes/data_analysis_v4/radar_band_national.md`).** 1,034 qualifying border sides
+x years; median R10 1.00. 13 border sides flagged, **one country-year: Lithuania 2026** (R10 2.34
+against Poland, interval 2.10-2.61; 2.22 against Sweden, 1.65-3.18; not against Latvia) -> ltlau and
+ltvil 2026.
+- **Hungary, Slovakia, Romania: no network bias.** Median R10 over their qualifying borders 0.99
+  (hu, 63 border-years), 1.02 (sk, 44), 1.11 (ro, 6); maximum 1.69 (ro vs hr 2025), 1.67 (sk vs hu
+  2018). With §36b this closes the tail suspicion: neither the radars' own boundaries nor the
+  national seams show heavy rain jumping where these networks begin. Their high tail is therefore
+  attributed to climate or to intermittent artefacts (`suspect_radars.pdf`), not to a consistent
+  excess.
+- *Single flagged borders, not acted on (as pre-stated):* Belgium vs UK 2018-20 and NL/UK 2016, 2024-25
+  (sea seams over the Channel / North Sea), UK vs Ireland 2023, Latvia vs Poland 2016 (20 days), and
+  France vs Croatia 2023-25. The last is a geometry artefact: with no Italian radar contributing those
+  years, nearest-radar ownership puts a seam between Aleria (Corsica) and Goli (Croatia) over Tuscany,
+  at the edge of both ranges. The two-border rule kept it from acting, as intended.
+- *Exclusion applied as pre-stated* (`apply_radar_exclusion.sh quality_v4/biased_radar_years_all.csv`,
+  = §36b's three + ltlau/ltvil 2026): only the nimbus set has 2026 rows; 1,888 tile-hours removed
+  (1.4% of its 2026 rows; 186 with a maximum >= 20.2 mm). Train, validation, test and the scaler are
+  unchanged.
+
 **Decision (researcher, 2026-10-20): the pre-break ablation (§34) runs right after the smoke run.**
 Lists: `scripts/dataset_v2/postbreak_lists.py` writes `<list>_postbreak.txt` in the adv store's meta
 (on the v4 owned lists: train 76.0%, val 86.1%, test 68.3% post-break). Both arms validate and are
