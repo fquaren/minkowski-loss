@@ -2554,3 +2554,16 @@ weight" above was a loose paraphrase, superseded by this rule.
   scaler unchanged (corrected train max 613.3 mm). The vanilla baseline restarted at 18:11 was stopped
   at 21:06 (3 of 25 epochs, no NaN) and restarts on these lists after the store re-validation
   (`logs/exclude_then_vanilla_hrulj.log`).
+
+**Systematic scan for rsjas-like radar-years (2026-10-21; `notes/data_analysis_v4/rate_clim_per_radar_year.csv`).**
+From the raw-vs-corrected chunks: per radar-year, the corrected frequency of 15-min rates >= 31 mm/h
+against the radar's other years (x_own) and the median radar-year (x_all, 2.5e-5); 1,545 radar-years.
+69 have x_own >= 3 and x_all >= 3, a loose bar (a few storm days in a 1-in-7-day sample can triple a
+year). Two discriminators: the share of the year in its top 6-day chunk (all radar-years: median 0.55)
+and the share in November-March chunks (median 0.027, 90th percentile 0.36).
+- rsjas 2023 (x_own 54, winter 0.56) and hrulj 2023 (5.9, 0.43): already excluded.
+- Summer-concentrated, consistent with convective seasons: fikor/fianj 2025, frpla 2021, fipet 2024,
+  frtre 2022, deasb 2019, deeis 2022, frcae 2025, eesur 2021, frbou 2020, frnim 2022, plram 2024.
+- **Winter-heavy, like rsjas/hrulj, to be looked at (researcher's decision):** mtgud 2017 (Malta;
+  x_own 22, winter 0.64; Mediterranean autumn convection is real, so not conclusive), esclg 2025
+  (7.6, 0.53), ukham 2025 (6.5, 0.50, peak in early November). isegs 2017 (6.7, 0.27) is borderline.
