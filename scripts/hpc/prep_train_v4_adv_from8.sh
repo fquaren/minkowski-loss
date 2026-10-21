@@ -10,7 +10,9 @@ CFG=configs/config_v4_adv.yaml
 set -o pipefail
 echo "=== resume at step 8, code $(git rev-parse --short HEAD), $(date)"
 echo "=== 8. validate training on a real batch (GPU 1) $(date)"
-$GPU $P scripts/validate/validate_stage.py training --config $CFG --batch 8 --steps 150 2>&1 | grep -v Warn | tail -20 \
+# 600 overfit steps: at 150 the real hourly batch reached MSE 36% of start (bar 20%); at 600, 20% and the
+# structural term -73% (validation/training/20261021_1052_5b66c37.md). Criterion unchanged, step budget only.
+$GPU $P scripts/validate/validate_stage.py training --config $CFG --batch 8 --steps 600 2>&1 | grep -v Warn | tail -20 \
   || { echo "TRAINING VALIDATION FAILED: see validation/training/"; exit 1; }
 echo "=== 9. smoke run $(date)"
 SMOKE=/work/fquareng/ch2/minkowski-loss/logs/config_v4_adv_smoke.yaml
