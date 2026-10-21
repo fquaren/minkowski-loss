@@ -1447,6 +1447,15 @@ is signed off by a passing report; its path goes in DECISIONS / EXPERIMENTS when
       rejection rate per intensity bin, and spot-check each rule's gallery by eye.
 
 ### To explore
+- [ ] **Follow-up: structural weight set by gradient share during training (2026-10-21, kept for
+      later by the researcher).** Instead of a fixed weight, set w each step so the structural term
+      contributes a fixed share r* of the gradient (r* measured where the fixed weight was validated,
+      15-min data at 1e-4). Scale-free across 15-min, hourly and other products, and one rule for the
+      competing losses (would answer the unmatched-budget problem of DECISIONS §16). Close to existing
+      gradient-balancing methods: GradNorm (Chen et al., ICML 2018), the PINN learning-rate annealing
+      of Wang, Teng & Perdikaris (arXiv 2001.04536), and Zhong & Maki (CVPR 2020, arXiv 1908.05997),
+      who set an auxiliary weight from a target gradient-norm ratio. A change of method: the earlier
+      results would need re-running for comparison.
 - [ ] **More ways to detect unphysical extremes (write-up 2026-10-09, no time now).** All are
       magnitude-free, so they do not depend on trusting any product's peak values (DECISIONS
       §25, "RADKLIM as a presence test"). From most to least independent:
