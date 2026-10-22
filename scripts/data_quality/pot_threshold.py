@@ -58,12 +58,15 @@ SHOW = [10, 15, 19, 25, 31, 40, 53, 70, 89, 115, 150]
 def set_version(v):
     """v4 (DECISIONS §32): hourly store, hourly threshold grid and levels, truncated fit at 500 mm."""
     global STORE, META, OUT, U_MIN, U_GRID, VERSION, LEVELS, CLUSTER_U, TRUNC, UNIT, SHOW
-    if v == "v4":
+    if v in ("v4", "v4_adv"):
         STORE, META = f"{D}/patches_v4/preprocessed_dataset.zarr", f"{D}/patches_v4/meta"
         OUT = f"{D}/quality_v4/pot_threshold"
+        if v == "v4_adv":       # corrected target (DECISIONS §35): same store rows, the adv lists' rows
+            STORE = f"{D}/patches_v4_adv/preprocessed_dataset.zarr"
+            OUT = f"{D}/quality_v4/pot_threshold_adv"
         U_MIN = 5.0
         U_GRID = [5, 6, 7, 8, 10, 12, 14, 16, 18, 20.2, 23, 26, 31.7, 35, 40, 45, 50.1, 60, 70, 80, 100]
-        VERSION, LEVELS, CLUSTER_U, TRUNC, UNIT = "v4", (20.2, 31.7, 50.1), 20.2, 500.0, "mm in 1 h"
+        VERSION, LEVELS, CLUSTER_U, TRUNC, UNIT = v, (20.2, 31.7, 50.1), 20.2, 500.0, "mm in 1 h"
         SHOW = [5, 8, 10, 14, 20.2, 26, 31.7, 40, 50.1, 70, 100]
 
 
@@ -86,13 +89,27 @@ def _read_block(args):
     return np.concatenate(vals), np.concatenate(pidx)
 
 
+def _adv_info(info, split):
+    """v4_adv: keep only the rows of the corrected lists (ownerless, excluded radar-years and
+    incomplete corrected fields are out) and use their corrected tile max; other rows get max -1,
+    so they enter no sample. Inclusion weights stay those of the v4 strata."""
+    if VERSION != "v4_adv":
+        return info
+    lst = pd.read_csv(f"{D}/patches_v4_adv/meta/{SPLITS[split]}.txt", header=None, usecols=[3, 4])
+    mx = np.full(len(info), -1.0)
+    mx[lst[4].values.astype(int)] = lst[3].values
+    info = info.copy()
+    info["max"] = mx
+    return info
+
+
 def extract(workers):
     os.makedirs(OUT, exist_ok=True)
     for split, stem in SPLITS.items():
         out = f"{OUT}/exceed_{split}.npz"
         if os.path.exists(out):
             print(f"[extract] {split}: exists, skipping"); continue
-        info = pd.read_csv(f"{META}/{stem}_info.csv.gz")
+        info = _adv_info(pd.read_csv(f"{META}/{stem}_info.csv.gz"), split)
         assert (info.store_row.values == np.arange(len(info))).all()
         rows = np.where(info["max"].values > U_MIN)[0]
         blocks = [(split, b) for b in np.array_split(rows, max(1, len(rows) // 2000))]
@@ -230,7 +247,7 @@ def bootstrap(sample, B, workers, grid=None, us_mrl=None, seed=0):
 
 
 def load_split(split):
-    info = pd.read_csv(f"{META}/{SPLITS[split]}_info.csv.gz")
+    info = _adv_info(pd.read_csv(f"{META}/{SPLITS[split]}_info.csv.gz"), split)
     z = np.load(f"{OUT}/exceed_{split}.npz")
     vals, pidx = z["vals"] / 100.0, z["pidx"]
     info["day"] = info.timestamp.astype(str).str[:8]
@@ -402,7 +419,7 @@ if __name__ == "__main__":
     ap.add_argument("--stage", choices=["extract", "analyze", "all"], default="all")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--B", type=int, default=200)
-    ap.add_argument("--version", default="v3", choices=["v3", "v4"])
+    ap.add_argument("--version", default="v3", choices=["v3", "v4", "v4_adv"])
     a = ap.parse_args()
     set_version(a.version)
     if a.stage in ("extract", "all"):

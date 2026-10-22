@@ -2592,3 +2592,19 @@ convective and event pages). No growth-aware motion estimate is needed.
   w* = 1e-4 x 16.127 / (hourly Adam share at 1e-4) rounded to 2 significant figures (written to
   `eval_results/gradient_audit/2026-10-22_v4adv_vanilla/w_star.txt`), then trains the bracket in the order
   w*, 3w*, 10w*, w*/3 on GPU 1, one run after another (two at once would exceed the 8-core budget).
+
+**POT level on the corrected store (2026-10-22; `scripts/data_quality/pot_threshold.py --version v4_adv`,
+`notes/data_analysis_v4/pot_threshold_adv.md`, `pot_threshold_adv_fits.csv`).** Same grid, fits and
+day-block bootstrap as §32, on the rows of the corrected lists (exclusions applied) with their corrected
+tile maxima (0 mismatches against the stored fields).
+- **The §32 rule gives no level.** The highest grid point, u = 100 mm (6,898 exceedances on 646 days,
+  above the 1,000 minimum), has sigma* = -8.9 [-26, 12.6] and xi = 0.30, outside the intervals of every
+  lower u; on the plain sums it was already marginal (it fell just outside at 60 mm).
+- Between 31.7 and 80 mm the weighted train fit is stable: xi 0.18-0.21, sigma* 2.9-6.4, all inside each
+  other's intervals. Without the 100 mm point the rule would give 31.7 mm; with it, nothing.
+- Exceedances (corrected): at 50.1 mm train 99,933 (1,702 days), test unweighted 14,480 (305 days), xi
+  0.19 / 0.16; at 31.7 mm train 427,828 (2,366 days), test 77,262 (392 days), xi 0.19 / 0.18.
+- *Pending the researcher:* (a) keep u = 50.1 mm, the level pre-stated on the plain sums (§32), which lies
+  inside the stable range (Claude's recommendation: no rule changed after seeing the result); or (b) amend
+  the rule's minimum count (e.g. >= 10,000 exceedances) so the 100 mm point drops out, giving 31.7 mm, with
+  five times more test exceedances, but chosen after seeing the fits.
