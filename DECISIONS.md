@@ -2577,3 +2577,12 @@ that year. The radar exclusions are final at 7 radar-years; the vanilla baseline
 **Decision (researcher, 2026-10-22), §35: the advection-corrected target is accepted on fast-growing
 convection**, after the plain-vs-corrected gallery (`notes/data_analysis_v4/gallery_plain_vs_adv.pdf`,
 convective and event pages). No growth-aware motion estimate is needed.
+
+**Decisions (researcher, 2026-10-22).**
+- *§37 step 2 (weight bracket):* Claude's recommendations accepted. The §16 rule picks the weight
+  (best exceedance ratio with ΔMAE <= +5% and anisotropy <= 1.2x vanilla; ΔMAE >= +1% for activity);
+  bracket {w*/3, w*, 3w*, 10w*} around the step-1 centre; **full budget** (25 epochs, ~18 h each),
+  same seed; **3 seeds** at the chosen weight; the choice is made on **validation**, test is used only
+  for reporting; exceedance ratio at the hourly POT level re-derived on the corrected store.
+- *§34 amendment (pre-break ablation):* accepted. Both arms select on the full validation list, and the
+  **last** checkpoint of each arm is evaluated (not "best"), on the post-break test rows.
