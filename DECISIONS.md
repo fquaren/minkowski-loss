@@ -2567,3 +2567,13 @@ and the share in November-March chunks (median 0.027, 90th percentile 0.36).
 - **Winter-heavy, like rsjas/hrulj, to be looked at (researcher's decision):** mtgud 2017 (Malta;
   x_own 22, winter 0.64; Mediterranean autumn convection is real, so not conclusive), esclg 2025
   (7.6, 0.53), ukham 2025 (6.5, 0.50, peak in early November). isegs 2017 (6.7, 0.27) is borderline.
+
+**Decision (researcher, 2026-10-22): mtgud 2017, esclg 2025 and ukham 2025 are kept** after the review
+pages (`notes/data_analysis_v4/radar_year_review.pdf`). Stated as residuals in the methods appendix:
+ukham 2025's radial spokes survive the screen; esclg 2025's raw maxima of 1028 mm/h (a capped value not
+in the ceiling table) are cut to 109-486 mm/h by the screen; mtgud 2017 was the only radar over Malta
+that year. The radar exclusions are final at 7 radar-years; the vanilla baseline is not restarted.
+
+**Decision (researcher, 2026-10-22), §35: the advection-corrected target is accepted on fast-growing
+convection**, after the plain-vs-corrected gallery (`notes/data_analysis_v4/gallery_plain_vs_adv.pdf`,
+convective and event pages). No growth-aware motion estimate is needed.

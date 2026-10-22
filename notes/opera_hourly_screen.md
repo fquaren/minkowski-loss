@@ -395,9 +395,12 @@ a fact not yet checked against a source.
   The no-blend scheme then switches frames abruptly at the halfway point, so a newly formed
   cell can appear suddenly instead of growing smoothly. My expectation is that this is a minor
   effect compared with the beading, but it's an inference, not something measured. It's the
-  assumption that would most change the conclusion. *Check planned:* plain and corrected
-  fields side by side for the same hours, including fast-growing convective cases; if those
-  look wrong, the next step is a growth-aware motion estimate.
+  assumption that would most change the conclusion. *Check done (2026-10-22):* plain and
+  corrected fields side by side for 100 hours (40 random, 40 summer convective hours >= 20.2 mm,
+  20 event hours; `notes/data_analysis_v4/gallery_plain_vs_adv.pdf`). The researcher judged the
+  corrected field acceptable on fast-growing convection, so no growth-aware motion estimate is
+  used. This is a visual check, not a measurement; the effect on the tail is quantified
+  separately (corrected tile maxima a median ~30% below the plain sum, DECISIONS §35).
 - **A pixel-hour needs all four frames.** Hours with a missing frame are dropped. If radar
   outages correlate with severe weather (power or communication loss in storms), the most
   intense hours are under-sampled. *[verify]*: outage rate as a function of rain intensity
@@ -591,6 +594,13 @@ corrected frequency, 3.3 per 10⁵ frames):
   straight streaks south of the site survive, and the other Romanian radars at 4 to 5 times the
   median. The boundary tests (§6.7) find no jump at Romania's borders, so this is partly the region's
   convective climate and partly intermittent artefacts; it is stated as a limitation, not removed.
+- *A systematic scan of all 1,545 radar-years* (corrected frequency against the radar's other years
+  and against the median radar-year; `rate_clim_per_radar_year.csv`) finds no other case of
+  Jastrebac's size. Most radar-years well above their own other years peak in summer, as convective
+  seasons do. Three winter-heavy ones were reviewed by image (`radar_year_review.pdf`) and **kept**
+  (researcher, 2026-10-22), with stated residuals: radial spokes around Hameldon Hill (ukham) in 2025
+  survive the screen; Castillo las Guardas (esclg) in 2025 has raw maxima capped at 1028 mm/h,
+  which the screen lowers to 109-486 mm/h; Gudja (mtgud) was the only radar over Malta in 2017.
 
 **Why the screen misses the Jastrebac noise** (`scripts/data_quality/why_missed.py` on the two worst
 days of 2023, 10 March and 22 July; `notes/data_analysis_v4/why_missed_rsjas_2023.md`).
