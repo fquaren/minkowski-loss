@@ -1506,6 +1506,18 @@ is signed off by a passing report; its path goes in DECISIONS / EXPERIMENTS when
 - [ ] Multiple seeds: every result above is a single run with no interval.
 
 ### Deferred
+- [ ] **v4 15-min companion store (very low priority; researcher, 2026-10-22).** Keeps training and
+      evaluation on 15-min rates open on the same footing as the hourly target. Design (agreed):
+      - **one screened 15-min frame per stored tile-hour**, drawn at random (seeded) among its four
+        frames H-45 .. H, taken from the v4 hourly chain's final frames (`HourlyDay.fin`), so every
+        row of `patches_v4_adv` gets a 15-min twin with the same tile, hour, split and exclusions;
+      - coarse and interpolated inputs recomputed from that frame; gamma targets on the original
+        15-min levels (0.1-150 mm/h, `config.yaml` grid); the frame index stored per row;
+      - its own POT level re-derived on the store (not u = 31 inherited);
+      - cost: a replay of every stored day without advection (~3 min/day/worker; ~3-4 days with 3
+        workers beside training), then ~5 h of gamma targets; disk ~ that of `patches_v4_adv`.
+      The v2 / v3 stores have 15-min gamma targets but a different screen, splits and no radar
+      exclusions, so they are not comparable with v4 (DECISIONS §36, CLAUDE.md data caveats).
 - [ ] b0 (persistent homology) confirmatory run at the winning weight
 - [ ] Compute proposal: the scale argument rests on DECISIONS §5–6
 - [ ] Emulator-based Minkowski loss: lowest priority, see §1
