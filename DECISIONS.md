@@ -2586,3 +2586,9 @@ convective and event pages). No growth-aware motion estimate is needed.
   for reporting; exceedance ratio at the hourly POT level re-derived on the corrected store.
 - *§34 amendment (pre-break ablation):* accepted. Both arms select on the full validation list, and the
   **last** checkpoint of each arm is evaluated (not "best"), on the post-break test rows.
+- *Launch (researcher, 2026-10-22: no further approval needed):* `scripts/hpc/run_bracket_v4adv.sh`
+  (`logs/bracket_v4adv.log`) waits for the vanilla baseline, runs step 1b (audit at
+  `UNet_Ana_20261021_211732`, `--which best`, same settings as the 15-min audit), sets
+  w* = 1e-4 x 16.127 / (hourly Adam share at 1e-4) rounded to 2 significant figures (written to
+  `eval_results/gradient_audit/2026-10-22_v4adv_vanilla/w_star.txt`), then trains the bracket in the order
+  w*, 3w*, 10w*, w*/3 on GPU 1, one run after another (two at once would exceed the 8-core budget).
