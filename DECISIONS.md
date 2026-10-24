@@ -2608,3 +2608,11 @@ tile maxima (0 mismatches against the stored fields).
   inside the stable range (Claude's recommendation: no rule changed after seeing the result); or (b) amend
   the rule's minimum count (e.g. >= 10,000 exceedances) so the 100 mm point drops out, giving 31.7 mm, with
   five times more test exceedances, but chosen after seeing the fits.
+
+**Result 1b (2026-10-22; `eval_results/gradient_audit/2026-10-22_v4adv_vanilla/`).** At the trained hourly
+vanilla checkpoint (`UNet_Ana_20261021_211732`, best = epoch 24), Minkowski at 1e-4 has an Adam share of
+8.83 (15-min vanilla: 16.13) and a raw share of 6.0 (15-min: 24); cos with the MSE gradient -0.14
+(15-min: -0.72). **w* = 1e-4 x 16.127 / 8.833 = 1.8e-4**, 2.1x the step-1a estimate (8.5e-5), below the 3x
+bar for reporting a disagreement; 1b governs. Bracket (run order): 1.8e-4, 5.4e-4, 1.8e-3, 6.0e-5.
+Runs: 1.8e-4 `UNet_Ana_20261022_160540` (done 2026-10-23 12:20), 5.4e-4 `UNet_Ana_20261023_121956`
+(done 2026-10-24 08:37), 1.8e-3 running, then 6.0e-5; ~20 h each, no NaN so far.
