@@ -5,8 +5,10 @@ extreme precipitation (EUMETNET OPERA radar, 12.5x to 2 km, 128x128 patches).
 
 Two studies: **Study 1** compares auxiliary structural losses on a deterministic backbone;
 **Study 2** puts a flow-matching residual model on the best backbone and optionally couples
-the structural loss as a reward. See `EXPERIMENTS.md` for the checkpoint table, current
-results, and the todo list — read it before starting anything.
+the structural loss as a reward. `EXPERIMENTS.md` holds the checkpoint table, current
+results, and the todo list. Before starting anything, read §0–§3 (node, checkpoints, result
+tables) and §5 "Highest value". The whole file is ~120 KB, so read the other §5 subsections,
+§6 and `DECISIONS.md` only when the task touches them.
 
 ## Stack
 
@@ -168,3 +170,20 @@ Check in this order:
   loss's weight for another.
 - Always report the weight and loss name from the first lines of the training log when
   summarising a run.
+
+## Working on code and experiments
+
+Cautious by default; use judgment on trivial edits.
+
+- **Ambiguity.** If a request has two readings that lead to different code or a different
+  run (which backbone, which split, 15-min vs hourly), name both and ask. Don't pick silently.
+- **Simplicity.** Minimum code for the request. No new CLI flags, config keys or abstractions
+  nobody asked for; no handling for cases that cannot occur.
+- **Surgical edits.** Every changed line traces to the request. Don't reformat, rename or
+  refactor nearby code; mention dead code rather than deleting it. Remove only what your own
+  change made unused.
+- **Success criterion first.** Before writing code, say how you will know it worked: a bug in
+  `src/` gets a test in `tests/` that fails before and passes after; a numerical routine gets
+  a synthetic case with a known answer; a run gets the startup lines that prove the config
+  took (loss name, weight, `FM_RESIDUAL_SCALE` source, GPU) and the eval output that answers
+  the question. Multi-step tasks: give the plan as `step → verify: check`.
