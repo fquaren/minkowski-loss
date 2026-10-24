@@ -2616,3 +2616,6 @@ vanilla checkpoint (`UNet_Ana_20261021_211732`, best = epoch 24), Minkowski at 1
 bar for reporting a disagreement; 1b governs. Bracket (run order): 1.8e-4, 5.4e-4, 1.8e-3, 6.0e-5.
 Runs: 1.8e-4 `UNet_Ana_20261022_160540` (done 2026-10-23 12:20), 5.4e-4 `UNet_Ana_20261023_121956`
 (done 2026-10-24 08:37), 1.8e-3 running, then 6.0e-5; ~20 h each, no NaN so far.
+- **Decision (researcher, 2026-10-24): u = 50.1 mm is kept** for the POT fits on the corrected store
+  (option a); the §32 rule is not amended. Bracket evaluation on validation started
+  (`scripts/hpc/run_bracket_val_evals.sh`, `eval_results/{backbone,extremes}/v4adv_val/`).
