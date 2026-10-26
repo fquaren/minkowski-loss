@@ -2649,3 +2649,6 @@ gpd_xi_obs = 0.183 in every row (sanity check passes). All runs: no NaN, weight 
 - **Researcher, 2026-10-26: the seed runs at 6.0e-5 are stopped** (not started). The queue shell was killed
   at 08:21; the ablation's post-break arm keeps training (`logs/unet_ana_20261026_081502.log`, done ~2026-10-27
   04:30). The choice of the Study-1 Minkowski weight on hourly data is open again.
+- **Researcher, 2026-10-26: the ablation's post-break arm is stopped as well** (killed at ~08:25, during
+  epoch 1 of 33; its run directory is kept but is not a result). Nothing is running on GPU 1. The pre-break
+  ablation (§34) and the Study-1 Minkowski weight on hourly data are both open.
