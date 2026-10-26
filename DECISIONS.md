@@ -2619,3 +2619,30 @@ Runs: 1.8e-4 `UNet_Ana_20261022_160540` (done 2026-10-23 12:20), 5.4e-4 `UNet_An
 - **Decision (researcher, 2026-10-24): u = 50.1 mm is kept** for the POT fits on the corrected store
   (option a); the §32 rule is not amended. Bracket evaluation on validation started
   (`scripts/hpc/run_bracket_val_evals.sh`, `eval_results/{backbone,extremes}/v4adv_val/`).
+
+**Bracket result on validation (2026-10-26; last checkpoints, u = 50.1 mm; `notes/data_analysis_v4/bracket_validation.csv`,
+images `bracket_gallery.pdf`, 12 random validation patches >= 20.2 mm, all five models).**
+
+| model | ΔMAE | anisotropy (x vanilla) | exceedance ratio | RL bias λ10 / 100 / 1000 | FSS 50.1 mm, 1 / 21 px | peak ratio (extreme) |
+|---|---|---|---|---|---|---|
+| vanilla | 0 | 2.12 (1.00) | 0.113 | -44% / -31% / -13% | 0.106 / 0.383 | 0.36 (0.20) |
+| 6.0e-5 | +4.7% | 0.56 (0.26) | 0.192 | -37% / -41% / -44% | 0.097 / 0.417 | 0.86 (0.52) |
+| 1.8e-4 (w*) | +7.9% | 2.24 (1.05) | 0.287 | -32% / -36% / -41% | 0.118 / 0.535 | 0.86 (0.53) |
+| 5.4e-4 | +12.5% | 2.02 (0.95) | 0.442 | -25% / -32% / -39% | 0.131 / 0.648 | 0.93 (0.58) |
+| 1.8e-3 | +19.0% | 3.45 (1.62) | 0.607 | -18% / -21% / -24% | 0.125 / 0.714 | 0.92 (0.61) |
+
+gpd_xi_obs = 0.183 in every row (sanity check passes). All runs: no NaN, weight as intended in the logs.
+- **By the §16 rule the winner is 6.0e-5**, the only run inside the MAE cap (+5%); every stronger weight
+  exceeds it (w* costs +7.9%, against +3.8% for 1e-4 on 15-min data).
+- *The anisotropy cap does not see what the images show.* Grid-aligned striping and blocky rectangles grow with
+  the weight: mild at 1.8e-4, clear at 5.4e-4 (whose mean anisotropy is 0.95x vanilla) and strong at 1.8e-3.
+  The mean of per-patch ratios is noisy (targets range 0.08-2.6 per patch) and vanilla itself is 2.12, so a
+  1.2x cap on that mean is weak on hourly data. 6.0e-5's low value (0.56) is not a visible diagonal
+  artefact in the gallery: its fields look like vanilla's with sharper, higher peaks.
+- *The tail is mixed.* More weight means more exceedances above 50.1 mm, higher patch peaks and better FSS at
+  21 px, but every Minkowski run under-predicts the long return levels (λ = 100, 1000) more than vanilla
+  does: the predicted tail is thinner (fitted xi 0.12-0.17 vs observed 0.18; vanilla 0.32). The 15-min
+  finding "helps the tail" holds here for exceedance counts and peaks, not for return levels.
+- Next (queued, `scripts/hpc/run_ablation_then_seeds.sh`, `logs/ablation_then_seeds.log`): the pre-break
+  ablation's post-break arm first (w = 0, 33 epochs ~ matched steps, seed 42), then seeds 43 and 44 at 6.0e-5.
+  The ablation goes first because a decision to drop the pre-break rows would force the seeds to be retrained.

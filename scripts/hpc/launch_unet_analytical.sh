@@ -15,6 +15,9 @@ WEIGHT_GEOM="${2:-config}"
 WEIGHT_ARGS=()
 [[ "$WEIGHT_GEOM" == "config" ]] || WEIGHT_ARGS=(--weight_geom "$WEIGHT_GEOM")
 DATA_PCT="${3:-100.0}"
+# optional 5th argument: training seed (default: the trainer's own default, 42)
+SEED_ARGS=()
+[[ -n "${5:-}" ]] && SEED_ARGS=(--seed "$5")
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="${PROJECT_ROOT}/logs/unet_ana_${TIMESTAMP}.log"
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -26,6 +29,7 @@ micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICE
     --params_path "$PARAMS" \
     ${WEIGHT_ARGS[@]+"${WEIGHT_ARGS[@]}"} \
     --data_percentage "$DATA_PCT" \
+    ${SEED_ARGS[@]+"${SEED_ARGS[@]}"} \
     > "$LOG_FILE" 2>&1
 
 echo "Done."
