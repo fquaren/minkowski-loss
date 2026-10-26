@@ -2646,3 +2646,6 @@ gpd_xi_obs = 0.183 in every row (sanity check passes). All runs: no NaN, weight 
 - Next (queued, `scripts/hpc/run_ablation_then_seeds.sh`, `logs/ablation_then_seeds.log`): the pre-break
   ablation's post-break arm first (w = 0, 33 epochs ~ matched steps, seed 42), then seeds 43 and 44 at 6.0e-5.
   The ablation goes first because a decision to drop the pre-break rows would force the seeds to be retrained.
+- **Researcher, 2026-10-26: the seed runs at 6.0e-5 are stopped** (not started). The queue shell was killed
+  at 08:21; the ablation's post-break arm keeps training (`logs/unet_ana_20261026_081502.log`, done ~2026-10-27
+  04:30). The choice of the Study-1 Minkowski weight on hourly data is open again.
