@@ -2652,3 +2652,30 @@ gpd_xi_obs = 0.183 in every row (sanity check passes). All runs: no NaN, weight 
 - **Researcher, 2026-10-26: the ablation's post-break arm is stopped as well** (killed at ~08:25, during
   epoch 1 of 33; its run directory is kept but is not a result). Nothing is running on GPU 1. The pre-break
   ablation (§34) and the Study-1 Minkowski weight on hourly data are both open.
+
+## 38. Study 2 on hourly data: flow matching and its Minkowski fine-tunes (2026-10-26)
+
+**Question (researcher).** Before choosing the Study-1 weight or running the pre-break ablation: does the
+flow-matching (FM) residual model still work on the hourly corrected target, the biggest change of v4, and how
+do its two Minkowski fine-tunes behave there?
+
+**Plan (approved by the researcher 2026-10-26).**
+- *Backbone:* the hourly vanilla backbone `UNet_Ana_20261021_211732`, **last** checkpoint (epoch 25), the one
+  every backbone metric so far comes from; "best" is selected on a dry-pixel-dominated val MSE that is flat
+  since epoch 2 (epoch 24 vs 25).
+- *Step 0:* sigma_r of that backbone on the train split (`compute_residual_stats.py`), pinned as
+  `FM_RESIDUAL_SCALE` in a dedicated config (the corrected store had no residual statistics, and without them the
+  code falls back to sigma_r = 1.0); FM_SAMPLER heun, FM_SAMPLE_STEPS 16; fp32 (`--no_amp`); a new launcher that
+  takes config and backbone (the old one hardcodes both; it stays as is); a 1-epoch smoke run to measure the
+  epoch time and set the budget (target ~4 days).
+- *Step 1:* FM training; `fm_best.pth` (selected on the FM validation loss, not circular) is evaluated.
+- *Step 2:* fine-tunes from it, each after a coupling check (`diagnose_coupling.py`, minutes): (a) distributional,
+  K = 1, M = 4, w = 1e-3, proximal 1, spread 0.5 (as `Extremes_20260804_170256`); (b) energy, M = 16,
+  w = 1e-3, retention 1.0 (as `Energy_20260811_171310`). Fine-tunes are evaluated from `fm_mink_latest.pth`.
+- *Step 3:* evaluation of vanilla and 6e-5 backbones, FM, FM + Minkowski and FM + energy on one fixed 4,096-patch
+  validation subset (16 members, heun-16, u = 50.1 mm), with tail columns, anisotropy, the new striping measure
+  and images.
+- *In parallel (CPU):* the striping measure (EXPERIMENTS To explore), including diagonal striping.
+- *After:* the 2e-5 backbone (bracket extended downward, since the winner sat at its edge), then the Study-1
+  weight and the pre-break ablation.
+- *Kept for the write-up (researcher):* every bracket artefact and the coupling-check method (EXPERIMENTS Paper).

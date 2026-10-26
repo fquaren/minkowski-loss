@@ -559,6 +559,21 @@ is signed off by a passing report; its path goes in DECISIONS / EXPERIMENTS when
         for more (event email to Lionel Moret, 2026-10-14).
 
 ### Paper
+- [ ] **Write up the hourly weight calibration and bracket (appendix / thesis; researcher, 2026-10-26).**
+      Keep every artefact (DECISIONS §37): the gradient audits (`eval_results/gradient_audit/2026-10-21_v4adv_init`,
+      `2026-10-22_v4adv_vanilla`), the five bracket runs (`runs/sr_analytical/UNet_Ana_20261021_211732`,
+      `_20261022_160540`, `_20261023_121956`, `_20261024_083723`, `_20261025_042024`; do not delete), their
+      validation summaries (`eval_results/{backbone,extremes}/v4adv_val/`), `notes/data_analysis_v4/bracket_validation.csv`
+      and `bracket_gallery.pdf`. Points to make: the weight transfers by gradient share (1a vs 1b, 2.1x apart);
+      on hourly data the loss costs about twice as much MAE as on 15-min; striping grows with the weight and
+      the anisotropy cap misses it; every weight thins the long-return-level tail; the bracket was extended
+      downward because the winner sat at its edge.
+- [ ] **Write up how a loss coupling is checked (appendix / thesis; researcher, 2026-10-26).** The checks that
+      tell a working auxiliary loss from an inert or miswired one: the training validator (gradient norms,
+      overfit on one batch with both terms falling, determinism, checkpoint round trip; DECISIONS §29 era
+      `scripts/validate/`), the gradient / Adam-share audit (`tools/gradient_audit.py`, `notes/gradient_audit.pdf`),
+      the activity check (ΔMAE >= +1% vs vanilla), the reward-drop test for the FM coupling
+      (`scripts/evaluate/diagnose_coupling.py`, DECISIONS §4), and the image check for gaming.
 - [ ] **Systematic literature search before claiming any contribution (2026-10-21, researcher).**
       Candidates so far, from a targeted web search only: transferring a validated loss weight
       across datasets by gradient share, and hacking-bounded weight selection for a structural loss
@@ -1219,6 +1234,15 @@ is signed off by a passing report; its path goes in DECISIONS / EXPERIMENTS when
       `preprocess_data.py` for every split, and it is all zeros. Fill it on the rebuild
       (QIND or the screening mask), or drop it.
 ### To explore
+- [ ] **Faint block edges in the vanilla backbone (low priority; researcher, 2026-10-26).** In
+      `notes/data_analysis_v4/bracket_gallery.pdf` the vanilla UNet keeps some hard edges along the 12.5x coarse
+      input cells (the 10 x 10 blocks of the input). Check whether it comes from the interpolated input channel
+      or the residual design, and whether the striping measure below picks it up.
+- [ ] **Striping measure (in progress 2026-10-26, DECISIONS §37).** Per patch, against its own target:
+      (a) edge-orientation excess, the share of strong-gradient pixels whose edge lies within ±5° of the grid
+      axes (0°, 90°) **and of the diagonals (±45°)**, prediction minus target; (b) paired anisotropy,
+      median log(pred / target). Validated on the bracket before use (vanilla and targets clean, 1.8e-4 mild,
+      5.4e-4 clear, 1.8e-3 strong); threshold fixed in DECISIONS before it is applied to new runs.
 - [ ] **Follow-up: structural weight set by gradient share during training (2026-10-21, kept for
       later by the researcher).** Instead of a fixed weight, set w each step so the structural term
       contributes a fixed share r* of the gradient (r* measured where the fixed weight was validated,
