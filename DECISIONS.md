@@ -2679,3 +2679,28 @@ do its two Minkowski fine-tunes behave there?
 - *After:* the 2e-5 backbone (bracket extended downward, since the winner sat at its edge), then the Study-1
   weight and the pre-break ablation.
 - *Kept for the write-up (researcher):* every bracket artefact and the coupling-check method (EXPERIMENTS Paper).
+
+**Striping measure, validation on the bracket (2026-10-26; `src/evaluation/striping.py`,
+`scripts/evaluate/striping_eval.py`, `notes/data_analysis_v4/striping_bracket.csv`; 1,024 validation patches >= 1 mm).**
+- *Version 1 fails* (edge orientation of raw log(1+f) gradients; paired spectral anisotropy): no ordering of the
+  bracket. The strongest edges are wet/dry boundaries, not the texture inside the rain.
+- *Version 2, high-pass texture orientation, passes the ordering:* share of strong texture edges inside rain
+  (eroded 3 px) within ±5° of the grid axes, prediction minus target, median over patches: vanilla 0.017,
+  6e-5 0.038, 1.8e-4 0.048, 5.4e-4 0.049, 1.8e-3 0.098 (heavy patches: 0.016 / 0.016 / 0.022 / 0.029 / 0.067).
+  Monotone in the weight; 1.8e-4 and 5.4e-4 are close. The diagonal version is negative for every model (fewer
+  diagonal texture edges than the targets), so no diagonal striping. The spectral-line variant is not usable
+  (window leakage dominates; blocks score below an isotropic field). Synthetic checks in the module's tests.
+  *Not yet adopted:* its threshold is to be fixed here before it is applied to new runs.
+
+**Why the Minkowski texture has a fixed orientation (researcher's question, 2026-10-26;
+`scripts/evaluate/texture_orientation.py`, 64 heavy validation patches).**
+- *The estimators break rotation symmetry.* Perimeter (4-direction Cauchy-Crofton, w_ax 0.473, w_di 0.218): an
+  ellipse's perimeter is underestimated by 4.8% when its long axis lies on a grid axis and overestimated by
+  ~1.5% at 25-35° / 55-65°. Euler (4-connected cubical, V - Ex - Ey + F): a 1-px-wide line has chi = 1 along an
+  axis but up to 212 at 45° (it falls apart into corner-touching pixels); no effect from 1.5 px width.
+- *The texture is not tied to the input.* Predicting on the input rotated by 90° and rotating back gives a
+  texture that correlates with the original prediction at 0.04 (5.4e-4) and 0.11 (1.8e-3).
+- *At high weight the texture is locked to the grid.* Texture-edge directions: targets nearly uniform (peak
+  share 0.062 per 10°, uniform 0.056); 1.8e-3 peaks at 92.5° with 3x the uniform share, and after the rotation
+  test the peak sits at 2.5°, i.e. the same direction in the network's own frame. Lower weights have weaker
+  peaks (0.073-0.083); single test on 64 patches, not repeated.
