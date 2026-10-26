@@ -2711,3 +2711,14 @@ Pinned in `configs/config_v4_adv_fm.yaml` (FM_RESIDUAL_SCALE, BACKBONE_CHECKPOIN
 checkpoint, FM_SAMPLER heun, FM_SAMPLE_STEPS 16). The smoke run's startup line reads
 `config FM_RESIDUAL_SCALE=0.01267`. Write-up of the deterministic-model limitation (researcher's request):
 `notes/minkowski_deterministic_limitation.md`.
+
+**§38 step 1 launched (2026-10-26 09:26).** FM smoke run (2% data, 1 epoch, `runs/sr_flow_matching/Extremes_20261026_091536`,
+not a result): train_fm 0.735, val_fm 0.519, ~1.85 h per full epoch (1.65 steps/s + 7 min validation). Full run:
+`configs/config_v4_adv_fm.yaml`, **50 epochs max** (~90 h; early stopping on PATIENCE 5 may end it sooner),
+`logs/flow_matching_20261026_092624.log`; startup line `config FM_RESIDUAL_SCALE=0.01267`, amp=False.
+Evaluation subsets (fixed, seed 0): `val_subset4096.txt` (random validation rows; 279 with tile max >= 20.2 mm,
+38 >= 50.1) for general metrics, and `val_extremes1024.txt` (validation rows with corrected tile max >= 20.2 mm;
+187 >= 50.1) for the tail columns, which are therefore conditional on heavy tiles. The existing `extremes_val`
+list was selected on plain maxima (corrected minimum 2.8 mm) and is not used for this. Chain
+`scripts/hpc/after_fm_v4adv.sh` (`logs/after_fm_v4adv.log`): when FM ends, evaluates vanilla, 6e-5 and FM on both
+subsets, then runs the coupling checks for both fine-tunes, and stops.
