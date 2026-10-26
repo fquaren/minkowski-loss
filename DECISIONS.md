@@ -2704,3 +2704,10 @@ do its two Minkowski fine-tunes behave there?
   share 0.062 per 10°, uniform 0.056); 1.8e-3 peaks at 92.5° with 3x the uniform share, and after the rotation
   test the peak sits at 2.5°, i.e. the same direction in the network's own frame. Lower weights have weaker
   peaks (0.073-0.083); single test on 64 patches, not repeated.
+
+**§38 step 0 (2026-10-26).** sigma_r of the hourly vanilla backbone (last checkpoint) on the full train split
+(1,299,686 patches): **0.012668** (15-min vanilla: 0.018981); per-pixel std map CV 0.064, so the scalar is used.
+Pinned in `configs/config_v4_adv_fm.yaml` (FM_RESIDUAL_SCALE, BACKBONE_CHECKPOINT = the hourly vanilla last
+checkpoint, FM_SAMPLER heun, FM_SAMPLE_STEPS 16). The smoke run's startup line reads
+`config FM_RESIDUAL_SCALE=0.01267`. Write-up of the deterministic-model limitation (researcher's request):
+`notes/minkowski_deterministic_limitation.md`.

@@ -568,6 +568,10 @@ is signed off by a passing report; its path goes in DECISIONS / EXPERIMENTS when
       on hourly data the loss costs about twice as much MAE as on 15-min; striping grows with the weight and
       the anisotropy cap misses it; every weight thins the long-return-level tail; the bracket was extended
       downward because the winner sat at its edge.
+- [ ] **Limitation of the Minkowski loss on a deterministic model (appendix / thesis; researcher, 2026-10-26).**
+      Draft: `notes/minkowski_deterministic_limitation.md` (motion invariance / Hadwiger, MSE double penalty,
+      grid-estimator anisotropy, fixed stamp, rotation test). Citations still `[CITE?]`. Follow-ups in To explore
+      (show the stamp; less anisotropic estimators).
 - [ ] **Write up how a loss coupling is checked (appendix / thesis; researcher, 2026-10-26).** The checks that
       tell a working auxiliary loss from an inert or miswired one: the training validator (gradient norms,
       overfit on one batch with both terms falling, determinism, checkpoint round trip; DECISIONS §29 era
@@ -1234,6 +1238,10 @@ is signed off by a passing report; its path goes in DECISIONS / EXPERIMENTS when
       `preprocess_data.py` for every split, and it is all zeros. Fill it on the rebuild
       (QIND or the screening mask), or drop it.
 ### To explore
+- [ ] **Fixed-direction Minkowski texture: checks and remedies** (`notes/minkowski_deterministic_limitation.md` §6).
+      (1) Average the high-pass texture over many patches to show the stamp. (2) Perimeter estimator with more
+      Crofton directions (2:1 lines) and an Euler characteristic mixing 4- and 8-connectivity; one high-weight run
+      to test whether the orientation peak weakens.
 - [ ] **Faint block edges in the vanilla backbone (low priority; researcher, 2026-10-26).** In
       `notes/data_analysis_v4/bracket_gallery.pdf` the vanilla UNet keeps some hard edges along the 12.5x coarse
       input cells (the 10 x 10 blocks of the input). Check whether it comes from the interpolated input channel
