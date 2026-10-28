@@ -2722,3 +2722,10 @@ Evaluation subsets (fixed, seed 0): `val_subset4096.txt` (random validation rows
 list was selected on plain maxima (corrected minimum 2.8 mm) and is not used for this. Chain
 `scripts/hpc/after_fm_v4adv.sh` (`logs/after_fm_v4adv.log`): when FM ends, evaluates vanilla, 6e-5 and FM on both
 subsets, then runs the coupling checks for both fine-tunes, and stops.
+
+**§38 step 1 result (2026-10-29).** FM on the hourly corrected target, `runs/sr_flow_matching/Extremes_20261026_092630`
+(`logs/flow_matching_20261026_092624.log`): early-stopped at epoch 33 (PATIENCE 5), no NaN; best val_fm **0.2323 at
+epoch 28** (`fm_best.pth`, evaluated). Val_fm by epoch: 0.281, 0.264, 0.259, 0.255, 0.252, 0.249, 0.248, 0.246, 0.245,
+0.242 (ep 10), 0.240 (ep 12), 0.238 (ep 15), 0.235 (ep 19), 0.233 (ep 23-24), 0.232 (ep 28); train_fm 0.320 -> 0.239.
+Comparable in scale with the 15-min FM (0.297 / 0.285 / 0.279 at epochs 1-3; residual normalised by sigma_r in both),
+~1.9 h per epoch, 64 h in total. Evaluation chain started 00:28 (`logs/after_fm_v4adv.log`).
