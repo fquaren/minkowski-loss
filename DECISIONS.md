@@ -2757,3 +2757,32 @@ row on exceedances, FSS and the spectrum; the tail is still under-predicted (abo
   100% of the field gradient in the top 1% of pixels.
 Both pass the script's verdict; fine-tunes launched as planned (`scripts/hpc/run_finetunes_v4adv.sh`,
 configs `config_v4_adv_fm_{dist,energy}.yaml`, `logs/finetune_v4adv_{dist,energy}.log`).
+
+**§38 step 3, second part: the distributional fine-tune (2026-10-29; `runs/sr_fm_minkowski/FMdist_v4adv_20261029_014713`,
+`logs/finetune_v4adv_dist.log`, `fm_mink_latest.pth` evaluated, epoch 10).** Startup line `config FM_RESIDUAL_SCALE=0.01267`;
+distributional K = 1, M = 4, w_reward 1e-3, proximal 1, spread 0.5, retention 0, 10 x 500 steps at ~2 s/step (2 h 51 min).
+The trainer's progress bar shows the full loader (162,460 batches) but stops each epoch at REWARD_STEPS_PER_EPOCH.
+- *Training:* train reward 0.351 -> 0.339, val reward (20 batches) 0.361 -> 0.350 with no clear trend between
+  (0.345-0.367); proximal 5e-4 to 7e-4; guards within bounds every epoch (anisotropy 1.21-1.88 < 2.16, peak ratio
+  0.84-1.01 < 1.15). The reward barely moved, consistent with the marginal coupling check.
+- *Evaluation* (same protocol and patches as the FM row):
+
+| subset | model | exceedance ratio (n pred / obs) | FSS 31.7 mm 21 px | FSS 50.1 mm 1 / 21 px | RL bias λ10 / 100 / 1000 | peak ratio (extreme) | RAPSD dist. | anisotropy | CRPS |
+|---|---|---|---|---|---|---|---|---|---|
+| random 4,096 | FM | 0.272 (79 / 290) | 0.508 | 0.130 / 0.466 | | 0.86 (0.55) | 0.86 | 1.40 | 0.0324 |
+| | FM + dist | **0.517** (150 / 290) | **0.682** | 0.145 / **0.538** | | 0.92 (0.59) | **0.35** | 1.37 | 0.0321 |
+| heavy 1,024 | FM | 0.298 (458 / 1,537) | 0.707 | 0.114 / 0.506 | -30% / -36% / -44% | 0.55 (**0.33**) | 1.14 | 1.31 | 0.161 |
+| | FM + dist | **0.377** (580 / 1,537) | **0.741** | 0.109 / **0.554** | **-23% / -20% / -15%** | 0.62 (0.22) | **0.81** | 1.30 | 0.160 |
+
+  Better than clean FM on exceedances, FSS at 21 px, every return level, the spectrum and (slightly) CRPS, at
+  unchanged anisotropy. One column is worse: the median peak ratio on the most extreme patches (>= 142 mm/h
+  threshold) falls from 0.33 to 0.22. gpd_xi_pred 0.205 against 0.155 observed (FM 0.047); per CLAUDE.md the xi
+  column is not used to rank.
+- *Attribution.* The only non-reward term is the proximal anchor, zero at initialisation, so the change comes from
+  the Minkowski reward (its mean and spread parts together; which of the two is not separated). Why a reward
+  whose gradient comes almost entirely from u <= 0.83 mm moves the > 50 mm tail is not established; my inference:
+  matching the low-threshold structure and its spread makes fields more intermittent and contrasted, which shifts the
+  whole residual distribution.
+- *Not yet known:* eval-to-eval sampling noise (`eval_extremes` does not seed the FM noise). A second evaluation of
+  clean FM on the heavy subset is running (`scripts/hpc/run_fm_eval_repeat.sh`, tag `fm_rep2`). Single seed, single
+  fine-tune, validation subsets.
