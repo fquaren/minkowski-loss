@@ -470,6 +470,42 @@ isoperimetric scatter.
       *Done 2026-09-23 for the 15-min weights (Adam-share matched, `DEFAULT_STRUCTURAL_WEIGHTS`); on hourly data: DECISIONS §37.*
 - [ ] **Competing losses: a fair trial** (roadmap M4). Fix SSIM, calibrate λ, match epochs,
       and use 3 seeds.
+- [ ] **Plot units on hourly data (added 2026-10-29).** `src/evaluation/plotting.py` labels every
+      intensity axis, colourbar and field-panel title "mm h⁻¹" (lines 269, 408, 451, 533, 586-588,
+      and the field titles). From v4 the target is the 1-h accumulation, so these should read "mm".
+      The 15-min figures are correctly in mm h⁻¹, so take the unit from the config/product rather
+      than replacing the string. Re-render `figures/v4adv_*` afterwards.
+- [ ] **FM reward coupling: attribute the §38 gains and fix the coupling (added 2026-10-29).**
+      Read of `src/trainers/reward_finetune.py` after the hourly fine-tunes:
+      - [x] *Gradient norm per term, one batch (minutes).* Print ‖∇θ‖ of w_reward·R, w_prox·L_prox
+            and w_retain·L_FM separately, for both fine-tune configs. By value the retention term is
+            ~1,000x the reward term in the energy run (0.24 vs 2e-4), and train_fm falls 0.2431 -> 0.2395
+            during the fine-tune, so the energy run may be mostly extra FM training.
+            *Done 2026-10-29 (`scripts/evaluate/grad_norm_terms.py`, `logs/grad_norm_terms_v4adv.txt`,
+            4 train batches at the clean FM checkpoint):* energy: the reward is **0.13%** of the total
+            gradient norm (8.3e-4 vs 0.65 for L_FM), cos(reward, total) -0.01, so the energy fine-tune is
+            continued FM training. dist: the reward is 99% of the gradient (total norm 8.3e-4, far
+            below the clip at 1.0; AdamW rescales it to full lr-size steps). The anchor gradient is ~1e-4
+            at the start in both, as expected for a model equal to its reference.
+      - [ ] *Control fine-tune with w_reward = 0* (same config, seed and budget as the energy run),
+            evaluated like the others. Any gain of FM + energy not above this control is not the reward's.
+      - [ ] *Fix the proximal anchor: it is evaluated where the sampler never goes.* `x1 =
+            clamp(field / max_val, 0, 1)` (lines 348-353) is a physical field scaled by 6.42 and
+            saturating at 6.4 mm, while the model's coordinates are the scaled log-residual r/sigma_r
+            (mostly near 0, outliers to |34|). The anchor therefore constrains the velocity at states off
+            the model's paths. In the dist run (w_retain = 0) it is the only term keeping the model near
+            the clean one.
+      - [ ] *Make the reward reach high-intensity pixels, keeping K = 1.* The soft mask has width
+            tau = 0.005u at anneal 0.05, so a pixel gets gradient only from thresholds within a few
+            percent of its own value: the per-threshold gradient scales with pixel mass, and a threshold
+            the prediction never reaches (the under-prediction case) contributes nothing. Design to be
+            chosen; check with `tools/gradient_audit.py` (share per threshold) and `diagnose_coupling.py`.
+            *Implemented and checked 2026-10-29 (DECISIONS §39):* `REWARD_FORM: quantile_mass` (quantile area +
+            inverse-mass weights on perimeter/Euler), configs `config_v4_adv_fm_{dist,energy}_qm.yaml`, tests
+            `tests/test_reward_form.py`, share check `scripts/evaluate/reward_threshold_share.py` (>= 20 mm:
+            3.7% -> 40.9% of the gradient on the heavy subset). Still open: a fine-tune with it, after the anchor
+            fix and the control above. For the energy config, rebalance w_reward vs w_retain first: with the new
+            form its reward is still 0.07% of the gradient (`logs/grad_norm_terms_v4adv.txt`).
 
 ### Validation: every stage passes its checks before the next starts (added 2026-10-19)
 `scripts/validate/validate_stage.py <stage>` writes `validation/<stage>/<date>_<commit>.md`

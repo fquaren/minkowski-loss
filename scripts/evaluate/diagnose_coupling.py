@@ -121,8 +121,9 @@ def main():
     anneal = float(config.get("REWARD_ANNEAL", 0.05))
     w_spread = float(config.get("REWARD_SPREAD_WEIGHT", 0.5))
     lr = args.lr or float(config.get("REWARD_LR", 1e-5))
+    form = config.get("REWARD_FORM", "threshold")
 
-    print(f"[diag] mode={mode} M={M} K={K} sampler={sampler}-{n_steps} lr={lr:g} "
+    print(f"[diag] mode={mode} form={form} M={M} K={K} sampler={sampler}-{n_steps} lr={lr:g} "
           f"anneal={anneal} max_val={float(max_val):.4f}")
 
     # ---- models ------------------------------------------------------------------
@@ -174,6 +175,8 @@ def main():
     def decode(z):
         return F.relu(torch.expm1(torch.clamp(z, 0.0, 1.0) * max_val))
 
+    y_phys = decode(Y[:, 0:1])
+
     # A reward that re-draws its base noise every call is a different random variable at
     # every step, so an optimisation trajectory over it cannot separate "not descending"
     # from "too noisy to see". Fixing the noise makes the reward a deterministic function
@@ -197,7 +200,7 @@ def main():
     print("\n=== TEST 2/3: gradient concentration and clipping ===")
     fields = sample_fields()
     fields.retain_grad()
-    reward = minkowski_reward(geom_fn, fields, Ygamma, mode, anneal, w_spread)
+    reward = minkowski_reward(geom_fn, fields, Ygamma, mode, anneal, w_spread, form, y_phys)
     fm.zero_grad(set_to_none=True)
     reward.backward(retain_graph=False)
     gnorm = torch.nn.utils.clip_grad_norm_(params, 1.0).item()
@@ -228,7 +231,7 @@ def main():
     print("\n=== TEST 5: gradient direction vs K ===")
     def grad_at(k):
         fm.zero_grad(set_to_none=True)
-        r = minkowski_reward(geom_fn, sample_fields(k), Ygamma, mode, anneal, w_spread)
+        r = minkowski_reward(geom_fn, sample_fields(k), Ygamma, mode, anneal, w_spread, form, y_phys)
         r.backward()
         return _flat_grad(params).detach().clone()
     g1 = grad_at(1)
@@ -244,9 +247,9 @@ def main():
     print("\n=== TEST 0: reward noise floor at FIXED parameters ===")
     with torch.no_grad():
         rr = [float(minkowski_reward(geom_fn, sample_fields(fixed=False), Ygamma,
-                                     mode, anneal, w_spread)) for _ in range(12)]
+                                     mode, anneal, w_spread, form, y_phys)) for _ in range(12)]
         rf = [float(minkowski_reward(geom_fn, sample_fields(fixed=True), Ygamma,
-                                     mode, anneal, w_spread)) for _ in range(3)]
+                                     mode, anneal, w_spread, form, y_phys)) for _ in range(3)]
     print(f"  resampled noise: mean {np.mean(rr):.5f}  sd {np.std(rr):.5f}  "
           f"({100*np.std(rr)/max(np.mean(rr),1e-9):.1f}% of the mean)")
     print(f"  fixed noise    : {rf[0]:.5f} (repeat sd {np.std(rf):.2e} -- should be ~0)")
@@ -259,7 +262,7 @@ def main():
     hist, clipped = [], 0
     for i in range(args.steps):
         opt.zero_grad(set_to_none=True)
-        r = minkowski_reward(geom_fn, sample_fields(), Ygamma, mode, anneal, w_spread)
+        r = minkowski_reward(geom_fn, sample_fields(), Ygamma, mode, anneal, w_spread, form, y_phys)
         r.backward()
         gn = torch.nn.utils.clip_grad_norm_(params, 1.0).item()
         clipped += int(gn > 1.0)
