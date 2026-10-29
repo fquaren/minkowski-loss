@@ -683,6 +683,10 @@ exclusions come from a pre-stated score (§24).
 
 **Status 2026-10-08:** criterion 2 (100 tiles looked at by eye) is replaced by gauge-based
 tail false-alarm and miss rates (§24).
+**Status 2026-10-19:** criterion 3 is replaced (§32) by a contamination test of the most
+influential test days, plus day-block intervals and a leave-period-out variant reported with
+every tail statistic. The original rule failed by construction on heavy-tailed daily
+contributions.
 
 **Question.** Without labels, cleanliness cannot be measured, and §17 keeps imperfections on
 purpose. When do we stop cleaning and train?
@@ -1563,3 +1567,1239 @@ out of 175 database-active ones.
 - *Consequence for the data, a limitation to state:* Austria (never), Switzerland and
   Hungary (before 2014) are observed only by distant foreign radars, with beam overshoot over
   the Alps. Extremes there are likely underestimated. Kept, not screened.
+
+## 28. Rule 5 by a pre-stated score: radar-day and radar-year exclusions (2026-10-13)
+
+**Question.** §24 replaced the reviewed radar-day list with an automatic rule but left the
+numbers open. Which radar-days and radar-years are excluded?
+
+**Decision (researcher, 2026-10-13, on Claude's proposal).** Written down before the ranking
+of the contributing-radar Phase 2 rerun (§27, `quality_v4/ranking.csv.gz`) was opened. Only its
+log summary had been seen: 111 radar-days with score >= 1 under the old `iso31` reference.
+1. *Radar-day:* excluded when `score >= 1`, i.e. some signal is a decade above both the
+   radar's own seasonal q99 and the median of its 5 nearest radars that day (§19).
+2. *Radar-year:* excluded, with all its days, when its excluded radar-days are >= 5% of its
+   rain days and number >= 3. A rain day is a day on which, in some frame, >= 20% of the
+   radar's owned pixels are >= 1 mm/h (`max_wet >= 0.2`, the wet threshold of the R2
+   feature). The 3-day floor stops one bad day from removing a short year (2012 has 46 days).
+3. *`iso31` is scored against its neighbours only,* not against the radar's own seasonal q99.
+   A radar failing on more than ~1% of its season-days raises its own q99 and hides behind
+   it (§19: Oradea's failure days scored < 0 on 6 of 7). The neighbour median has no such
+   blind spot for a single failing radar. The other three signals keep both references.
+
+**Why these values.** Rule 1 is the value §24 floated: one decade is far outside the
+day-to-day spread of a working radar, so the rule keys on failure, not on rare weather
+(§17 safeguard 1). The 5% and the 3-day floor in rule 2 are Claude's proposal, with no data
+behind them when fixed: a radar failing on one rain day in twenty is unreliable on the days
+the score does not catch. The 20% rain-day threshold reuses an existing convention.
+
+**What would change the conclusion.** Real extremes that are a decade above all five
+neighbours (a small, isolated convective cell). To check, report the excluded radar-days that
+fall on catalogued event days (`configs/prominent_events.yaml`) and their rejection share by
+intensity bin at split time (§17), without changing the thresholds after seeing them.
+
+**Implementation.** `radar_screen_v4.py rank` (reference per signal from
+`radar_day.reference` in the quality config) and `radar_screen_v4.py exclude`, which writes
+`day_exclusions.csv` (radar, day, reason) and `year_exclusions.csv` for
+`make_splits_hourly.py --day_excl`. Without the new config keys, the old behaviour is kept.
+
+**Result of the pre-stated rule (2026-10-13), not yet adopted downstream.** `rank` + `exclude`
+on the contributing-radar Phase 2 rerun (previous ranking archived in
+`quality_v4/rank_iso31_both/`):
+- *Radar-days with score >= 1: 3,029* (111 with the old `iso31` reference). Driven by `iso31`:
+  2,948, then f150 65, ceilings 13, flagged frames 3. 130 of 203 radars have at least one.
+- *Rule 3 flags chronic radar behaviour, not failure days.* On the new `iso31` exclusions the
+  median day has 176 isolated pixel-frames >= 31 mm/h, against a neighbour median of 0 and the
+  radar's own seasonal q99 of 277. Old `score_iso31` median -0.1. Spread evenly over the
+  seasons (DJF 765, MAM 703, JJA 840, SON 721), so not mainly convection. Concentrated on
+  coastal and island radars (isegs 267, sekkr 201, deboo 192, mtgud 181, skjav 147, sevar 138).
+- *51 excluded radar-days fall on catalogued event days*, the check named above.
+- *Rule 2's rain-day denominator is degenerate (a specification error, Claude's).* Few days have
+  >= 20% of a radar's area at >= 1 mm/h in any frame, so many radar-years have 0-2 rain days
+  and a median share of 54%: 170 radar-years (57,710 radar-days) excluded. Over days with data
+  instead, the same 5% / 3-day rule gives 39 radar-years (13,852 days).
+- *A median own-reference does not separate them either* (comparison only, nothing written):
+  2,686 radar-days, same radars, same flat seasons. Most of these radars have iso31 = 0 on most
+  days, so their median is ~0.
+- *The Oradea failure days of §19 (1,286-8,636 isolated pixels) no longer appear:* the largest
+  Oradea (roora) day has 502. Under the contributing geometry those pixels probably belong to
+  another radar. To be checked; it is the case rule 3 was written for.
+
+So the threshold does not decide this; whether the ~2,600 `iso31` days are artefacts is an
+empirical question. Proposed test, in the form of §25/§26 (criterion fixed before running):
+on the excluded German radar-days (deboo, depro, ...), the isolated >= 31 mm/h pixels must be
+dry in RADKLIM at >= 85%. Pending the researcher's decision.
+
+**RADKLIM test of rule 3 (criteria fixed 2026-10-13, before the test was run; researcher
+asked for the test, Claude wrote the criteria).** `scripts/data_quality/iso31_radklim.py`.
+- *Population:* the pixels counted by `iso31` on the German radar-days that §28 excludes with
+  reason `iso31` (321 days with RADKLIM after fetching): a pixel owned by that radar
+  (contributing geometry, §27), >= 31 mm/h in the `clean_frame` field, isolated by
+  `radar_screen.isolated_mask`. Each pixel-frame belongs to the hour H whose ACRR window
+  H-45..H holds it; frames at d 00:00 (previous processing day) are skipped.
+- *Measure:* RADKLIM-dry = `K_tol < 5` mm (`radklim_presence.k_tolerant`: max over +-1 h and
+  +-2 px), the definition of §25/§26. A pixel at >= 31 mm/h in one frame adds >= 7.75 mm to
+  its hour, so a RADKLIM value below 5 mm in the whole window is a disagreement on presence.
+- *Pass:* the pooled dry share is >= 85%, as in §26. Reported with a 95% day-block bootstrap
+  interval, per radar, and per radar-day.
+- *If it passes,* rule 3 stays as fixed. *If it fails,* rule 3 goes back to the two-reference
+  score and the Oradea-type case is handled separately.
+- *Descriptive, not criteria:*
+  - the same measure on a control: isolated pixels of German radar-days that are *not*
+    excluded (score < 1), on the RADKLIM days already on disk;
+  - the share of the test pixels that the hourly chain (current `quality_v4.yaml`, burst rule
+    on) leaves at >= 5 mm in the screened hour. A high share means the pixel-level chain
+    does not already remove them, so a radar-day rule is needed for them.
+- *Rule 2's denominator* stays as fixed (rain days) until the researcher confirms the
+  correction to days with data; the gate (§29) reports rule 5 both ways.
+
+## 29. The readiness gate before the full-archive build (2026-10-13)
+
+**Question.** §20 defines the gate on the built v4 dataset, and §24 replaced its criterion 2
+with gauge measures but set no numbers. The full-archive build needs rule 5 settled first
+(§28). Which parts can be checked before the build, and against what?
+
+**Decision (researcher asked for the gate 2026-10-13; Claude fixed the numbers below before
+running).** A pre-build gate on the calibration days (199) and the gauge days (63), with the
+current chain: `quality_v4.yaml`, burst rule on, contributing-radar geometry (§27), frame
+flags of the 2026-10-09 radar pass. Calibration days are rescanned with that chain
+(`calib/hourly_c/`). Every criterion is reported with rule 5 off and with the pre-stated §28
+exclusion list.
+
+*u is provisional.* The hourly tail threshold is not derived yet (§21). The gauge criteria
+use u = 20 mm in 1 h as the primary level and report 10 and 30 mm.
+
+1. *Known failures caught (§20 criterion 1, `known_failures`, hourly form).* Among kept
+   tile-hours:
+   - Madrid 20180429: none >= 10% owned by estjv with `max_rate` >= 31 mm/h;
+   - Valjevo 2023 (calibration days): none with `max_rate` within 0.005 of 364.63;
+   - 48.62 (2019-11, tile 640/1408): none with `rep_value` within 0.005 of 48.62 and
+     `rep_count` >= 5.
+   Pass: zero in each.
+2. *Gauge false alarms and screen-caused misses (§20 criterion 2 as revised in §24).* DE/CH
+   gauges, `g_shift` window, gauge-hours on the 63 gauge days and the 196 calibration days with
+   any DE/CH gauge (`gauge_hourly.py`, fixed to run the burst rule), both networks, gauges on
+   hot pixels included.
+   - (a) *False alarms:* among gauge-hours with screened radar >= u, the share with
+     gauge < 1 mm. Pass: the upper end of its 95% day-block bootstrap interval is <= 5%, the
+     bound §20 set for residual contamination.
+   - (b) *Screen-caused misses:* among gauge-hours with gauge >= u, the share where the screen
+     lowered the radar to <= 0.5 x raw. Pass: <= 1%.
+   - Descriptive: the same for raw radar, and the overall miss share (screened radar <
+     0.2 u where gauge >= u), which measures the product and the support mismatch, not the
+     screen.
+3. *Real extremes survive (§20 criterion 4, the parts that need no build).*
+   - (a) Rejected share of event tile-hours (`make_splits.event_rows`, wet tile-hours with
+     max >= 1 mm) < 0.5% per event with >= 50 such tile-hours.
+   - (b) For each rejection reason, its rate among tile-hours with hourly max >= 20 mm is
+     <= max(3 x its rate at 5-10 mm, 0.5%). This is a stated reading of "not rising steeply".
+4. *Deferred to the build:* §20 criteria 3 (tail stability of the evaluation reference) and 5
+   (xi(u) drift). Both need the built test split.
+
+**What would change the conclusion.** The gauge criteria rest on DE/CH only (§24) and on a
+provisional u. A pass says the screen is ready for the full build; it does not replace the
+§20 gate on the build.
+
+**RADKLIM test result (2026-10-13; `calib/iso31_radklim/summary.md`). Passes; rule 3 stays.**
+- *Test:* 69,726 isolated pixel-frames on 337 German radar-days (308 days; RADKLIM for
+  2026-07/08 is not yet published). RADKLIM-dry **99.8% [99.5%, 99.9%]** against the 85% bar.
+  Per radar 99.5-100%, except Isen (deisn): 62.5% on 6 radar-days (341 pixel-frames), the one
+  place the signal may catch real convection.
+- *Control:* 11,141 isolated pixel-frames on 831 German radar-days that are *not* excluded:
+  98.0% [96.6%, 98.9%] dry. Isolated >= 31 mm/h pixels are artefacts on ordinary days too.
+- *The hourly chain already removes most of them:* only 11.4% of the test pixels leave >= 5 mm
+  in the screened hour (98.4% of those are RADKLIM-dry). Example: Berlin (debln) on
+  2013-07-28 (Andreas): 197 isolated pixel-frames, median 2,938 mm/h, 100% dry; the chain
+  leaves 2 of them >= 5 mm.
+
+**Result (2026-10-13; `calib/gate_prebuild/summary.md`, `gate_prebuild.py`). The gate is not
+passed in any rule-5 variant.** Calibration days rescanned with the current chain
+(`calib/hourly_c`, 199 days, 335,996 tile-hours); gauges on 246 days (8.66 M gauge-hours,
+1,733 stations).
+
+| criterion | rule 5 off | §28 as pre-stated | year share over days with data |
+|---|---|---|---|
+| tile-hours rejected | 0.13% | 14.24% | 3.49% |
+| 1. known failures kept (Madrid / Valjevo / 48.62) | **5 / 1 / 1, FAIL** | 0 / 0 / 0, pass | 0 / 0 / 0, pass |
+| 3a. worst event rejected | 0.00%, pass | **100% (Montpellier, Cannes, Misox), FAIL** | **20.1% (Andreas), FAIL** |
+| 3b. reasons rising with intensity | **ceiling: 0.04% -> 1.77%, FAIL** | same | same |
+
+All three known-failure checks are non-vacuous: the failure is present in the raw field in 32,
+46 and 79 tile-hours.
+
+Criterion 2 (independent of rule 5; pixel values of the chain, no split-time rejection):
+
+| u | raw: false alarms | screened: false alarms [95% CI] | screen-caused misses | overall misses |
+|---|---|---|---|---|
+| 10 mm | 16.2% | 4.6% [3.5, 5.9] | 0.1% | 7.6% |
+| **20 mm** | 48.8% | **6.4% [3.9, 9.6] -> 2a FAIL (bound <= 5%)** | **0.1% -> 2b pass** | 8.1% |
+| 30 mm | 68.4% | 8.5% [1.1, 19.6] | 0.0% | 9.5% |
+
+**Diagnosis (descriptive, after the results).**
+- *The radar-year rule causes most of the event loss.* Of the event tile-hours rejected by the
+  pre-stated list, 2,028 of 2,169 come through excluded radar-years (chwei 2024 in the
+  southern-Germany floods, nldbl 2014 at Pentecost, frnim 2014 at Montpellier, depro 2017 in the
+  Poland derecho); 141 through radar-days with score >= 1.
+- *Score only (no radar-year rule):* 1.08% of tile-hours rejected; criterion 1 passes
+  (0 / 0 / 0 kept); criterion 3a fails only for Andreas (11.2%, debln 2013-07-27/28) and Boris
+  (8.5%, hubud / hrdeb / sipas). Both through `iso31`, on days whose isolated pixels the chain
+  already removes (Berlin: 99%, above).
+- *Ceiling rejection rises with intensity by construction:* a ceiling is a high value. Whether
+  the >= 20 mm rejections are real cores is not tested.
+- *False alarms:* the screen cuts them from 48.8% to 6.4% at 20 mm. The 5% bound was carried
+  over from the eye-review of tiles (§20); for a 2 km pixel against a point gauge part of the
+  remainder is support mismatch, not contamination. Not changed after the result.
+
+**Open, for the researcher.** (1) Drop the radar-year rule. (2) Score `iso31` on the pixels
+the hourly chain leaves, so rule 5 targets what the chain misses; against it, §19 computes the
+signals before repairs so that a repair cannot hide a failing radar. (3) Test the ceiling
+rejections >= 20 mm against RADKLIM / gauges where they overlap. (4) Decide whether criterion
+2a's bound stays at 5% for gauge comparisons, with a new criterion fixed before re-running.
+
+**Decision (researcher, 2026-10-14, Claude agreeing). The radar-year rule is dropped.** It
+caused 2,028 of the 2,169 event tile-hours the pre-stated list rejected; the known failures are
+caught without it (§29 diagnosis); its premise (a radar failing on 5% of days is unreliable on
+the others) was never tested, and its denominator was degenerate. Cost: a radar with chronic
+contamination that never scores >= 1 is not caught; the residual-contamination estimates
+(methods §6.3) cover it. `radar_day.year_rule: false`; `day_exclusions.csv` now holds the 3,029
+radar-days with score >= 1. The pre-stated lists are kept as
+`day_exclusions_20261013_prestated.csv` / `year_exclusions_20261013_prestated.csv`.
+
+**Decision (researcher, 2026-10-14). `iso31` stays scored on the `clean_frame` field, before
+repairs** (§19: a repair must not hide a failing radar), not on what the hourly chain leaves.
+Open: whether the rest of an excluded radar-day's field is worse than normal (Claude proposes
+RADKLIM agreement of non-isolated pixels, excluded vs control radar-days). If not, criterion
+3a's losses (Andreas 11.2%, Boris 8.5%) are a real cost; if so, 3a should not count them.
+
+**Ceiling rejections >= 20 mm (§29 item 3, 2026-10-14).** All 335 such tile-hours on the
+calibration days are in HU (190), HR (82) and RS (63): no RADKLIM or DE/CH gauge overlaps them,
+so the planned independent test cannot run on data we hold. Main values 48.62 (50.0 dBZ, hunap
+/ husze 2019) and 364.63 (64.0 dBZ, HR / RS 2023); 12 at 31,575.94. Inference (untested): a
+value piled at an exact dBZ level appears where reflectivity is high, so these are likely real
+intense rain with a capped core, rejected as a clear error under §17; the criterion-3b rise
+with intensity would then be by construction. Options: an internal-consistency test, or GPM
+IMERG as a presence reference (needs an Earthdata login).
+
+**Three follow-up tests (researcher approved 2026-10-14; Claude fixed the criteria below
+before running).**
+
+*(i) Is the rest of an excluded radar-day's field worse? (`rest_of_field.py`)* German radars,
+screened hourly field C of the current chain (`quality_v4.yaml`), RADKLIM box. Test: the 337
+radar-days excluded with reason `iso31` that have RADKLIM. Control: non-excluded radar-days
+*of the same radars* on the RADKLIM days frozen before the fetch (`iso31_radklim/control_days.txt`).
+Pixels: owned by the radar (contributing geometry); pixel-hours holding an isolated pixel-frame
+(the `iso31` pixels) are left out, so only the *rest* of the field is judged.
+- Measure: false-alarm share = pixel-hours with C >= 5 mm that are RADKLIM-dry (K_tol < 5 mm).
+- "Worse" if the test share exceeds the control share by > 2 percentage points and the 95%
+  day-block bootstrap interval of the difference lies above 0.
+- If worse: excluding the radar-day is justified, and criterion 3a does not count event losses
+  on such radar-days. If not: the exclusion is a cost, and rule 5 should act on the isolated
+  pixels, not on the whole radar-day.
+- Descriptive: the same at 10 and 20 mm; misses (K >= 5 mm, C < 1 mm); median per radar-day
+  log-correlation of C and K over pixel-hours wet in either. Weather differs between the two
+  sets (excluded days are not random), which the same-radar control only partly removes.
+
+*(ii) Criterion 2a against a measured floor (`gate_prebuild.py`, replaces the 5% bound).*
+DWD gauges on the gate days that have RADKLIM; gauge window `g_shift`; u = 20 mm (10 and 30
+reported). OPERA = the screened pixel value with split-time rejection applied (score-only rule
+5, current `day_exclusions.csv`; rejected tile-hours dropped). Hours tables for the 47 gauge
+days that are not calibration days are scanned with the same chain. RADKLIM = K at the gauge
+pixel, same hour.
+- Measure: false-alarm share = gauge-hours with the field >= u whose gauge reads < 1 mm.
+- Pass: the upper end of the 95% day-block bootstrap interval of (OPERA - RADKLIM) is <= 2
+  percentage points. RADKLIM is adjusted to DWD gauges, so its share at gauge sites is
+  optimistic and the test is conservative.
+
+*(iii) Ceiling rejections >= 20 mm: capped cores or artefacts? (`ceiling_context.py`)*
+Calibration days, tile-hours rejected by `rej_ceiling` with hourly max >= 20 mm (335). In the
+raw frames of each such hour, every pixel of the tile equal (+-0.005) to a ceiling value of its
+owning radar-year (`ceilings.csv`). Context = median, in dBZ, of the valid non-ceiling pixels of
+its 5x5 window (Z = 200 R^1.6, as `radar_screen.dbz`); "embedded" = context >= ceiling dBZ -
+10 dB.
+- >= 80% embedded: the high-intensity rejections are real intense rain with a capped core. The
+  3b rise is then by construction; the researcher decides whether the rule should mask the
+  ceiling pixels (NaN) and keep the tile-hour instead of rejecting it.
+- <= 20% embedded: they are artefacts in weak or dry surroundings; the rule stands and its 3b
+  rise is artefact-driven.
+- In between: reported per ceiling value and radar.
+
+**Results of the three follow-up tests (2026-10-14).**
+
+*(i) Rest of the field: WORSE, so excluding the whole radar-day is justified*
+(`calib/rest_of_field/summary.md`). 348 excluded German radar-days against 2,147 non-excluded
+radar-days of the same radars, isolated pixel-hours left out:
+
+| measure | excluded | control | difference [95% CI] |
+|---|---|---|---|
+| false alarms, C >= 5 mm (RADKLIM-dry) | 40.2% | 12.3% | +27.9 [+17.2, +42.5] |
+| false alarms, C >= 10 mm | 52.2% | 5.5% | +46.7 [+32.1, +63.4] |
+| false alarms, C >= 20 mm | 66.6% | 4.0% | +62.6 [+39.7, +85.1] |
+| misses (K >= 5, C < 1 mm) | 9.4% | 7.4% | +1.9 [-0.8, +5.7] |
+| median log-correlation with RADKLIM | 0.36 | 0.58 | |
+
+As pre-stated, criterion 3a no longer counts event losses on excluded radar-days: Andreas
+(debln) and Boris (hubud / hrdeb / sipas) are correct removals. The evidence is from German
+radars; Boris's are HU / HR / SI (the §24 transfer assumption).
+
+*(ii) Criterion 2a against RADKLIM: FAIL.* 6.87 M DWD gauge-hours on 243 days, rejected
+tile-hours dropped. At u = 20 mm OPERA screened 6.3% (n = 378), RADKLIM 0.9% (n = 426);
+difference +5.4 [+2.3, +9.9] against <= +2. At 10 mm +1.1 [-0.1, +2.6]; at 30 mm +8.0
+[+0.0, +21.6]. RADKLIM's floor is optimistic (gauge-adjusted), but the excess is real
+contamination. The 24 false-alarm gauge-hours (18 stations, 13 days, none on a hot pixel):
+- ~9 with RADKLIM ~0 mm, i.e. artefacts the chain leaves untouched (screened = raw). Largest:
+  Kleiner Feldberg/Taunus 2018-04-30, 6 hours of 23-83 mm at one pixel, a single-day
+  stationary echo, not a local peak (the "extended blob" §23 left out); Ostenfeld
+  2014-09-29 (60 mm), Bad Berleburg 2023-07-09, Ellern 2018-04-23, Traunreut 2023-07-19.
+- ~15 inside convection (RADKLIM 5-20 mm, gauge dry): most likely support mismatch.
+
+*(iii) Ceiling context: artefacts* (`calib/ceiling_context/summary.md`, each pixel counted once):
+166,994 ceiling pixel-frames in the rejected tile-hours >= 20 mm; 13.7% embedded (<= 20%).
+Surrounding median ~0.6 dBZ; 44-72% have no rain around them. The ceiling rule stands; its
+criterion-3b rise comes from artefacts, not from real cores.
+
+**Gate status with rule 5 = score only (adopted).** 1.08% of tile-hours rejected.
+- 1, known failures: pass (0 / 0 / 0 kept, all non-vacuous).
+- 3a, events: pass once losses on excluded radar-days are not counted (i); every other event
+  0%.
+- 3b: rej_ceiling (0.04% -> 1.77%) and rej_radar_day (1.14% -> 4.80%) rise with intensity.
+  Both are explained by (iii) and (i): what they remove at high intensity is contamination.
+- 2a: **fail**, from residual contamination such as single-day stationary echoes.
+- 2b: pass (0.1%).
+The gate therefore turns on 2a: a rule for what the chain leaves (screening review,
+2026-10-14).
+
+## 30. Low-hanging fruit of the screening review (2026-10-14)
+
+**Why.** The per-rule table (`calib/rule_effect/summary.md`, 199 calibration days) shows the
+static-clutter (hot) repair as the largest remover at 20-100 mm: 13-26% of pixel-hours on random
+days, 21% at 50-100 mm on event days. It is the one rule that failed its test (§24: 46% of
+affected gauge-hours moved closer, 48% further). The no-temporal-support rule lowers 6% of
+event-day 50-100 mm pixel-hours and was never tested. The residual false alarms of §29 (2a)
+include single-day stationary echoes that miss `p1_min` = 24 by 4 frames (Kleiner Feldberg
+2018-04-30, Paris-CDG 2021-07-14: 20 frames each).
+
+**Decision (researcher asked for all of them, 2026-10-14; Claude fixed the criteria below before
+running).** Tests use `scripts/data_quality/rule_validate.py` on the 196 calibration days with
+RADKLIM, the RADKLIM box, the current chain as the base, and split-time rejection (current rule 5)
+applied. Removal = a kept pixel-hour with C_without >= 1 mm and C_with <= 0.5 C_without.
+RADKLIM-dry = K_tol < 5 mm, as in §25/§26. Raw bins 10-20 / 20-50 / 50-100 / >= 100 mm.
+Pass = removals RADKLIM-dry >= 85% in every bin with >= 30 removals.
+
+1. *Static-clutter repair.* Without vs with `hot`.
+   - Pass: it stays.
+   - Fail: the unconditional repair goes. The hot mask only lowers the persistence threshold
+     (`p1_prior_min` 12 on hot pixels, the §24 proposal). That replacement's own removals must
+     pass the same test.
+2. *No-temporal-support rule.* Without vs with `unsupported`. Pass: it stays. Fail: off until
+   redesigned.
+3. *Persistence threshold.* `p1_min` 20 and 16 against the current 24 (`p1_ring_min` 12
+   unchanged). The removals added by the lower value must pass on both halves of the days
+   (odd and even day index). Pick the lowest passing value; if none passes, keep 24. Then re-run
+   §29 criterion 2a with whatever is adopted.
+4. *`min_wet_jump`* (radar-disk temporal check, now 0.15 from 20 cases). The 99.9th percentile
+   of s = min(w_t - w_{t-1}, w_t - w_{t+1}), the wet-fraction excess over both neighbour
+   frames. Taken over radar-frames in normal operation: 500 random days (seed 0) of the
+   2026-10-09 radar pass, radar-days with score < 1, no flagged frame, n_valid >= min_valid.
+5. *Hourly tail threshold u (provisional).* The screened hourly level with the same pixel
+   exceedance frequency as 31 mm/h has in the screened 15-min frames. Same 100 random
+   calibration days, full grid, kept tile-hours. Final u comes from a threshold-stability
+   analysis on the build (§21).
+
+*Descriptive, for the slides, not criteria:* exceedance counts of raw OPERA, screened OPERA and
+RADKLIM on the same German pixel-hours, and of DE/CH gauges against OPERA at the gauge pixels.
+CombiPrecip and COMEPHORE are not on disk.
+
+**Results (2026-10-14; `calib/rule_validate/summary.md`, 193 RADKLIM days, 2.62 M pixel-hours).**
+
+| test | removals (10-20 / 20-50 / 50-100 / >= 100 mm) | RADKLIM-dry | verdict |
+|---|---|---|---|
+| static-clutter repair | 41 / 32 / 4 / 12 | 100% / 100% / 100% / 67% | **pass: stays** |
+| hot mask as persistence prior | 15 / 18 / 3 / 0 | 100% | not needed |
+| no temporal support | 216 / 51 / 4 / 6 | 97.2% / 100% / 100% / 100% | **pass: stays** |
+| `p1_min` 20, added removals | odd 175 / 48, even 137 / 36 | 66-78% (24-28 confirmed in 10-20) | **fail** |
+| `p1_min` 16, added removals | odd 392 / 98, even 309 / 64 | 67-80% (54-59 confirmed) | **fail** |
+
+- *`p1_min` stays 24.* Lowering it removes real rain. The single-day stationary echoes behind
+  the 2a false alarms (Kleiner Feldberg) need a rule keyed on something else, such as a fixed
+  location with a dry ring over many hours. That is not a threshold change.
+- *The hot repair passes over Germany with few cases* (89 removals): most of its Europe-wide
+  effect (rule-effect table) is outside RADKLIM. The §24 gauge result (46% closer / 48% further,
+  183 gauge-hours, mostly low intensity) and this presence result disagree in tone. The
+  presence test is the one that speaks to contamination of the tail, so the repair stays.
+- *`min_wet_jump` = 0.021* (item 4: q99.9 of s over 6.86 M normal radar-frames; q99 0.005,
+  q99.99 0.063; share >= 0.15 was 2.1e-5). Recomputing the flags for all 5,023 days gives the same
+  48 flagged radar-frames as 0.15, and the same gate results. Adopted in `quality_v4.yaml`.
+- *Chain values are unchanged,* so §29 criterion 2a is unchanged (fail, +5.4 points) and is
+  not re-run.
+- A bug in `rule_validate.py` (`p is not False` on a NumPy bool) printed PASS for the `p1`
+  tests; it was fixed before this result was recorded.
+
+*Screened OPERA against RADKLIM on the same German pixel-hours* (kept tile-hours):
+
+| field | >= 10 | >= 20 | >= 30 | >= 50 | >= 75 | >= 100 |
+|---|---|---|---|---|---|---|
+| raw OPERA | 253,856 | 43,715 | 19,772 | 13,756 | 12,040 | 9,511 |
+| screened OPERA | 234,870 | 29,042 | 5,987 | 569 | 71 | 15 |
+| RADKLIM | 315,170 | 28,710 | 4,873 | 357 | 28 | 7 |
+
+Screened OPERA matches RADKLIM at 20 mm and has 1.2x / 1.6x / 2.5x its counts at 30 / 50 / 75 mm.
+RADKLIM underestimates peaks (§4 of the methods draft), so the excess is an upper bound on
+residual contamination, not a measurement of it.
+
+*Provisional hourly tail threshold (item 5; `calib/dist_hist/u_provisional.txt`).* On the 100
+random calibration days, full grid, kept tile-hours: 31 mm/h is exceeded by 3.99e-5 of screened
+15-min pixel-frames; the screened hourly sums exceed **u = 20.2 mm** at the same frequency. This
+agrees with the provisional 20 mm of §29. The final u comes from a stability analysis on the build.
+
+Slides of these results: `notes/slides/2026-10-14_screening/deck.pdf`.
+
+## 31. Stationary isolated echoes (2026-10-14)
+
+**Problem.** After §30 the readiness gate fails only on false alarms (§29, criterion 2a: +5.4
+points over RADKLIM at 20 mm). The clearest cause is a single-day stationary echo the chain
+leaves untouched. Kleiner Feldberg/Taunus, 2018-04-30: a blob of 20-40 px (>= 5 mm/h) peaking
+at 50-107 mm/h, at the same place for ~14 h, in a dry ring (ring median 0.00-0.07 mm/h); clean
+on the days before and after; gauge and RADKLIM dry. It is a local peak in 20 frames, so the
+persistence rule (24) misses it, and lowering that threshold removes real rain (§30). It is not
+a burst (it lasts) and it supports itself in time.
+
+**The signature.** A moving cell's core covers a given pixel for one or two frames: a 5-10 km
+core moving at 30 km/h advances ~4 px per frame. A stationary target fills the same pixels for
+hours. Real stationary convection (orographic anchoring) usually sits in wider rain, which the
+dry-ring condition keeps.
+
+**The rule (`hourly.rules.stationary`, off until accepted; code bit 512).** On the screened
+frames after the persistence rule:
+- *Isolated component in frame t:* an 8-connected component of pixels >= 1 mm/h, at most 150 px
+  (600 km^2), containing a pixel >= 10 mm/h, whose 3-px ring (6 km) is >= 50% valid with a
+  median < 0.1 mm/h.
+- *Stationary pixel:* inside an isolated component in >= `min_frames` frames of the processing
+  day.
+- *Repair:* in each frame, an isolated component holding a stationary pixel is set to its ring
+  median, i.e. ~0. Repairs only lower values.
+
+**Test (criteria fixed before running, Claude, researcher asked 2026-10-14).** Candidates
+`min_frames` 12 (3 h) and 8 (2 h).
+1. *RADKLIM presence* (`rule_validate.py`, the 193 RADKLIM calibration days, as §30): removals
+   of the rule against the current chain must be RADKLIM-dry >= 85% in every raw bin with
+   >= 30 removals, on both halves of the days.
+2. *Real storms outside Germany:* on the 79 event days, full grid, the rule must lower by >= 50%
+   at most 1% of the pixel-hours that the current chain leaves at >= 20 mm.
+3. Adopt the lowest `min_frames` passing 1 and 2. If none passes, the rule is not adopted.
+4. With the adopted value, re-run §29 criterion 2a (gauges against RADKLIM). This is reported,
+   not a condition for adopting the rule.
+*Not evidence:* that it removes Kleiner Feldberg. That is the case the rule was designed on; it
+is only a check that the code does what was intended.
+
+**Result (2026-10-14). Not adopted: both candidates fail criterion 2.**
+- *RADKLIM presence* (`calib/rule_validate_stationary/summary.md`): `min_frames` 12 passes
+  (removals 89.7% / 98.5% dry at 10-20 / 20-50 mm on odd days, 94.3% / 91.7% on even days);
+  `min_frames` 8 fails (49-60% dry; 193-305 removals at 10-20 mm confirmed by RADKLIM).
+- *Event days* (`calib/stationary_events/summary.md`, 79 days, full grid; 340,224 pixel-hours
+  left >= 20 mm by the current chain): `min_frames` 12 lowers 3,731 of them by >= 50%,
+  **1.097%** against <= 1%; `min_frames` 8 lowers 2.05%. Both fail. The bar was fixed in advance
+  and is not moved.
+- *Where:* the losses concentrate in quasi-stationary real storms: Elvira/Friederike 883,
+  Med. derecho 562, Boris 412, Valencia DANA 378, HyMeX IOP6 357, Poland derecho 215,
+  Emilia-Romagna (1st) 202, Aude 172. A back-building storm regenerates a convective core over
+  one place, sometimes in dry air: the same signature as the Kleiner Feldberg echo. The dry-ring
+  condition does not separate them. Germany alone (RADKLIM) does not show this, because its
+  calibration days hold few such storms.
+- *Consequence:* step 4 (re-running §29 criterion 2a) is not done. The gate still fails 2a
+  (+5.4 points). The rule stays in the code, off (`hourly.rules.stationary: false`), with its
+  tests.
+- *What could separate them (ideas, not tested):* recurrence of the same echo location on
+  other days, which a fixed target or interference would show but weather would not (Kleiner
+  Feldberg was a single day, so this would not catch it); the absence of a growth and decay
+  cycle; lightning, as an independent marker of real convection (not on disk).
+
+## 32. Gate criteria 3 and 5 on the v4 build, hourly levels (2026-10-19)
+
+**Question.** §20 states criteria 3 (the evaluation reference is stable) and 5 (residual drift
+of xi(u) is explained) in 15-min terms: levels 31 / 53 / 89 mm/h. What are they on the hourly
+v4 build (`OPERA/patches_v4`, built 2026-10-17)?
+
+**Decision (researcher asked to run them 2026-10-19; Claude fixed the definitions below before
+running).**
+- *Hourly levels, by matched exceedance frequency* (screened fields, 100 random calibration
+  days, full grid, as the provisional u of §30):
+
+  | 15-min level | per-pixel-frame P | hourly level |
+  |---|---|---|
+  | 31 mm/h | 3.99e-5 | **20.2 mm** (the provisional u) |
+  | 53 mm/h | 1.31e-5 | **31.7 mm** |
+  | 89 mm/h | 3.73e-6 | **50.1 mm** |
+
+- *Criterion 3* (`gate_tail.py`), on the ODYSSEY test split, unweighted (what
+  `eval_extremes.py` computes):
+  - Statistics: exceedance rates per valid pixel-hour at 20.2 / 31.7 / 50.1 mm (rates, not
+    counts, because dropping days lowers counts by construction); the GPD fit above u = 20.2 as
+    in `tail_metrics.py` (location 0, unweighted), its xi, and the return levels at
+    lambda = 10 / 100 / 1000 expected exceedances.
+  - Perturbation: drop the 20 non-event days with the largest share of the test split's
+    exceedances >= 20.2 mm; recompute.
+  - Pass: every recomputed statistic lies inside the 95% day-block bootstrap interval (B = 200)
+    of the full-sample statistic.
+- *Criterion 5* (`pot_threshold.py --version v4`): xi(u) and sigma*(u) over an hourly
+  threshold grid (5-100 mm), day-block bootstrap, on train / validation / test / NIMBUS,
+  weighted and unweighted; cluster maxima; latitude bands; seasons; plus a GPD fit truncated at
+  500 mm. Drift of xi(u) above u is "explained" when it is matched by one named cause: upper
+  truncation (the truncated fit removes it), regional or seasonal mixing (the subsets are flat
+  where the pool drifts), or a sub-asymptotic threshold (the drift fades above some u). This is
+  a judgement on the plots; Claude proposes, the researcher decides.
+- *Hourly u for the evaluation tables:* the lowest grid u above which the bootstrap intervals of
+  xi and sigma* (train, weighted) contain the point estimates at every higher u that has
+  >= 1,000 exceedances. 20.2 mm stays provisional until then.
+
+**Result, criterion 3 (2026-10-19; `quality_v4/gate_tail/summary.md`). FAIL as pre-stated.**
+ODYSSEY test split: 218,513 tile-hours, 486 days, 3.58e9 valid pixel-hours, 489,170 >= 20.2 mm.
+The 20 dropped non-event days hold 26.7% of those exceedances.
+
+| statistic | full | without the 20 days | 95% day-block interval | inside |
+|---|---|---|---|---|
+| rate >= 20.2 mm | 1.366e-4 | 1.062e-4 | [1.18, 1.59]e-4 | no |
+| rate >= 31.7 mm | 3.727e-5 | 2.893e-5 | [3.17, 4.38]e-5 | no |
+| rate >= 50.1 mm | 8.553e-6 | 6.976e-6 | [7.01, 9.99]e-6 | no |
+| xi (u = 20.2) | 0.237 | 0.261 | [0.217, 0.255] | no |
+| RL, lambda = 10 | 43.4 mm | 43.7 mm | [42.4, 44.3] | yes |
+| RL, lambda = 100 | 83.4 mm | 86.5 mm | [79.3, 86.8] | yes |
+| RL, lambda = 1000 | 152.3 mm | 164.5 mm | [140.5, 162.9] | no |
+
+- *The dropped days are mostly three summer convective periods:* 16-30 June 2021 (12 of 20),
+  9-28 June 2024 (6) and 15-16 August 2022 (2), plus 2013-06-07 and 2023-07-18. They surround
+  catalogued events (Swiss hail and the Moravia tornado in 2021; the June 2024 floods; the 2022
+  Mediterranean derecho), whose own days were not dropped. Inference, not tested: real
+  outbreaks concentrated in a few test weeks, not contamination.
+- *A design flaw in the criterion (noted after the result; the bar is not changed):* it compares
+  a targeted removal of the most influential days with a random day-resampling interval.
+  Whenever ~4% of days hold ~25% of the tail, that comparison fails almost by construction, with
+  or without artefacts.
+- *Open, for the researcher:* (a) accept, and report every tail statistic of the evaluation
+  tables with its day-block interval plus a leave-period-out sensitivity; (b) test the dropped
+  days for contamination with RADKLIM and the gauges where they overlap (Germany, Switzerland);
+  (c) replace the criterion, with a new pass rule fixed before re-running.
+
+**Contamination test of the dropped days (option (b); researcher asked 2026-10-19; Claude fixed
+the criteria before running).** `scripts/data_quality/dropped_days_check.py`.
+- *Days:* the 20 dropped days, against a control of 60 non-dropped, non-event test days drawn at
+  random (seed 0).
+- *Pixels:* the test split as stored (kept, sampled tile-hours), screened value C >= 20.2 mm.
+- *RADKLIM (Germany):* the share of those pixel-hours that are RADKLIM-dry (K_tol < 5 mm, as in
+  §25/§26).
+- *Gauges (DE and CH):* among gauge-hours whose tile-hour is in the test split and where
+  C >= 20.2 mm, the share with gauge < 1 mm (`gauge_hourly.py`, `g_shift`, current chain).
+- *Contaminated* if, for either reference, the dropped days' share exceeds the control's by
+  > 2 points and the 95% day-block interval of the difference lies above 0 (the §28 (i) rule).
+- *Descriptive, not a criterion:* the gauges' own exceedance frequency (>= 20.2 mm per gauge-hour)
+  on dropped against control days. If the gauges also find the dropped days much wetter, the
+  concentration is weather.
+- *Consequence:* contaminated -> a named failure type, which per §20 justifies a v5 for that type.
+  Not contaminated -> the criterion-3 failure is real concentration of weather, and the
+  criterion is replaced (option (c)), with the new rule fixed before re-running.
+
+**Decision (researcher, 2026-10-19, on Claude's proposal; written before the contamination
+test's result). §20 criterion 3 is replaced.**
+- *Why.* The old rule compared a targeted removal of the most influential days with a random
+  day-resampling interval. With heavy-tailed daily contributions (here 4% of days hold 27% of
+  the tail) the targeted change exceeds the random interval by construction, whatever the data.
+  It is like judging "remove the 20 largest values" against the standard error of the mean.
+  The old rule also cannot tell contamination concentrated on a few days from real weather
+  concentrated on a few days: both give the same signature. Widening the interval would be
+  tuning after the result, and would not change the outcome (the 20.2 mm rate falls to 1.06e-4
+  against a lower bound of 1.18e-4).
+- *New criterion 3, a gate:* the most influential test days (the 20 non-event days with the
+  largest share of exceedances >= u) are not contaminated. The test is the dropped-days test
+  above (RADKLIM and DE/CH gauges against 60 random control days; contaminated if
+  dropped - control > 2 points with the 95% day-block interval above 0). Pass = not contaminated
+  for both references.
+- *New reporting rule, not a gate:* every tail statistic of the evaluation tables (exceedance
+  rates and ratios, xi, return levels and their biases) is reported with its 95% day-block
+  bootstrap interval. A leave-period-out variant goes with it: without the most influential
+  outbreak period (on v4 test, 16-30 June 2021), and without the 20 most influential days. The
+  paper states how much a few outbreaks drive each number.
+- *The old rule's result stays recorded above* (fail; 5 of 7 statistics outside their intervals).
+
+**Results (2026-10-19).**
+
+*New criterion 3: PASS* (`gate_tail/dropped_check/summary.md`):
+- RADKLIM (Germany): pixel-hours >= 20.2 mm that are RADKLIM-dry are 2.2% on the dropped days
+  (n = 20,137, 20 days) against 6.0% on control days (n = 2,585, 30 days with RADKLIM);
+  difference -3.7 points [-12.4, -1.0]. The dropped days are cleaner than ordinary days.
+- Gauges (DE + CH): test gauge-hours with C >= 20.2 mm and gauge < 1 mm are 3.7% (n = 298)
+  against 2.1% (n = 48); difference +1.6 points [-5.8, +6.0]. Small control sample.
+- Descriptive: the gauges themselves record >= 20.2 mm 15.3x more often on the dropped days
+  than on control days (OPERA 17.9x). The concentration is weather, not contamination.
+
+*Criterion 5: drift explained, by a sub-asymptotic threshold* (Claude's reading of
+`pot_threshold/report.md` and `fig/`; the researcher decides):
+- xi(u), train weighted: 0.41 at 5 mm, 0.31 at 10, 0.28 at 20.2, 0.21 at 31.7, 0.10 at 50.1,
+  then 0.07-0.12 up to 100 mm. Validation, test and NIMBUS show the same shape.
+- *Not truncation:* the GPD truncated at 500 mm gives the same xi at every u.
+- *Not regional or seasonal mixing:* xi falls with u inside every latitude band and season
+  (JJA 0.27 -> 0.08, MAM 0.31 -> 0.11, south of 46N 0.23 -> 0.10). The pool is not a mixture of
+  flat subsets.
+- *Sub-asymptotic:* the drift stops at ~50 mm. Cluster maxima give a lower xi at high u
+  (0.02-0.08 above 50 mm) than single pixels (0.07-0.12): dependence within storms inflates the
+  pixel-level shape slightly.
+
+*Hourly evaluation threshold, by the pre-stated rule: u = 50.1 mm.* It is the lowest grid u
+whose xi and sigma* intervals (train, weighted) contain the point estimates at every higher u
+with >= 1,000 exceedances. (At 60 mm the 100 mm point falls just outside, but the rule takes the
+lowest passing u.) It coincides with the hourly equivalent of 89 mm/h. Exceedances above it:
+train 175,937 (2,414 days); test, unweighted, 30,589 (404 days). 20.2 mm stays the level of the
+split strata and the exceedance-rate columns. The POT fits of the evaluation tables use 50.1 mm.
+
+*Gate status on v4:* 1 pass; 2a fail (+5.4 points over RADKLIM, residual stationary echoes; the
+rule tried in §31 was not adopted); 2b pass; 3 (new) pass; 4 pass (event losses only on
+radar-days shown to be bad); 5 explained (pending the researcher). By §20 "Where we stop": train
+on v4 and report 2a's measured contamination as a limitation, unless a v5 for the named type
+(stationary echoes) is judged worth its cost.
+
+**Decision (researcher, 2026-10-19).**
+- *Criterion 5 is accepted as explained by a sub-asymptotic threshold.* The explanation, with a
+  synthetic check, is in the methods draft §5.6.
+- *Train on v4.* The 2a failure is reported as a minor limitation (methods draft §6.3): about 9
+  residual artefact gauge-hours, single-day stationary echoes, +5.4 points of false alarms at
+  20 mm over RADKLIM. No v5. The gate closes with this.
+
+## 33. Training on v4: hourly thresholds, config and data preparation (2026-10-19)
+
+**Question.** The loss, the gamma targets and the FSS levels use `PHYSICAL_THRESHOLDS`, 15 levels
+in mm/h from 0.1 to 150 set for 15-min rates. The v4 store's `physical_thresholds.npy` still
+holds them. What are they for the hourly target?
+
+**Decision (researcher said go ahead with the training preparation, 2026-10-19; Claude chose the
+rule).** Each level is mapped to the hourly level with the same exceedance frequency (screened
+15-min frames against screened hourly sums, 100 random calibration days, full grid: the rule of
+§30 and §32, so each level keeps its rarity and its role in the loss):
+
+| mm/h (15-min) | 0.1 | 0.17 | 0.28 | 0.48 | 0.81 | 1.4 | 2.3 | 3.9 | 6.5 | 11 | 19 | 31 | 53 | 89 | 150 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **mm in 1 h** | 0.1 | 0.192 | 0.314 | 0.509 | 0.828 | 1.35 | 2.11 | 3.43 | 5.36 | 8.61 | 13.5 | 20.2 | 31.7 | 50.1 | 79.0 |
+
+The ratio falls from ~1 in light rain to 0.53 at the top: light rain lasts the whole hour, intense
+peaks a frame or two. With these levels, the evaluation defaults (`--pot_threshold` = third
+highest, FSS = top three) would be 31.7 / {31.7, 50.1, 79.0}. The POT fits use u = 50.1 instead
+(§32), so `eval_extremes.py` is run with `--pot_threshold 50.1`.
+
+- *Config:* `configs/config_v4.yaml` = `config_v3.yaml` with the v4 store and metadata paths and
+  this grid. Every precipitation value and threshold is in mm per hour of accumulation.
+- *Persistence thresholds* (the B0 / B1 noise floor of the gamma targets) are recomputed on the
+  hourly store. In `TOPOLOGY_MODE: euler` they are diagnostics only.
+- *Gamma targets:* computed after the store build (`scripts/hpc/prep_train_v4.sh`), 8 workers.
+- *Smoke run:* the UNet backbone, 1 epoch on 0.5% of train, GPU 1. It checks loading, finite
+  losses and the startup lines, nothing about skill.
+- *Not yet:* sigma_r (`compute_residual_stats.py`) is recomputed per new backbone, before any
+  flow-matching run.
+
+## 34. Ownerless tile-hours excluded; the pre-December-2015 speckle floor flagged and measured (2026-10-19)
+
+**Findings** (`notes/data_analysis_v4/stats.md`, the full-archive scan):
+- *A step change on 2015-12-12.* The daily share of completely dry tile-hours (max < 0.1 mm) goes
+  from ~0.02-0.07 up to 2015-12-11 to 0.20-0.29 from 2015-12-12 on. Before it, tiles that look
+  dry still carry scattered values (median maximum 0.2 mm where the wet fraction is < 0.2%);
+  after it they are 0. A low-level speckle floor in the earlier ODYSSEY processing (inference;
+  the processing change itself is not identified).
+- *58,124 tile-hours have no owning radar* (6 tile positions, all 2012-2015: rows 512-768 x
+  cols 1536-1664, and 1792 / 128). Rule 5 (radar-day exclusion) and rule 3 (radar-frame flags)
+  cannot act on them, so they are an unscreened path for contamination. In the store: train
+  13,441, validation 842, test 3,033, NIMBUS 0.
+
+**Decision (researcher, 2026-10-19).**
+1. *Ownerless tile-hours are excluded,* at the metadata level (the store is unchanged):
+   `patches_v4/meta/*_owned.txt` (5 columns, the 5th = store row), which `configs/config_v4.yaml`
+   points to. The original lists stay for provenance.
+2. *Pre-2015-12-12 tile-hours are flagged, not removed* (`patches_v4/meta/full_<split>_flags.csv.gz`:
+   store_row, ownerless, pre_break), and their effect is measured:
+   - *Data level, now* (`scripts/analysis/speckle_effect.py`, Claude's design, descriptive): on
+     train rows sampled before and after the break and matched by tile mean rain, the Minkowski
+     functionals at the lowest thresholds (A, P, chi at 0.1 / 0.192 / 0.314 mm), the count of
+     single-pixel components, and how far zeroing values below 0.2 or 0.3 mm in pre-break rows
+     closes the gap. This says how much of the low-threshold target is noise.
+   - *Training level, after the first v4 runs:* a backbone trained on post-break rows only
+     against one trained on all, both evaluated on post-break test rows. A to-do, not run now.
+
+**Results (2026-10-19).**
+- *Exclusion applied* (`scripts/dataset_v2/filter_meta_v4.py`, `patches_v4/meta/filter_report.txt`):
+  train 13,441 / validation 842 / test 3,033 / NIMBUS 0 rows dropped. The kept lists hold train
+  1,308,448, validation 172,618, test 215,480, NIMBUS 381,736. The store validator passes on them
+  (`validation/store/20261019_1621_9b51580.md`). Pre-break rows among the kept: train 313,644
+  (24%), validation 24,005, test 68,261.
+- *Speckle effect, data level* (`notes/data_analysis_v4/speckle_effect.md`, 300 rows per era and
+  tile-mean bin, medians):
+
+  | tile mean (mm) | chi @0.1 post / pre / pre with < 0.2 zeroed | single-pixel components post / pre | A @0.1 (km²) post / pre zeroed at 0.2 |
+  |---|---|---|---|
+  | < 0.005 | 2 / 13 / 4 | 1 / 7 | 20 / 36 |
+  | 0.005-0.02 | 31.5 / 58 / 29 | 16 / 29 | 1,610 / 490 |
+  | 0.02-0.1 | 41 / 81.5 / 56 | 23 / 50 | 6,290 / 3,070 |
+  | 0.1-0.5 | 39 / 59 / 60 | 26 / 46 | 19,700 / 14,400 |
+  | >= 0.5 | 22.5 / 28.5 / 35.5 | 21 / 34 | 39,600 / 34,000 |
+
+  - At matched tile mean, pre-break fields are 1.3-6.5x more fragmented at 0.1 mm (chi), with ~2x
+    the single-pixel components. This is the threshold range that carries most of the loss
+    gradient (CLAUDE.md: 83% from thresholds <= 0.28).
+  - *A noise floor does not map pre onto post.* Zeroing below 0.2 mm brings chi down in the light
+    bins but cuts the area at 0.1 mm to a third of post-break: real light rain sits at 0.1-0.2 mm too.
+  - *Not only the lowest threshold:* at 0.31 mm, pre-break chi is still ~1.5x post in the middle
+    bins. The early fields are noisier in texture, not only speckled. Matching by tile mean leaves
+    season and radar-network differences uncontrolled (inference).
+- *Consequence:* no floor is applied. The pre-break flag stays, and the training-level test (a
+  backbone on post-break rows only against one on all rows, evaluated on post-break test rows)
+  decides whether pre-break rows stay in training.
+
+## 35. The target is the advection-corrected hourly field (2026-10-19; revises §25)
+
+**Question.** §25 kept the plain ACRR sum as the target and stored the advection-corrected
+field (`noblend_nearest`, the one variant passing its pre-stated tests) alongside, "revisited
+when training".
+
+**Decision (researcher, 2026-10-19, after looking at the v4 gallery,
+`notes/data_analysis_v4/gallery_*.pdf`).** The plain sum is not usable: in many hours the four
+15-min positions of a moving cell are visible one after the other (the beading of §21). The target
+becomes the advection-corrected field. For a structural loss this is decisive: beading adds +2 to
++5 to the Euler characteristic at 2 mm against RADKLIM and 1.2-2x power at 6-16 km (§21), and the
+loss rewards exactly those.
+
+**How (Claude's design).** A separate store, `OPERA/patches_v4_adv`, built from `patches_v4`
+after the build finishes (`scripts/dataset_v2/build_adv_store.py`):
+- `original_precip` = `adv_precip`; coarse and interpolated fields recomputed from it
+  (`coarsen_and_interpolate`); `max_rate` and `n_wet` copied (they describe the 15-min frames);
+- rows whose corrected field has any NaN dropped (no complete H-60..H+15 window), after the §34
+  ownerless exclusion; the dropped share is reported per split;
+- metadata lists rewritten with the corrected tile max and the new store rows; scaler = log1p of
+  the corrected train max; DEM stats copied (same tiles); the pre-break flags carried over;
+- `configs/config_v4_adv.yaml` points to it. Nothing downstream changes: loader, gamma targets,
+  validators and evaluation all read `original_precip` from the configured store, so no code path
+  has to choose between the two fields.
+
+**What carries over, and what is re-derived.**
+- The screening, the gate (§29, §32) and the pre-break flags concern the 15-min frames and the
+  tiles, not how they are summed. They carry over.
+- The hourly thresholds (§33) and u = 50.1 mm (§32) were derived on plain sums. The corrected
+  field lowers slow-tile maxima by ~4% (§25). They are kept for now, and `pot_threshold.py` plus the
+  matched-frequency grid are re-run on the new store before evaluation.
+- §25's gauge check of the corrected field passed narrowly (median ratio on gauge-hours >= 20 mm
+  -6%, interval [-10%, +0.4%]). Stated as a limitation.
+
+**Measured on the built store (2026-10-21): the correction lowers tile maxima far more than ~4%.**
+Corrected / plain tile max, train (test alike): median 0.66-0.78 in every intensity bin from 1 mm to
+> 50 mm, q10 0.29-0.41, q90 0.96-1.00. Tile-hours >= 50.1 mm: 26,072 -> 14,196 (train), 5,293 -> 2,398
+(test); >= 20.2 mm: 152,947 -> 84,380. The ~4% of §25 was for slow tiles. The plain sum credits a cell's
+full 15-min rate to each of its four positions, so a fast cell's beads hold more mass per pixel than
+its track does; the correction spreads it. At gauges the effect is small (-6% median at >= 20 mm,
+above), which fits beads being where the tile max sits, not where the mass is. Consequences: u = 50.1
+mm and the matched-frequency thresholds must be re-derived on this store (already planned), and the
+extremes subsets (selected by tile max) shrink. The gallery (`gallery_plain_vs_adv.pdf`) shows the
+same: Euler characteristic lower at all levels, maxima 13-25% lower on the convective pages shown.
+
+## 36. Radars biased against their neighbours: the boundary-jump test (2026-10-19)
+
+**Question.** In the v4 climatology the Romanian, Hungarian and Slovak radars stand out
+(`notes/data_analysis_v4/radar_tail.md`, from 2015-12-12):
+- Bobohalma (robob) has the 2nd-highest pixel frequency >= 20 mm of 116 radars (2.6e-4), with a
+  pixel >= 20 mm on 46% of its radar-days;
+- Napkor (hunap), Szentes (husze) and Kojsovska hola (skkoj) are dry less often (0.17-0.19
+  against a median of 0.25), with median tile means up to 4x the median radar.
+Their heavy hours are spread over many days (top-1%-days share 0.20-0.36 against a median of
+0.47): chronic, not occasional failures. Real wet climate or radar bias?
+
+**The test (researcher approved 2026-10-19 and expects the flagged radars to be biased;
+Claude fixed the criteria before running).** Climate does not change at a radar ownership
+boundary; a radar that reads high does. The radar pass stores, per radar and frame, `bjump` =
+mean log1p(rate) in the 6 km band just inside the radar's owned area minus that in the 6 km band
+just outside it, owned by neighbours (`radar_screen.radar_frame_features`, clean_frame field,
+contributing geometry). `scripts/analysis/radar_boundary.py`:
+- *Frames used:* the radar's wet fraction (>= 1 mm/h) >= 0.05 and >= 50 valid pixels in each band.
+- *Radar-day value:* median `bjump` over its used frames, if >= 8 frames.
+- *Radar-year value:* median over its radar-days (>= 20 days), with a 95% day-block bootstrap
+  interval (B = 500).
+- *Flagged radar-year:* its value is in the top 5% of all radar-years AND the interval lies above 0.
+- *Consequence:* tile-hours of a flagged radar-year, where the radar owns >= 10% of the tile
+  (the rule-3 / rule-5 share), are excluded at the metadata level, as in §34, before the
+  advection store is built. The excluded share of tile-hours and of the tail is reported.
+- *Limitation, stated in advance:* an ownership boundary that coincides with a real climate
+  gradient (a mountain crest, a coastline) gives a jump without any bias. A radar whose whole
+  area is wetter than all its neighbours' areas could be flagged on climate. The top-5% cut and
+  the interval reduce this; they do not remove it.
+
+**Result (2026-10-19; `notes/data_analysis_v4/radar_boundary.md`). The exclusion is NOT applied yet:
+the test does not measure what the question needs.** 1,987 radar-years; top-5% cut 0.018 (log1p:
+~2% in 1 + rate); 100 radar-years from 49 radars flagged, all with jumps of 0.018-0.039 (2-4%).
+- *Who is flagged:* many Swedish radars in 2024-2026 (NIMBUS era), the Swiss Albis (chalb) and
+  La Dole (chdol), where an Alpine gradient plausibly coincides with the boundary (the limitation
+  stated in advance), French and German radars, and some Slovak and Romanian radars (skkub, sklaz,
+  skjav 2019, rotim, robar).
+- *Who is not flagged:* the radars that stood out in the tail diagnostic: Bobohalma (robob),
+  Napkor (hunap), Szentes (husze), Kojsovska hola (skkoj). Their jumps are 0.012-0.016.
+- *Why:* the median of mean log1p over wet frames is dominated by light rain. It finds small bulk
+  offsets, not the heavy-rain excess or the low-level floor that raised the suspicion.
+- *Pending the researcher's decision (2026-10-20):* (a) apply as pre-stated anyway; (b) replace it
+  with a tail-focused boundary test (frequency of rates >= 10 / 31 mm/h in the inner vs outer band),
+  which needs band statistics recomputed from the frames (a new radar pass, ~8 h), with its own
+  criterion fixed before running; (c) no radar exclusion, stated as a limitation.
+
+**Decision (researcher, 2026-10-20): option (b), a tail-focused boundary test. Criteria fixed by
+Claude before running** (`scripts/analysis/radar_band_tail.py`):
+- *Data:* every second day of the archive (even day index from 2012-09-04), every frame, the
+  `clean_frame` field (as the radar pass), contributing geometry (§27). Per radar and frame, in the
+  6 km band just inside its owned area and the 6 km band just outside it: valid pixels, pixels
+  >= 10 mm/h and >= 31 mm/h.
+- *Statistic per radar-year:* R10 = (inside >= 10 / inside valid) / (outside >= 10 / outside valid),
+  summed over the year's frames; 95% day-block bootstrap interval of log R10 (B = 500). R31 reported
+  too (fewer pixels; descriptive).
+- *Flagged radar-year:* R10 >= 2 (heavy rain twice as frequent just inside the radar's boundary as
+  just outside it) AND the interval's lower end >= 1.25, with >= 20 days having a pixel >= 10 mm/h in
+  either band. An absolute bar, so the test cannot flag radars by construction (unlike the top-5% cut).
+- *Why 2:* 12 km apart, real heavy-rain frequency rarely doubles; a radar overestimating heavy rates
+  makes it jump at its own boundary. *Limitation:* a boundary along a steep orographic gradient can
+  double it too; such cases are checked by name before excluding.
+- *Consequence:* flagged radar-years' tile-hours (owner share >= 10%) excluded at the metadata level
+  (`filter_meta_v4.py` -> `build_adv_store.py --meta_only`); the excluded share of tile-hours and of
+  the tail reported.
+
+*Status (2026-10-20 09:00):* radar pass running (`scripts/hpc/run_band_tail.sh`, 2 workers beside the
+v4 build, `logs/band_tail.log` -> `BAND_TAIL_DONE`, ~12-18 h); per-day counts in
+`quality_v4/band_tail/days/`, table in `notes/data_analysis_v4/radar_band_tail.md`, flagged list in
+`quality_v4/biased_radar_years_tail.csv`. Smoke day 2021-07-14: 156 radars with both bands valid;
+inside and outside >= 10 mm/h counts within ~10% on the top radars of a widespread convective day,
+as expected without bias. The exclusion path is ready: `filter_meta_v4.py --biased <csv>` (opt-in;
+default unchanged) drops tile-hours where a flagged radar-year owns >= 10%, then
+`build_adv_store.py --meta_only`. Side effect to report: `--meta_only` re-derives the scaler from the
+remaining train maximum.
+
+**Result (2026-10-21; `notes/data_analysis_v4/radar_band_tail.md`).** 2,024 radar-years qualify; median
+R10 0.98. **3 radar-years flagged:** ukcyg 2023 (R10 2.51, interval 2.00-2.91), isbjo 2024 (2.39,
+1.79-3.59), plpas 2012 (2.17, 1.48-3.57; 23 days, the archive's first months). **None of the tail
+suspects is flagged:** robob, hunap, husze, skkoj all have R10 0.78-1.12; the highest suspect is sklaz
+2017-18 (1.56-1.63, under the bar). So the heavy-rain excess of the Hungarian / Slovak / Romanian
+radars does not jump at their own boundaries: either it is regional climate, or a bias shared by the
+whole national network, which only a national-border test would see.
+- *Size of the exclusion if applied:* train 4,108 tile-hours (0.31%; 88 with max >= 20.2 mm), val 143,
+  test 1,262 (14 >= 20.2 mm), nimbus and events 0.
+- *Orographic check by name (pre-stated):* all three are hill or fjord sites by their codes (UK
+  Crug-y-Gorllwyn in Wales, Bjolfur in east Iceland, Pastewnik in the Sudetes foothills), so an
+  orographic boundary cannot be ruled out by name; plpas 2012 also rests on 23 days.
+- *Pending the researcher (2026-10-21):* apply the pre-stated exclusion (0.3% of rows, no effect on
+  any suspect) or drop it as orography / small sample.
+
+**Decision (researcher, 2026-10-21): the exclusion is applied as pre-stated.** The three flagged
+radar-years' tile-hours (owner share >= 10%) are removed at the metadata level:
+`scripts/hpc/apply_radar_exclusion.sh` = `filter_meta_v4.py --biased quality_v4/biased_radar_years_tail.csv`
+-> `build_adv_store.py --meta_only` -> post-break lists -> persistence thresholds -> store validation
+(`logs/apply_radar_exclusion.log`). Fields and gamma targets are per store row and unchanged.
+
+**Observation (2026-10-21, from the researcher's reading of the raw >= 31 mm/h climatology,
+`suspect_radars.pdf` p. 1): Jastrebac (rsjas, Serbia) produced a half-disk of noise in 2023.**
+`scripts/analysis/locate_noise_radar.py` -> `notes/data_analysis_v4/noise_radar_2023.{md,png}`: the
+2023 anomaly (97,400 km², frequency > 1e-3 and > 5x the 2021-25 median) has a circular western arc
+centred 4 km from rsjas (next site 31 km) with a 248 km radius, and a straight eastern edge that is
+a diameter through the same point. It is absent in the other years. rsjas is in the node lists
+2017-2023 only, hence unlabelled on the 2024 ownership map. Rule 5 excluded 12 of its 2023 radar-days.
+Whether the hourly chain removes the half-disk is measured by the raw-vs-corrected climatology
+(`scripts/data_quality/rate_climatology.py`, running); any exclusion of rsjas 2023 waits for that
+map and is the researcher's decision. The researcher also named hubud and hrdeb as the two worst
+radars on that page; the same climatology shows what the chain leaves of them.
+
+### 36c. National-border extension (pre-registered 2026-10-21, before running)
+
+**Why.** §36b compares each radar with its immediate neighbours, which for the suspects are mostly
+radars of the same national network. A bias shared by a whole network (one calibration practice,
+one Z-R relation, one processing chain) cancels at those boundaries and appears only where the
+network meets another. The researcher asked for the test at national borders.
+
+**Criteria (Claude, fixed before running; `scripts/analysis/radar_band_tail.py run_national /
+analyze_national`).**
+- *Data:* as §36b: every second day, every frame, `clean_frame`, contributing geometry, the yearly
+  nearest-radar ownership of `RadarGeometry`.
+- *Bands:* a pixel's country is its owning radar's ODIM country prefix (first two letters). For two
+  countries A and B whose owned areas touch, the A-side band is A's pixels within 6 km (3 px,
+  `BAND_PX`) of a B pixel, and the B-side band likewise. Counts per frame: valid, >= 10, >= 31 mm/h.
+- *Statistic per border side and year:* R10(A|B) = (A-side >= 10 / A-side valid) / (B-side >= 10 /
+  B-side valid), summed over the year; 95% day-block bootstrap interval of log R10 (B = 500); R31
+  descriptive. A border side *qualifies* if both bands have >= 150 px (about 100 km of border) and
+  >= 20 days have a pixel >= 10 mm/h in either band.
+- *Border side flagged:* R10 >= 2 AND lower bound >= 1.25 (the §36b bar).
+- *Country-year flagged:* at least 2 of its qualifying border sides flagged. One border alone can be
+  an orographic crest (Carpathians, Alps, Pyrenees) or a coast; a network bias appears on every
+  border with an unbiased neighbour. A single flagged border is reported, not acted on; the mean
+  DEM height of both bands is reported for every flagged border.
+- *Consequence:* a flagged country-year's radar-years (every radar of that country active that year)
+  go into the exclusion list, applied as in §36b (owner share >= 10%; same script). The excluded
+  share of tile-hours and of tile-hours >= 20.2 mm is reported.
+- *Limitations, stated in advance:* (1) neighbouring networks with the same bias cancel at their
+  common border (if HU and SK both read high, only their borders with other networks show it);
+  (2) a country with one qualifying border cannot be flagged; (3) ownership is nearest-radar within
+  250 km, so the "national border" is the composite's network seam, not the political border; over
+  sea both sides are sea.
+
+**Result (2026-10-21; `notes/data_analysis_v4/radar_band_national.md`).** 1,034 qualifying border sides
+x years; median R10 1.00. 13 border sides flagged, **one country-year: Lithuania 2026** (R10 2.34
+against Poland, interval 2.10-2.61; 2.22 against Sweden, 1.65-3.18; not against Latvia) -> ltlau and
+ltvil 2026.
+- **Hungary, Slovakia, Romania: no network bias.** Median R10 over their qualifying borders 0.99
+  (hu, 63 border-years), 1.02 (sk, 44), 1.11 (ro, 6); maximum 1.69 (ro vs hr 2025), 1.67 (sk vs hu
+  2018). With §36b this closes the tail suspicion: neither the radars' own boundaries nor the
+  national seams show heavy rain jumping where these networks begin. Their high tail is therefore
+  attributed to climate or to intermittent artefacts (`suspect_radars.pdf`), not to a consistent
+  excess.
+- *Single flagged borders, not acted on (as pre-stated):* Belgium vs UK 2018-20 and NL/UK 2016, 2024-25
+  (sea seams over the Channel / North Sea), UK vs Ireland 2023, Latvia vs Poland 2016 (20 days), and
+  France vs Croatia 2023-25. The last is a geometry artefact: with no Italian radar contributing those
+  years, nearest-radar ownership puts a seam between Aleria (Corsica) and Goli (Croatia) over Tuscany,
+  at the edge of both ranges. The two-border rule kept it from acting, as intended.
+- *Exclusion applied as pre-stated* (`apply_radar_exclusion.sh quality_v4/biased_radar_years_all.csv`,
+  = §36b's three + ltlau/ltvil 2026): only the nimbus set has 2026 rows; 1,888 tile-hours removed
+  (1.4% of its 2026 rows; 186 with a maximum >= 20.2 mm). Train, validation, test and the scaler are
+  unchanged.
+
+**Decision (researcher, 2026-10-20): the pre-break ablation (§34) runs right after the smoke run.**
+Lists: `scripts/dataset_v2/postbreak_lists.py` writes `<list>_postbreak.txt` in the adv store's meta
+(on the v4 owned lists: train 76.0%, val 86.1%, test 68.3% post-break). Both arms validate and are
+evaluated on the post-break val / test lists; matched step budget and seed.
+*Amendment (Claude, 2026-10-21, before either arm runs):* both arms validate on the **full** validation
+list and are evaluated on the post-break test list. The vanilla v4_adv baseline (`run_vanilla_v4adv.sh`,
+same seed and budget) is then the all-data arm, so the ablation costs one extra run, not two. Using the
+same validation list for both arms keeps the comparison fair; only the training lists differ.
+
+## 37. The structural-loss weight on hourly data (2026-10-21)
+
+**Question.** `STRUCTURAL_LOSS_WEIGHTS.minkowski = 1e-4` was validated on 15-min rates (active at
++3.8% MAE, below the reward-hacking onset at 1e-3; §2). The hourly corrected target differs in scale,
+scaler and threshold grid, so the weight must be re-established (status note, next step 2).
+
+**Method (researcher approved step 1 on 2026-10-21; step 2's criteria are written before it runs).**
+- *Step 1, calibration (Claude's rule, fixed before results).* Transfer the validated weight by the
+  structural term's share of the gradient, measured with `tools/gradient_audit.py` exactly as the
+  15-min audit of 2026-09-23 (512 x 128 patches, anneal 0.1, 10% of the data, jackknife errors):
+  - 1a, at initialisation: parity weight lambda* = ||grad MSE|| / ||grad L_mink||; the hourly
+    centre is w_init = 1e-4 x lambda*_hourly / lambda*_15min (15-min: lambda* = 1.05e-3);
+  - 1b, at the trained vanilla checkpoint, with its own Adam moments: the weight giving the same
+    Adam share as 1e-4 at the 15-min vanilla checkpoint (Adam share 16.1); the checkpoint is the
+    hourly vanilla baseline (`run_vanilla_v4adv.sh`, starts when the climatology run ends).
+  - **1b governs** if 1a and 1b disagree: the Adam share is what shapes the actual update, and the
+    15-min weight was validated on trained models. 1a is reported as the cheap first estimate. A
+    disagreement of more than 3x is reported as a finding (the share is not stable across training).
+- *Step 2, bracketing sweep.* Vanilla plus four weights log-spaced around the step-1 centre
+  (w/3, w, 3w, 10w), same seed and reduced budget, judged on validation: active (MAE >= +1% over
+  vanilla), not gaming the loss (anisotropy, peak overshoot, images), largest such weight chosen.
+  Criteria to be fixed here before it runs.
+- *Literature (2026-10-21, web search, not systematic):* gradient balancing is established (GradNorm,
+  Chen et al. 2018; Wang, Teng & Perdikaris 2020; Zhong & Maki 2020, closest: weight from a target
+  gradient-norm ratio). No prior found for transferring a fixed weight across datasets by gradient
+  share, nor for a hacking-bounded weight selection in precipitation SR. **No contribution is claimed
+  before a systematic search** (EXPERIMENTS §5 Paper). Notes: `notes/weight_selection_literature.md`.
+- *Follow-up kept, not adopted:* setting the weight every step from the gradient share (EXPERIMENTS
+  "To explore").
+
+**Result 1a (2026-10-21; `eval_results/gradient_audit/2026-10-21_v4adv_init/`).** At initialisation,
+hourly corrected data, same settings as the 15-min audit: parity lambda* = 8.90e-4 (± 3.7e-6),
+against 1.05e-3 (± 1.4e-5) on 15-min data. **w_init = 1e-4 x 8.90e-4 / 1.05e-3 = 8.5e-5 (± ~0.1e-5).**
+At 1e-4 the share is 0.112 hourly vs 0.095 on 15-min (cos with the MSE gradient +0.86 vs +0.78). So at
+initialisation the validated 1e-4 carries over within 15%: hourly aggregation barely changes the
+balance of the two terms at the start of training. Step 1b (trained vanilla checkpoint, Adam share)
+decides; the vanilla baseline is queued behind the climatology run.
+
+**Raw vs corrected climatology (2026-10-21; `scripts/data_quality/rate_climatology.py`, every 7th day
+2016-2025, 520 days, 49,864 frames; `notes/data_analysis_v4/rate_freq{31,1}_raw_vs_corrected.pdf`,
+`rate_clim_per_radar.csv`).** The screening plus the radar exclusions remove 31.7% of the 15-min
+exceedances >= 31 mm/h, 2.0% of those >= 1 mm/h and 0.60% of valid pixel-frames.
+- Spokes and beams are largely removed: hrdeb from 13.9x to 2.6x the median radar's corrected
+  frequency (82% of its exceedances removed), rsfrg 37x -> 2.5x (94%), skjav 8.9x -> 3.8x (59%).
+- **rsjas 2023 is not handled:** raw 3.85e-3 (other years 1.9e-5 to 1.6e-4), corrected 2.07e-3 (49%
+  removed), about 60x the median radar. *Pending the researcher:* exclude rsjas 2023 as a radar-year
+  (same path as §36b; years 2017-2023 are in train/val/test).
+- hubud is not anomalous over its own area (1.6x raw, 1.3x corrected); the spokes near its label on
+  the suspect page belong to skjav.
+- Highest after correction: rsjas, robuc (11% removed; straight streaks south of the site remain),
+  rocra, hrulj, and the other Romanian radars at 4-5x; the boundary tests found no jump at Romania's
+  borders, so part of this is climate.
+- **Decision (researcher, 2026-10-21): rsjas 2023 excluded** as a radar-year (owner share >= 10%):
+  `quality_v4/biased_radar_years_all.csv` = §36b's three + ltlau/ltvil 2026 + rsjas 2023, applied by
+  `scripts/hpc/exclude_then_vanilla.sh` (exclusion, store re-validation, then the baseline). Expected
+  from the dry run: 806 train, 107 validation, 312 test tile-hours (24% with a maximum >= 20.2 mm).
+- *The vanilla baseline was restarted* (researcher): the run started 14:57 (`logs/unet_ana_20261021_145706.log`,
+  4 of 25 epochs, ~45 min each, no NaN) was stopped at 18:00 so that every Study-1 run trains on the
+  same final lists. Its run directory is kept but is not a result.
+
+*Note on §37 step 2 (Claude, 2026-10-21, later the same day).* The selection rule for the bracket
+already exists: DECISIONS §16 / RESEARCH_NOTES §5 propose the calibrated bracket {λ*/3, λ*, 3λ*, 10λ*}
+with one fixed epoch budget, the last checkpoint evaluated, and the point chosen as **the best
+exceedance ratio with ΔMAE <= +5% and anisotropy <= 1.2x vanilla**, then 3 seeds at that point and the
+whole bracket reported. Step 2 uses that rule (with the activity floor of CLAUDE.md, ΔMAE >= +1%,
+as a validity check) unless the researcher changes it; the wording "largest active, non-gaming
+weight" above was a loose paraphrase, superseded by this rule.
+
+**Why the screen missed rsjas 2023 (2026-10-21; `scripts/data_quality/why_missed.py`,
+`notes/data_analysis_v4/why_missed_rsjas_2023.md`, methods §6.8).** Checked on the two worst days
+(10 March, 22 July) and on the radar-day ranking.
+- *Rule 5:* no 2023 day reaches score 1 (worst 0.90). The iso31 reference is the median of the five
+  nearest contributing radars (rsfrg, hrgra, hrulj, husze, huhar); three of them were noisy on the
+  same days, so the median (1,300-6,000 isolated >= 31 mm/h pixels) was within 3-8x of rsjas. The
+  ceiling and f150 references include rsjas's own seasonal q99, inflated by its bad weeks. rsfrg and
+  hrgra were caught (83 and 77 radar-days); hrulj was not (2).
+- *Pixel rules:* ~125,000 of ~200,000 raw pixel-frames >= 31 mm/h per day stay >= 31. The noise is
+  clustered (not isolated), moving (not persistent), surrounded by noise (not a burst in quiet
+  surroundings) and supported by noise in adjacent frames (not unsupported). Everything left above
+  500 mm/h is coded refused (larger than the 500 px repair guard), and refused tile-hours are rejected
+  whole; the moderate part (31-150 mm/h) reaches the dataset.
+- *Effect before the exclusion:* 1,226 rsjas 2023 tile-hours in the lists, 5.4% with a 15-min rate
+  >= 150 mm/h (2021-22: 0.8-1.1%). Excluded now (above).
+- **Pending the researcher: hrulj 2023** (same pattern, corrected ~11x the median radar vs 1.7-2.1x in
+  2024-25; only 2 radar-days excluded). A future rule-5 revision should not take its reference from
+  neighbours that can fail together, nor from the radar's own record (EXPERIMENTS §5).
+- **Decision (researcher, 2026-10-21 21:00): hrulj 2023 excluded** as a radar-year, like rsjas 2023
+  (`biased_radar_years_all.csv` now 7 radar-years). Removed: 2,666 train, 198 validation, 997 test
+  tile-hours. **Final lists: train 1,299,686 / val 172,050 / test 212,803 / nimbus 378,567**;
+  scaler unchanged (corrected train max 613.3 mm). The vanilla baseline restarted at 18:11 was stopped
+  at 21:06 (3 of 25 epochs, no NaN) and restarts on these lists after the store re-validation
+  (`logs/exclude_then_vanilla_hrulj.log`).
+
+**Systematic scan for rsjas-like radar-years (2026-10-21; `notes/data_analysis_v4/rate_clim_per_radar_year.csv`).**
+From the raw-vs-corrected chunks: per radar-year, the corrected frequency of 15-min rates >= 31 mm/h
+against the radar's other years (x_own) and the median radar-year (x_all, 2.5e-5); 1,545 radar-years.
+69 have x_own >= 3 and x_all >= 3, a loose bar (a few storm days in a 1-in-7-day sample can triple a
+year). Two discriminators: the share of the year in its top 6-day chunk (all radar-years: median 0.55)
+and the share in November-March chunks (median 0.027, 90th percentile 0.36).
+- rsjas 2023 (x_own 54, winter 0.56) and hrulj 2023 (5.9, 0.43): already excluded.
+- Summer-concentrated, consistent with convective seasons: fikor/fianj 2025, frpla 2021, fipet 2024,
+  frtre 2022, deasb 2019, deeis 2022, frcae 2025, eesur 2021, frbou 2020, frnim 2022, plram 2024.
+- **Winter-heavy, like rsjas/hrulj, to be looked at (researcher's decision):** mtgud 2017 (Malta;
+  x_own 22, winter 0.64; Mediterranean autumn convection is real, so not conclusive), esclg 2025
+  (7.6, 0.53), ukham 2025 (6.5, 0.50, peak in early November). isegs 2017 (6.7, 0.27) is borderline.
+
+**Decision (researcher, 2026-10-22): mtgud 2017, esclg 2025 and ukham 2025 are kept** after the review
+pages (`notes/data_analysis_v4/radar_year_review.pdf`). Stated as residuals in the methods appendix:
+ukham 2025's radial spokes survive the screen; esclg 2025's raw maxima of 1028 mm/h (a capped value not
+in the ceiling table) are cut to 109-486 mm/h by the screen; mtgud 2017 was the only radar over Malta
+that year. The radar exclusions are final at 7 radar-years; the vanilla baseline is not restarted.
+
+**Decision (researcher, 2026-10-22), §35: the advection-corrected target is accepted on fast-growing
+convection**, after the plain-vs-corrected gallery (`notes/data_analysis_v4/gallery_plain_vs_adv.pdf`,
+convective and event pages). No growth-aware motion estimate is needed.
+
+**Decisions (researcher, 2026-10-22).**
+- *§37 step 2 (weight bracket):* Claude's recommendations accepted. The §16 rule picks the weight
+  (best exceedance ratio with ΔMAE <= +5% and anisotropy <= 1.2x vanilla; ΔMAE >= +1% for activity);
+  bracket {w*/3, w*, 3w*, 10w*} around the step-1 centre; **full budget** (25 epochs, ~18 h each),
+  same seed; **3 seeds** at the chosen weight; the choice is made on **validation**, test is used only
+  for reporting; exceedance ratio at the hourly POT level re-derived on the corrected store.
+- *§34 amendment (pre-break ablation):* accepted. Both arms select on the full validation list, and the
+  **last** checkpoint of each arm is evaluated (not "best"), on the post-break test rows.
+- *Launch (researcher, 2026-10-22: no further approval needed):* `scripts/hpc/run_bracket_v4adv.sh`
+  (`logs/bracket_v4adv.log`) waits for the vanilla baseline, runs step 1b (audit at
+  `UNet_Ana_20261021_211732`, `--which best`, same settings as the 15-min audit), sets
+  w* = 1e-4 x 16.127 / (hourly Adam share at 1e-4) rounded to 2 significant figures (written to
+  `eval_results/gradient_audit/2026-10-22_v4adv_vanilla/w_star.txt`), then trains the bracket in the order
+  w*, 3w*, 10w*, w*/3 on GPU 1, one run after another (two at once would exceed the 8-core budget).
+
+**POT level on the corrected store (2026-10-22; `scripts/data_quality/pot_threshold.py --version v4_adv`,
+`notes/data_analysis_v4/pot_threshold_adv.md`, `pot_threshold_adv_fits.csv`).** Same grid, fits and
+day-block bootstrap as §32, on the rows of the corrected lists (exclusions applied) with their corrected
+tile maxima (0 mismatches against the stored fields).
+- **The §32 rule gives no level.** The highest grid point, u = 100 mm (6,898 exceedances on 646 days,
+  above the 1,000 minimum), has sigma* = -8.9 [-26, 12.6] and xi = 0.30, outside the intervals of every
+  lower u; on the plain sums it was already marginal (it fell just outside at 60 mm).
+- Between 31.7 and 80 mm the weighted train fit is stable: xi 0.18-0.21, sigma* 2.9-6.4, all inside each
+  other's intervals. Without the 100 mm point the rule would give 31.7 mm; with it, nothing.
+- Exceedances (corrected): at 50.1 mm train 99,933 (1,702 days), test unweighted 14,480 (305 days), xi
+  0.19 / 0.16; at 31.7 mm train 427,828 (2,366 days), test 77,262 (392 days), xi 0.19 / 0.18.
+- *Pending the researcher:* (a) keep u = 50.1 mm, the level pre-stated on the plain sums (§32), which lies
+  inside the stable range (Claude's recommendation: no rule changed after seeing the result); or (b) amend
+  the rule's minimum count (e.g. >= 10,000 exceedances) so the 100 mm point drops out, giving 31.7 mm, with
+  five times more test exceedances, but chosen after seeing the fits.
+
+**Result 1b (2026-10-22; `eval_results/gradient_audit/2026-10-22_v4adv_vanilla/`).** At the trained hourly
+vanilla checkpoint (`UNet_Ana_20261021_211732`, best = epoch 24), Minkowski at 1e-4 has an Adam share of
+8.83 (15-min vanilla: 16.13) and a raw share of 6.0 (15-min: 24); cos with the MSE gradient -0.14
+(15-min: -0.72). **w* = 1e-4 x 16.127 / 8.833 = 1.8e-4**, 2.1x the step-1a estimate (8.5e-5), below the 3x
+bar for reporting a disagreement; 1b governs. Bracket (run order): 1.8e-4, 5.4e-4, 1.8e-3, 6.0e-5.
+Runs: 1.8e-4 `UNet_Ana_20261022_160540` (done 2026-10-23 12:20), 5.4e-4 `UNet_Ana_20261023_121956`
+(done 2026-10-24 08:37), 1.8e-3 running, then 6.0e-5; ~20 h each, no NaN so far.
+- **Decision (researcher, 2026-10-24): u = 50.1 mm is kept** for the POT fits on the corrected store
+  (option a); the §32 rule is not amended. Bracket evaluation on validation started
+  (`scripts/hpc/run_bracket_val_evals.sh`, `eval_results/{backbone,extremes}/v4adv_val/`).
+
+**Bracket result on validation (2026-10-26; last checkpoints, u = 50.1 mm; `notes/data_analysis_v4/bracket_validation.csv`,
+images `bracket_gallery.pdf`, 12 random validation patches >= 20.2 mm, all five models).**
+
+| model | ΔMAE | anisotropy (x vanilla) | exceedance ratio | RL bias λ10 / 100 / 1000 | FSS 50.1 mm, 1 / 21 px | peak ratio (extreme) |
+|---|---|---|---|---|---|---|
+| vanilla | 0 | 2.12 (1.00) | 0.113 | -44% / -31% / -13% | 0.106 / 0.383 | 0.36 (0.20) |
+| 6.0e-5 | +4.7% | 0.56 (0.26) | 0.192 | -37% / -41% / -44% | 0.097 / 0.417 | 0.86 (0.52) |
+| 1.8e-4 (w*) | +7.9% | 2.24 (1.05) | 0.287 | -32% / -36% / -41% | 0.118 / 0.535 | 0.86 (0.53) |
+| 5.4e-4 | +12.5% | 2.02 (0.95) | 0.442 | -25% / -32% / -39% | 0.131 / 0.648 | 0.93 (0.58) |
+| 1.8e-3 | +19.0% | 3.45 (1.62) | 0.607 | -18% / -21% / -24% | 0.125 / 0.714 | 0.92 (0.61) |
+
+gpd_xi_obs = 0.183 in every row (sanity check passes). All runs: no NaN, weight as intended in the logs.
+- **By the §16 rule the winner is 6.0e-5**, the only run inside the MAE cap (+5%); every stronger weight
+  exceeds it (w* costs +7.9%, against +3.8% for 1e-4 on 15-min data).
+- *The anisotropy cap does not see what the images show.* Grid-aligned striping and blocky rectangles grow with
+  the weight: mild at 1.8e-4, clear at 5.4e-4 (whose mean anisotropy is 0.95x vanilla) and strong at 1.8e-3.
+  The mean of per-patch ratios is noisy (targets range 0.08-2.6 per patch) and vanilla itself is 2.12, so a
+  1.2x cap on that mean is weak on hourly data. 6.0e-5's low value (0.56) is not a visible diagonal
+  artefact in the gallery: its fields look like vanilla's with sharper, higher peaks.
+- *The tail is mixed.* More weight means more exceedances above 50.1 mm, higher patch peaks and better FSS at
+  21 px, but every Minkowski run under-predicts the long return levels (λ = 100, 1000) more than vanilla
+  does: the predicted tail is thinner (fitted xi 0.12-0.17 vs observed 0.18; vanilla 0.32). The 15-min
+  finding "helps the tail" holds here for exceedance counts and peaks, not for return levels.
+- Next (queued, `scripts/hpc/run_ablation_then_seeds.sh`, `logs/ablation_then_seeds.log`): the pre-break
+  ablation's post-break arm first (w = 0, 33 epochs ~ matched steps, seed 42), then seeds 43 and 44 at 6.0e-5.
+  The ablation goes first because a decision to drop the pre-break rows would force the seeds to be retrained.
+- **Researcher, 2026-10-26: the seed runs at 6.0e-5 are stopped** (not started). The queue shell was killed
+  at 08:21; the ablation's post-break arm keeps training (`logs/unet_ana_20261026_081502.log`, done ~2026-10-27
+  04:30). The choice of the Study-1 Minkowski weight on hourly data is open again.
+- **Researcher, 2026-10-26: the ablation's post-break arm is stopped as well** (killed at ~08:25, during
+  epoch 1 of 33; its run directory is kept but is not a result). Nothing is running on GPU 1. The pre-break
+  ablation (§34) and the Study-1 Minkowski weight on hourly data are both open.
+
+## 38. Study 2 on hourly data: flow matching and its Minkowski fine-tunes (2026-10-26)
+
+**Question (researcher).** Before choosing the Study-1 weight or running the pre-break ablation: does the
+flow-matching (FM) residual model still work on the hourly corrected target, the biggest change of v4, and how
+do its two Minkowski fine-tunes behave there?
+
+**Plan (approved by the researcher 2026-10-26).**
+- *Backbone:* the hourly vanilla backbone `UNet_Ana_20261021_211732`, **last** checkpoint (epoch 25), the one
+  every backbone metric so far comes from; "best" is selected on a dry-pixel-dominated val MSE that is flat
+  since epoch 2 (epoch 24 vs 25).
+- *Step 0:* sigma_r of that backbone on the train split (`compute_residual_stats.py`), pinned as
+  `FM_RESIDUAL_SCALE` in a dedicated config (the corrected store had no residual statistics, and without them the
+  code falls back to sigma_r = 1.0); FM_SAMPLER heun, FM_SAMPLE_STEPS 16; fp32 (`--no_amp`); a new launcher that
+  takes config and backbone (the old one hardcodes both; it stays as is); a 1-epoch smoke run to measure the
+  epoch time and set the budget (target ~4 days).
+- *Step 1:* FM training; `fm_best.pth` (selected on the FM validation loss, not circular) is evaluated.
+- *Step 2:* fine-tunes from it, each after a coupling check (`diagnose_coupling.py`, minutes): (a) distributional,
+  K = 1, M = 4, w = 1e-3, proximal 1, spread 0.5 (as `Extremes_20260804_170256`); (b) energy, M = 16,
+  w = 1e-3, retention 1.0 (as `Energy_20260811_171310`). Fine-tunes are evaluated from `fm_mink_latest.pth`.
+- *Step 3:* evaluation of vanilla and 6e-5 backbones, FM, FM + Minkowski and FM + energy on one fixed 4,096-patch
+  validation subset (16 members, heun-16, u = 50.1 mm), with tail columns, anisotropy, the new striping measure
+  and images.
+- *In parallel (CPU):* the striping measure (EXPERIMENTS To explore), including diagonal striping.
+- *After:* the 2e-5 backbone (bracket extended downward, since the winner sat at its edge), then the Study-1
+  weight and the pre-break ablation.
+- *Kept for the write-up (researcher):* every bracket artefact and the coupling-check method (EXPERIMENTS Paper).
+
+**Striping measure, validation on the bracket (2026-10-26; `src/evaluation/striping.py`,
+`scripts/evaluate/striping_eval.py`, `notes/data_analysis_v4/striping_bracket.csv`; 1,024 validation patches >= 1 mm).**
+- *Version 1 fails* (edge orientation of raw log(1+f) gradients; paired spectral anisotropy): no ordering of the
+  bracket. The strongest edges are wet/dry boundaries, not the texture inside the rain.
+- *Version 2, high-pass texture orientation, passes the ordering:* share of strong texture edges inside rain
+  (eroded 3 px) within ±5° of the grid axes, prediction minus target, median over patches: vanilla 0.017,
+  6e-5 0.038, 1.8e-4 0.048, 5.4e-4 0.049, 1.8e-3 0.098 (heavy patches: 0.016 / 0.016 / 0.022 / 0.029 / 0.067).
+  Monotone in the weight; 1.8e-4 and 5.4e-4 are close. The diagonal version is negative for every model (fewer
+  diagonal texture edges than the targets), so no diagonal striping. The spectral-line variant is not usable
+  (window leakage dominates; blocks score below an isotropic field). Synthetic checks in the module's tests.
+  *Not yet adopted:* its threshold is to be fixed here before it is applied to new runs.
+
+**Why the Minkowski texture has a fixed orientation (researcher's question, 2026-10-26;
+`scripts/evaluate/texture_orientation.py`, 64 heavy validation patches).**
+- *The estimators break rotation symmetry.* Perimeter (4-direction Cauchy-Crofton, w_ax 0.473, w_di 0.218): an
+  ellipse's perimeter is underestimated by 4.8% when its long axis lies on a grid axis and overestimated by
+  ~1.5% at 25-35° / 55-65°. Euler (4-connected cubical, V - Ex - Ey + F): a 1-px-wide line has chi = 1 along an
+  axis but up to 212 at 45° (it falls apart into corner-touching pixels); no effect from 1.5 px width.
+- *The texture is not tied to the input.* Predicting on the input rotated by 90° and rotating back gives a
+  texture that correlates with the original prediction at 0.04 (5.4e-4) and 0.11 (1.8e-3).
+- *At high weight the texture is locked to the grid.* Texture-edge directions: targets nearly uniform (peak
+  share 0.062 per 10°, uniform 0.056); 1.8e-3 peaks at 92.5° with 3x the uniform share, and after the rotation
+  test the peak sits at 2.5°, i.e. the same direction in the network's own frame. Lower weights have weaker
+  peaks (0.073-0.083); single test on 64 patches, not repeated.
+
+**§38 step 0 (2026-10-26).** sigma_r of the hourly vanilla backbone (last checkpoint) on the full train split
+(1,299,686 patches): **0.012668** (15-min vanilla: 0.018981); per-pixel std map CV 0.064, so the scalar is used.
+Pinned in `configs/config_v4_adv_fm.yaml` (FM_RESIDUAL_SCALE, BACKBONE_CHECKPOINT = the hourly vanilla last
+checkpoint, FM_SAMPLER heun, FM_SAMPLE_STEPS 16). The smoke run's startup line reads
+`config FM_RESIDUAL_SCALE=0.01267`. Write-up of the deterministic-model limitation (researcher's request):
+`notes/minkowski_deterministic_limitation.md`.
+
+**§38 step 1 launched (2026-10-26 09:26).** FM smoke run (2% data, 1 epoch, `runs/sr_flow_matching/Extremes_20261026_091536`,
+not a result): train_fm 0.735, val_fm 0.519, ~1.85 h per full epoch (1.65 steps/s + 7 min validation). Full run:
+`configs/config_v4_adv_fm.yaml`, **50 epochs max** (~90 h; early stopping on PATIENCE 5 may end it sooner),
+`logs/flow_matching_20261026_092624.log`; startup line `config FM_RESIDUAL_SCALE=0.01267`, amp=False.
+Evaluation subsets (fixed, seed 0): `val_subset4096.txt` (random validation rows; 279 with tile max >= 20.2 mm,
+38 >= 50.1) for general metrics, and `val_extremes1024.txt` (validation rows with corrected tile max >= 20.2 mm;
+187 >= 50.1) for the tail columns, which are therefore conditional on heavy tiles. The existing `extremes_val`
+list was selected on plain maxima (corrected minimum 2.8 mm) and is not used for this. Chain
+`scripts/hpc/after_fm_v4adv.sh` (`logs/after_fm_v4adv.log`): when FM ends, evaluates vanilla, 6e-5 and FM on both
+subsets, then runs the coupling checks for both fine-tunes, and stops.
+
+**§38 step 1 result (2026-10-29).** FM on the hourly corrected target, `runs/sr_flow_matching/Extremes_20261026_092630`
+(`logs/flow_matching_20261026_092624.log`): early-stopped at epoch 33 (PATIENCE 5), no NaN; best val_fm **0.2323 at
+epoch 28** (`fm_best.pth`, evaluated). Val_fm by epoch: 0.281, 0.264, 0.259, 0.255, 0.252, 0.249, 0.248, 0.246, 0.245,
+0.242 (ep 10), 0.240 (ep 12), 0.238 (ep 15), 0.235 (ep 19), 0.233 (ep 23-24), 0.232 (ep 28); train_fm 0.320 -> 0.239.
+Comparable in scale with the 15-min FM (0.297 / 0.285 / 0.279 at epochs 1-3; residual normalised by sigma_r in both),
+~1.9 h per epoch, 64 h in total. Evaluation chain started 00:28 (`logs/after_fm_v4adv.log`).
+
+**§38 step 3, first part: FM on hourly data works (2026-10-29; `notes/data_analysis_v4/fm_hourly_validation.csv`,
+`eval_results/extremes/v4adv_val{sub,ext}/`).** FM best checkpoint (epoch 28) with the hourly vanilla backbone,
+16 members, heun-16, u = 50.1 mm, against the vanilla and 6e-5 backbones on the same patches (FM eval: 56 min on
+4,096 patches, 13 min on 1,024).
+
+| subset | model | exceedance ratio | FSS 50.1 mm 1 / 21 px | RL bias λ10 / 100 / 1000 | peak ratio (extreme) | RAPSD dist. | anisotropy |
+|---|---|---|---|---|---|---|---|
+| random 4,096 | vanilla | 0.055 | 0.052 / 0.138 | (too few exceedances) | 0.36 (0.20) | 3.57 | 1.84 |
+| | 6e-5 | 0.179 | 0.047 / 0.248 | | 0.85 (0.54) | 1.33 | 0.51 |
+| | FM | 0.272 | 0.130 / 0.466 | | 0.86 (0.55) | 0.86 | 1.40 |
+| heavy 1,024 | vanilla | 0.046 | 0.041 / 0.100 | (too few predicted) | 0.24 (0.10) | 3.86 | 1.53 |
+| | 6e-5 | 0.162 | 0.067 / 0.401 | -39% / -41% / -43% | 0.65 (0.28) | 1.44 | 0.36 |
+| | FM | 0.298 | 0.114 / 0.506 | -30% / -36% / -44% | 0.55 (0.33) | 1.14 | 1.31 |
+
+gpd_xi_obs identical within each subset (0.155 heavy; -0.032 random, too few exceedances for a fit). FM is the best
+row on exceedances, FSS and the spectrum; the tail is still under-predicted (about 3 in 10 exceedances above
+50.1 mm, long return levels -36% to -44%). Single run, validation subsets.
+
+**Coupling checks (`logs/coupling_v4adv_{distributional,energy}.log`, extreme batch, fixed noise, 40 steps).**
+- distributional (M = 4): reward 0.271 -> 0.195 (-28.1%), change 0.076 against a noise floor of 0.071 -- a marginal
+  pass (15-min: -59.7%, 5x the floor); still falling at step 36; cos(K=1, K=2) 0.97, (K=1, K=4) 0.90.
+- energy (M = 16): 0.157 -> 0.106 (-32.5%), change 0.051 against a floor of 0.027 (1.9x); 1 of 40 steps clipped;
+  cos 0.97 / 0.85.
+- Per-threshold gradient: almost all from u <= 0.83 mm, zero from 20.2 mm up (the pixel-mass bottleneck again);
+  100% of the field gradient in the top 1% of pixels.
+Both pass the script's verdict; fine-tunes launched as planned (`scripts/hpc/run_finetunes_v4adv.sh`,
+configs `config_v4_adv_fm_{dist,energy}.yaml`, `logs/finetune_v4adv_{dist,energy}.log`).
+
+**§38 step 3, second part: the distributional fine-tune (2026-10-29; `runs/sr_fm_minkowski/FMdist_v4adv_20261029_014713`,
+`logs/finetune_v4adv_dist.log`, `fm_mink_latest.pth` evaluated, epoch 10).** Startup line `config FM_RESIDUAL_SCALE=0.01267`;
+distributional K = 1, M = 4, w_reward 1e-3, proximal 1, spread 0.5, retention 0, 10 x 500 steps at ~2 s/step (2 h 51 min).
+The trainer's progress bar shows the full loader (162,460 batches) but stops each epoch at REWARD_STEPS_PER_EPOCH.
+- *Training:* train reward 0.351 -> 0.339, val reward (20 batches) 0.361 -> 0.350 with no clear trend between
+  (0.345-0.367); proximal 5e-4 to 7e-4; guards within bounds every epoch (anisotropy 1.21-1.88 < 2.16, peak ratio
+  0.84-1.01 < 1.15). The reward barely moved, consistent with the marginal coupling check.
+- *Evaluation* (same protocol and patches as the FM row):
+
+| subset | model | exceedance ratio (n pred / obs) | FSS 31.7 mm 21 px | FSS 50.1 mm 1 / 21 px | RL bias λ10 / 100 / 1000 | peak ratio (extreme) | RAPSD dist. | anisotropy | CRPS |
+|---|---|---|---|---|---|---|---|---|---|
+| random 4,096 | FM | 0.272 (79 / 290) | 0.508 | 0.130 / 0.466 | | 0.86 (0.55) | 0.86 | 1.40 | 0.0324 |
+| | FM + dist | **0.517** (150 / 290) | **0.682** | 0.145 / **0.538** | | 0.92 (0.59) | **0.35** | 1.37 | 0.0321 |
+| heavy 1,024 | FM | 0.298 (458 / 1,537) | 0.707 | 0.114 / 0.506 | -30% / -36% / -44% | 0.55 (**0.33**) | 1.14 | 1.31 | 0.161 |
+| | FM + dist | **0.377** (580 / 1,537) | **0.741** | 0.109 / **0.554** | **-23% / -20% / -15%** | 0.62 (0.22) | **0.81** | 1.30 | 0.160 |
+
+  Better than clean FM on exceedances, FSS at 21 px, every return level, the spectrum and (slightly) CRPS, at
+  unchanged anisotropy. One column looked worse, the median peak ratio on the most extreme patches (>= 142 mm/h
+  threshold, 0.33 -> 0.22), but it is within eval noise (see below). gpd_xi_pred 0.205 against 0.155 observed (FM 0.047); per CLAUDE.md the xi
+  column is not used to rank.
+- *Attribution.* The only non-reward term is the proximal anchor, zero at initialisation, so the change comes from
+  the Minkowski reward (its mean and spread parts together; which of the two is not separated). Why a reward
+  whose gradient comes almost entirely from u <= 0.83 mm moves the > 50 mm tail is not established; my inference:
+  matching the low-threshold structure and its spread makes fields more intermittent and contrasted, which shifts the
+  whole residual distribution.
+- *Eval-to-eval noise (2026-10-29; `scripts/hpc/run_fm_eval_repeat.sh`, `eval_results/extremes/v4adv_valext/fm_rep2`).*
+  `eval_extremes` does not seed the FM noise, so clean FM was evaluated a second time on the heavy subset:
+
+  | heavy 1,024 | FM draw 1 | FM draw 2 | FM + dist |
+  |---|---|---|---|
+  | exceedances (of 1,537) | 458 | 393 | **580** |
+  | RL bias λ10 / 100 / 1000 | -30% / -36% / -44% | -33% / -36% / -36% | **-23% / -20% / -15%** |
+  | FSS 31.7 mm 21 px | 0.707 | 0.707 | **0.741** |
+  | FSS 50.1 mm 1 / 21 px | 0.114 / 0.506 | 0.103 / 0.523 | 0.109 / 0.554 |
+  | peak ratio (extreme) | 0.55 (0.33) | 0.54 (0.20) | 0.62 (0.22) |
+  | RAPSD dist. | 1.14 | 1.19 | **0.81** |
+  | CRPS (extreme) | 0.1613 (0.336) | 0.1614 (0.335) | 0.1598 (0.333) |
+  | gpd_xi_pred | 0.047 | 0.186 | 0.205 |
+
+  *Verdict:* the fine-tune's gain exceeds the eval noise on the 100- and 1000-yr return levels, FSS at 31.7 mm,
+  the spectrum and CRPS; on the exceedance count it is ~3 noise sd (crude: two draws). FSS at 50.1 mm and the 10-yr
+  level gain by about 1-2x the noise. **The extreme-patch peak ratio is noise** (clean FM alone moves 0.33 -> 0.20),
+  so the apparent loss above is withdrawn; so is xi_pred (0.047 vs 0.186 between draws of one model, which confirms
+  the CLAUDE.md rule). This measures evaluation noise only, not training-seed noise: one fine-tune, one FM, one seed,
+  validation subsets.

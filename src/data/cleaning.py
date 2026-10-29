@@ -80,6 +80,7 @@ REPAIR_HOT_KEPT, REPAIR_PERSIST = 64, 128   # hourly chain (DECISIONS §23): hot
                                             # neighbour, left as is; persistent local peak lowered
 REPAIR_BURST = 256                          # hourly chain (DECISIONS §26): isolated single-frame burst
                                             # lowered; repair codes are uint16 in the hourly chain
+REPAIR_STATIONARY = 512                     # hourly chain (DECISIONS §31): stationary isolated echo
 RAY_MAX_WIDTH_PX = 3.0       # hourly ray test: a ray is a few px wide (a front is not)
 RAY_SITE_OFFSET_PX = 5.0     # the ray's axis passes within this + RAY_SITE_OFFSET_SLOPE x distance
 RAY_SITE_OFFSET_SLOPE = 0.03 # of a radar site (~1.7 deg), instead of only pointing near it

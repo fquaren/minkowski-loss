@@ -334,3 +334,53 @@ def test_motion_lk_coarse_step_close_to_dense():
     wet = a > 1
     assert abs(np.median(Vc[0][wet]) - 5) < 1 and abs(np.median(Vc[1][wet]) - 3) < 1
     assert np.abs(Vc - Vd)[:, wet].mean() < 0.3
+
+
+# ---------------------------------------------------------------- stationary isolated echoes (§31)
+def _stat_days(tmp_path, kind="stationary"):
+    """Day 0: a 60 mm/h blob (~100 px >= 1 mm/h) at (40, 40). stationary: frames 20-39 in a dry
+    field; short: frames 20-25 only; embedded: frames 20-39 in 0.5 mm/h light rain; moving: the
+    same blob crossing the grid at 4 px per frame (frames 0-20, no wrap). Day 1 is dry."""
+    for d, day in enumerate(("20200101", "20200102")):
+        fr = []
+        for k in range(96):
+            f = np.zeros((H, W), np.float32)
+            if d == 0:
+                if kind == "embedded":
+                    f += 0.5
+                if kind in ("stationary", "embedded") and 20 <= k < 40 or kind == "short" and 20 <= k < 26:
+                    f = np.maximum(f, blob(H, W, 40, 40, 60.0, 2.0))
+                if kind == "moving" and k <= 20:
+                    f = np.maximum(f, blob(H, W, 40, 2 + 4 * k, 60.0, 2.0))
+            fr.append(f)
+        _write_day(tmp_path, day, fr)
+
+
+def _run_stat(tmp_path, on=True):
+    rules = {"unsupported": False, "spike": False, "burst": False, "ray": False, "persist": False}
+    if on is not None:
+        rules["stationary"] = on
+    return HourlyDay(str(tmp_path), "20200101", "TOT_PREC", hot=lambda y: None, sites_rc=SITE,
+                     cfg={"rules": rules, "stationary": {"min_frames": 12}}).run()
+
+
+def test_stationary_isolated_echo_is_removed(tmp_path):
+    _stat_days(tmp_path, "stationary")
+    h = _run_stat(tmp_path)
+    assert (h.code[:, 40, 40] & C.REPAIR_STATIONARY).any()
+    assert max(float(x["sum"][40, 40]) for x in h.hours) < 0.1
+    assert int(h.signals["n_stationary"][40, 40]) == 20
+
+
+@pytest.mark.parametrize("kind", ["moving", "embedded", "short"])
+def test_moving_embedded_or_short_echo_is_kept(tmp_path, kind):
+    _stat_days(tmp_path, kind)
+    on, off = _run_stat(tmp_path, True), _run_stat(tmp_path, False)
+    assert not (on.code & C.REPAIR_STATIONARY).any()
+    for a, b in zip(on.hours, off.hours):
+        np.testing.assert_array_equal(a["sum"], b["sum"])
+
+
+def test_stationary_rule_off_by_default(tmp_path):
+    _stat_days(tmp_path, "stationary")
+    assert not (_run_stat(tmp_path, None).code & C.REPAIR_STATIONARY).any()

@@ -1,0 +1,56 @@
+model: fm
+tag: fm
+split: val
+n_samples: 1024
+topology_mode: euler
+rmse_extreme: 2.9282217025756836
+rmse_overall: 1.1528956890106201
+rapsd_log_distance: 1.1378874778747559
+minkowski_distance: 1.8089228421449661
+fss_thr20.2_win1: 0.27775177105764126
+fss_thr20.2_win5: 0.5893817860178769
+fss_thr20.2_win11: 0.7661893040135368
+fss_thr20.2_win21: 0.841159858189968
+fss_thr31.7_win1: 0.17680180180180183
+fss_thr31.7_win5: 0.43152056864174415
+fss_thr31.7_win11: 0.6114688001822137
+fss_thr31.7_win21: 0.7072123542712898
+fss_thr50.1_win1: 0.11428571428571432
+fss_thr50.1_win5: 0.2852434122697488
+fss_thr50.1_win11: 0.42897573721335114
+fss_thr50.1_win21: 0.5059660794641503
+gpd_xi_pred: 0.046758886444513564
+gpd_xi_obs: 0.1545833348265566
+gpd_sigma_pred: 11.821686079695723
+gpd_sigma_obs: 14.427762746029309
+gpd_xi_abs_err: 0.10782444838204303
+gpd_n_exc_pred: 458
+gpd_n_exc_obs: 1537
+gpd_exc_count_ratio: 0.2979830839297333
+gpd_upper_endpoint_pred: .inf
+gpd_upper_endpoint_obs: .inf
+rl_pred_lam10: 63.34288109037807
+rl_obs_lam10: 90.00217237824167
+rl_relbias_lam10: -0.29620719793101985
+rl_pred_lam100: 93.58811661988088
+rl_obs_lam100: 146.96347012847698
+rl_relbias_lam100: -0.3631878960256914
+rl_pred_lam1000: 127.27151154747654
+rl_obs_lam1000: 228.27707407551964
+rl_relbias_lam1000: -0.44246914823618244
+rl_bias_mean_abs: 0.3672880807309646
+anisotropy_axis_over_diag: 1.313038824044947
+peak_ratio_median: 0.5498866441556782
+peak_ratio_extreme_median: 0.32746162245649507
+SAL_median:
+- 0.6420775272235986
+- -0.03629239600435068
+- 0.030219080900628588
+extreme_threshold_mmph: 142.20561981201166
+pot_threshold_mmph: 50.1
+note: minkowski_distance is the training objective for Minkowski-trained models and
+  is not independent evidence there; anisotropy ~1 is isotropic, >1 means grid-aligned
+  structure; peak_ratio is predicted/observed patch maximum.
+crps_mean: 0.1612640790654177
+crps_extreme: 0.3360321382328853
+ensemble_size: 16

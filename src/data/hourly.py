@@ -43,7 +43,7 @@ from scipy import ndimage
 from src.data import cleaning as C
 
 STEP = np.timedelta64(15, "m")
-RULES = ("hot", "spike", "ceiling", "footprint", "ring", "ray", "persist", "unsupported", "burst")
+RULES = ("hot", "spike", "ceiling", "footprint", "ring", "ray", "persist", "unsupported", "burst", "stationary")
 DEFAULTS = {
     "hot_fallback": "keep",
     "max_size": 500,                 # v4 guard
@@ -51,8 +51,11 @@ DEFAULTS = {
     "peak_u": 1.0, "peak_ratio": 2.0,
     "p1_min": 24, "p1_ring_min": 12, "p2_min": 12,
     "p1_prior_min": 12,              # on pixels of a prior mask (`prior`), e.g. the Mahalanobis mask
-    "rules": {**{r: True for r in RULES}, "burst": False},   # burst: off until accepted (§26)
+    "rules": {**{r: True for r in RULES}, "burst": False,    # burst: off until accepted (§26)
+              "stationary": False},                           # stationary: off until accepted (§31)
     "burst": {"min_share": 0.8, "min_rate": 100.0, "iso_median": 1.0},
+    "stationary": {"comp_rate": 1.0, "core_rate": 10.0, "max_area": 150, "ring": 3,
+                   "ring_dry": 0.1, "ring_cover": 0.5, "min_frames": 12},
     "advection": None,               # None: plain sum only; {"mode": "blend"|"noblend",
                                      # "interp": "linear"|"cubic"|"nearest", "motion_step": 1}
                                      # adds h["sum_adv"]
@@ -66,8 +69,8 @@ def config(q: dict | None = None) -> dict:
     for k, v in h.items():
         if k == "rules":
             cfg["rules"].update(v)
-        elif k == "burst" and isinstance(v, dict):
-            cfg["burst"].update(v)
+        elif k in ("burst", "stationary") and isinstance(v, dict):
+            cfg[k].update(v)
         elif k in DEFAULTS:
             cfg[k] = v
     return cfg
@@ -168,6 +171,35 @@ def local_peaks(z: np.ndarray, u: float, ratio: float):
     cand = z0 >= u
     med = median5(z0, cand)
     return cand & (z0 >= ratio * np.maximum(med, C.DRIZZLE)), med
+
+
+def isolated_components(z: np.ndarray, p: dict):
+    """Small rain components in a dry ring (DECISIONS §31): 8-connected components of pixels
+    >= comp_rate, at most max_area px, with a pixel >= core_rate, whose `ring`-px ring is
+    >= ring_cover valid and has a median < ring_dry. Returns [(slice, component mask in the
+    slice, ring median)]. A ring cut by the grid edge is judged on its valid part."""
+    z0 = np.nan_to_num(z, nan=0.0)
+    lab, n = ndimage.label(z0 >= p["comp_rate"], structure=C._EIGHT)
+    if not n:
+        return []
+    size = np.bincount(lab.ravel(), minlength=n + 1)
+    peak = ndimage.maximum(z0, lab, index=np.arange(1, n + 1))
+    keep = np.nonzero((size[1:] <= p["max_area"]) & (peak >= p["core_rate"]))[0] + 1
+    out, r, (H, W) = [], p["ring"], z.shape
+    objs = ndimage.find_objects(lab)
+    for k in keep:
+        sy, sx = objs[k - 1]
+        sl = (slice(max(sy.start - r, 0), min(sy.stop + r, H)), slice(max(sx.start - r, 0), min(sx.stop + r, W)))
+        comp = lab[sl] == k
+        ring = ndimage.binary_dilation(comp, C._EIGHT, iterations=r) & ~comp
+        rv = z[sl][ring]
+        ok = np.isfinite(rv)
+        if ok.sum() < p["ring_cover"] * ring.sum() or not ok.any():
+            continue
+        med = float(np.median(rv[ok]))
+        if med < p["ring_dry"]:
+            out.append((sl, comp, med))
+    return out
 
 
 def _open(path):
@@ -318,6 +350,24 @@ class HourlyDay:
                         S[t][m] = meds[t][m]
                         code[t][m] |= C.REPAIR_PERSIST
         del peaks, meds
+
+        if R.get("stationary"):                                           # stationary isolated echoes
+            sp = cfg["stationary"]                                        # (DECISIONS §31)
+            comps = [isolated_components(S[t], sp) for t in range(T)]
+            n_stat = np.zeros(raw.shape[1:], np.int16)
+            for t in np.nonzero(proc)[0]:                                 # count over the processing day
+                for sl, comp, _ in comps[t]:
+                    n_stat[sl] += comp
+            flag = n_stat >= sp["min_frames"]
+            if flag.any():
+                for t in range(T):
+                    for sl, comp, med in comps[t]:
+                        if (flag[sl] & comp).any():
+                            low = comp & (np.nan_to_num(S[t][sl], nan=0.0) > med)
+                            S[t][sl][low] = med
+                            code[t][sl][low] |= C.REPAIR_STATIONARY
+            self.signals["n_stationary"] = n_stat
+            del comps
 
         if R["unsupported"]:                                              # temporal support
             maps = [C.support_maps(S[t]) for t in range(T)]

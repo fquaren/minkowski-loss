@@ -266,6 +266,10 @@ Full reasoning is in DECISIONS §16. In short:
   or a wet-window mask), and log or remove the optical-flow `teacher=target` fallback.
 - **FM:** implement the four losses as rewards in `reward_finetune.py`, with the same
   bracket on `REWARD_WEIGHT`.
+- **Hourly data (2026-10-21, DECISIONS §37).** The Minkowski centre is re-derived by gradient share
+  (step 1a at initialisation: 8.5e-5; step 1b at the trained vanilla checkpoint decides), then this
+  bracket. Literature status of the procedure, and the systematic search still to do before any
+  novelty claim: `notes/weight_selection_literature.md`.
 
 ---
 

@@ -85,6 +85,9 @@ every summary (u=31 -> +0.176; u=53 -> -0.190).
 reward, i.e. the training objective, so when the tail overshoots it picks the most overshot
 checkpoint.
 
+**Training validator on real hourly data:** use `--steps 600` for the overfit check; 150 steps is
+too few and fails on a correctly wired model (2026-10-21).
+
 **`val_mse` is dry-pixel-dominated** and saturates by epoch 2. Never judge a run from it;
 judge from the eval outputs.
 
@@ -159,6 +162,16 @@ Check in this order:
     (one clutter gauge once faked a +0.10 gain), and use the per-rule affected-pair test.
   - *u = 31 mm/h is a 15-min rate level*, so hourly tables need a re-derived threshold.
   - *Pre-v4 results are on 15-min rates* and are not comparable with hourly ones.
+- **v4 training data = the corrected hourly target with radar exclusions (2026-10-21).**
+  - Config: `configs/config_v4_adv.yaml` (store `patches_v4_adv`).
+  - The lists exclude ownerless tile-hours (§34) and the flagged radar-years in
+    `quality_v4/biased_radar_years_all.csv` (§36: three from the tail boundary test, Lithuania 2026,
+    rsjas 2023, hrulj 2023). Apply changes with `scripts/hpc/apply_radar_exclusion.sh <csv>`, which rewrites the
+    lists and re-validates the store; then retrain, since the lists changed.
+  - **Rule 5 cannot see radars that fail together.** Its reference is the median of 5 neighbours
+    plus the radar's own seasonal q99, so neighbours failing at the same time hide each other (rsjas
+    and hrulj 2023). Before trusting a regional tail, check the raw-vs-corrected climatology
+    (`scripts/data_quality/rate_climatology.py`, `why_missed.py`).
 - **DDPM is dropped** (DECISIONS §14). Do not add DDPM rows or fix DDPM code unless asked.
 
 ## Conventions

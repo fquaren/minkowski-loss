@@ -84,7 +84,7 @@ def gauge_series(net, t0, n, sids):
 
 
 def run_day(args):
-    day, out = args
+    day, out, variants = args
     import scan_tiles as st
     from src.data.hourly import HourlyDay
     import yaml
@@ -98,10 +98,12 @@ def run_day(args):
     on_hot = hot[sdf.row.values.astype(int), sdf.col.values.astype(int)] if hot is not None else np.zeros(len(sdf), bool)
     t_start = time.time()
     res, raw, ends = {}, None, None
-    for v in VARIANTS:
-        rules = {k: True for k in RULES}
+    for v in variants:
+        # burst / stationary follow the quality config (burst was always off here before 2026-10-13)
+        rules = {**{k: True for k in RULES}, **{k: q.get("hourly", {}).get("rules", {}).get(k, False)
+                                                for k in ("burst", "stationary")}}   # follow the config
         if v == "none":
-            rules = {k: False for k in RULES}
+            rules = {k: False for k in rules}
         elif v.startswith("no_"):
             rules[v[3:]] = False
         cfg = {**q.get("hourly", {}), "rules": rules}
@@ -129,7 +131,7 @@ def run_day(args):
         gs = Gm[:, j - 4:j + 2].sum(1) if j - 4 >= 0 and j + 2 <= n else np.full(len(sdf), np.nan)
         d = {"day": day, "end": e.strftime("%Y%m%d%H%M"), "station": sdf.station.values,
              "net": sdf.net.values, "on_hot": on_hot.astype(int), "raw": raw[k], "g_clock": gc, "g_shift": gs}
-        for v in VARIANTS:
+        for v in variants:
             d[v] = res[v][k]
         rows.append(pd.DataFrame(d))
     df = pd.concat(rows, ignore_index=True)
@@ -215,6 +217,8 @@ def main():
     ap.add_argument("--workers", type=int, default=3)
     ap.add_argument("--gauge_window", default="g_shift", choices=["g_shift", "g_clock"])
     ap.add_argument("--subset", default="all", choices=["all", "hot", "nohot"], help="gauges on hot pixels or not")
+    ap.add_argument("--variants", default=",".join(VARIANTS),
+                    help="comma-separated subset of the variants to run (summary needs all of them)")
     a = ap.parse_args()
     if a.cmd == "summary":
         summary(a.out, a.gauge_window, subset=a.subset)
@@ -224,9 +228,10 @@ def main():
         days += [x.strip() for x in open(a.days_file).read().replace(",", "\n").split() if x.strip()]
     days = [d.replace("-", "") for d in days]
     days = [d for d in days if not os.path.exists(os.path.join(a.out, f"g_{d}.csv.gz"))]
-    print(f"[gauge_hourly] {len(days)} days x {len(VARIANTS)} variants -> {a.out}", flush=True)
+    variants = [v for v in a.variants.split(",") if v]
+    print(f"[gauge_hourly] {len(days)} days x {len(variants)} variants -> {a.out}", flush=True)
     with ProcessPoolExecutor(a.workers) as ex:
-        for msg in ex.map(run_day, [(d, a.out) for d in days]):
+        for msg in ex.map(run_day, [(d, a.out, variants) for d in days]):
             print(msg, flush=True)
 
 
