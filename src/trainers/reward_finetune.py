@@ -132,19 +132,94 @@ def _log_gamma(geom_fn, field, anneal):
     )
 
 
-def _integrate_xi(geom_fn, resid):
-    """Integrate |resid| [B,3,Q] over log-intensity with the loss's own measure -> scalar."""
-    d = torch.trapezoid(resid.abs(), geom_fn.xi, dim=2) / geom_fn.xi_range   # [B,3]
+def _integrate_xi(geom_fn, resid, w=None):
+    """Integrate w*|resid| [B,3,Q] over log-intensity with the loss's own measure -> scalar.
+
+    w (broadcastable to resid) weights the thresholds; None is the unweighted original.
+    """
+    a = resid.abs() if w is None else w * resid.abs()
+    d = torch.trapezoid(a, geom_fn.xi, dim=2) / geom_fn.xi_range   # [B,3]
     return d.mean()
 
 
-def minkowski_reward(geom_fn, fields, target_log_gamma, mode, anneal, w_spread):
-    """Structural reward. fields: [M,B,1,H,W]; target_log_gamma: [B,3,Q]."""
-    M, B = fields.shape[0], fields.shape[1]
-    lg = torch.stack([_log_gamma(geom_fn, fields[m], anneal) for m in range(M)], 0)  # [M,B,3,Q]
+# Exponent of the inverse-pixel-mass weight on the perimeter and Euler channels in the
+# "quantile_mass" form, w_j ~ (n_j + 1)^-alpha with n_j the target's exceedance count at u_j.
+# Chosen from the measured scaling of each threshold's gradient with n_j (DECISIONS §39).
+MASS_ALPHA = 1.0
+
+
+def reward_features(geom_fn, fields, target_log_gamma, anneal, form="threshold",
+                    target_field=None, alpha=MASS_ALPHA):
+    """Curves the reward compares, and the per-threshold weights.
+
+    fields [M,B,1,H,W] -> lg [M,B,3,Q], target tg [B,3,Q], weights W [B,3,Q] or None.
+
+    form="threshold": the original reward. Every channel is a function of the threshold u
+      (log1p A, log1p P, signed log1p chi), compared vertically, all thresholds weighted 1.
+      A pixel only feels the thresholds within a few tau of its own value, so the gradient
+      per threshold scales with pixel mass and a threshold the prediction never reaches
+      gives none.
+    form="quantile_mass": (i) the area channel is compared horizontally: at the target's
+      exceedance count n_j = #{y >= u_j}, the n_j-th largest predicted value against the
+      n_j-th largest target value, both as log1p (mm). This is the same survival curve
+      read along the intensity axis, so the pixel at that rank gets a gradient whatever its
+      value. Thresholds above the target maximum (n_j = 0) are masked. (ii) Perimeter and
+      Euler keep the threshold form, weighted by (n_j + 1)^-alpha normalised to mean 1 over
+      the thresholds, so a threshold's pull no longer grows with its pixel count; thresholds
+      above the target maximum take the weight of the highest populated one. Weights and
+      ranks depend on the target only, so the comparison is a fixed feature map per
+      condition and the energy score stays proper on it.
+    """
+    M = fields.shape[0]
+    lg = torch.stack([_log_gamma(geom_fn, fields[m], anneal) for m in range(M)], 0)
+    if form == "threshold":
+        return lg, target_log_gamma, None
+    if form != "quantile_mass":
+        raise ValueError(f"unknown reward form {form!r}")
+    if target_field is None:
+        raise ValueError("form='quantile_mass' needs the target field")
+
+    u = geom_fn.u.view(1, -1)                                          # [1,Q]
+    y = target_field.flatten(1)                                        # [B,N]
+    n = (y.unsqueeze(1) >= u.unsqueeze(-1)).sum(-1)                    # [B,Q]
+    valid = n >= 1
+    k = (n - 1).clamp_min(0)                                           # rank index
+    ys = torch.sort(y, dim=1, descending=True).values
+    q_t = torch.log1p(torch.gather(ys, 1, k)) * valid                  # [B,Q]
+    fs = torch.sort(fields.flatten(2), dim=2, descending=True).values  # [M,B,N]
+    q_m = torch.log1p(torch.gather(fs, 2, k.unsqueeze(0).expand(M, -1, -1))) * valid
+
+    lg = torch.cat([q_m.unsqueeze(2), lg[:, :, 1:]], dim=2)
+    tg = torch.cat([q_t.unsqueeze(1), target_log_gamma[:, 1:]], dim=1)
+
+    w = (n.to(lg.dtype) + 1.0) ** (-alpha)                            # [B,Q]
+    # above the target maximum: the weight of the highest populated threshold
+    top = valid.sum(1, keepdim=True).clamp_min(1) - 1
+    w_top = torch.gather(w, 1, top)
+    w = torch.where(valid, w, w_top)
+    w = w / w.mean(1, keepdim=True)
+    W = torch.stack([valid.to(lg.dtype), w, w], dim=1)                 # [B,3,Q]
+    return lg, tg, W
+
+
+def minkowski_reward(geom_fn, fields, target_log_gamma, mode, anneal, w_spread,
+                     form="threshold", target_field=None):
+    """Structural reward. fields: [M,B,1,H,W]; target_log_gamma: [B,3,Q].
+
+    form and target_field select the curves and weights (see reward_features).
+    """
+    lg, tg, W = reward_features(geom_fn, fields, target_log_gamma, anneal, form, target_field)
+    return reward_from_features(geom_fn, lg, tg, W, mode, w_spread)
+
+
+def reward_from_features(geom_fn, lg, target_log_gamma, W, mode, w_spread):
+    """The reward on precomputed curves lg [M,B,3,Q] and target [B,3,Q]; W [B,3,Q] or None."""
+    M, B = lg.shape[0], lg.shape[1]
+    W_mb = None if W is None else W.unsqueeze(0).expand(M, -1, -1, -1).reshape(M * B, *W.shape[1:])
 
     if mode == "per_sample":
-        return _integrate_xi(geom_fn, (lg - target_log_gamma.unsqueeze(0)).reshape(M * B, *lg.shape[2:]))
+        return _integrate_xi(geom_fn, (lg - target_log_gamma.unsqueeze(0)).reshape(M * B, *lg.shape[2:]),
+                             W_mb)
 
     if mode == "energy":
         # Energy score (kernel CRPS) on the functional curves, with the Minkowski distance
@@ -159,7 +234,7 @@ def minkowski_reward(geom_fn, fields, target_log_gamma, mode, anneal, w_spread):
         # negative sign on the second term rewards spread between members, so no separate
         # spread penalty is needed and REWARD_SPREAD_WEIGHT is ignored in this mode.
         term1 = _integrate_xi(
-            geom_fn, (lg - target_log_gamma.unsqueeze(0)).reshape(M * B, *lg.shape[2:])
+            geom_fn, (lg - target_log_gamma.unsqueeze(0)).reshape(M * B, *lg.shape[2:]), W_mb
         )
         if M < 2:
             return term1
@@ -167,7 +242,9 @@ def minkowski_reward(geom_fn, fields, target_log_gamma, mode, anneal, w_spread):
         a = lg.unsqueeze(1)                      # [M,1,B,3,Q]
         b_ = lg.unsqueeze(0)                     # [1,M,B,3,Q]
         pair = (a - b_).reshape(M * M * B, *lg.shape[2:])
-        term2_all = _integrate_xi(geom_fn, pair) * (M * M)   # undo the mean over M*M*B
+        W_pair = None if W is None else \
+            W.view(1, 1, *W.shape).expand(M, M, -1, -1, -1).reshape(M * M * B, *W.shape[1:])
+        term2_all = _integrate_xi(geom_fn, pair, W_pair) * (M * M)   # undo the mean over M*M*B
         # remove the M zero self-distances, then apply the fair 1/(M(M-1)) normalisation
         term2 = 0.5 * term2_all / (M * (M - 1))
         return term1 - term2
@@ -175,12 +252,13 @@ def minkowski_reward(geom_fn, fields, target_log_gamma, mode, anneal, w_spread):
     if mode == "distributional":
         # conditional mean: E_m[log gamma_hat | c] against this condition's target
         cond_mean = lg.mean(0)                                        # [B,3,Q]
-        loss_mean = _integrate_xi(geom_fn, cond_mean - target_log_gamma)
+        loss_mean = _integrate_xi(geom_fn, cond_mean - target_log_gamma, W)
         # pooled spread: std over (members, conditions) against the target spread
         gen_std = lg.reshape(M * B, *lg.shape[2:]).std(dim=0, unbiased=False)   # [3,Q]
         tgt_std = target_log_gamma.std(dim=0, unbiased=False)                   # [3,Q]
         loss_std = _integrate_xi(
-            geom_fn, (torch.log1p(gen_std) - torch.log1p(tgt_std)).unsqueeze(0)
+            geom_fn, (torch.log1p(gen_std) - torch.log1p(tgt_std)).unsqueeze(0),
+            None if W is None else W.mean(0, keepdim=True)
         )
         return loss_mean + w_spread * loss_std
 
@@ -240,6 +318,7 @@ def run_reward_finetune(config, args):
         w_retain = float(config.get("REWARD_FM_RETENTION_WEIGHT", 1.0))
         w_spread = float(config.get("REWARD_SPREAD_WEIGHT", 0.5))
         anneal = float(config.get("REWARD_ANNEAL", 0.05))
+        form = config.get("REWARD_FORM", "threshold")
         n_steps = int(config.get("FM_SAMPLE_STEPS", 16))
         sampler = config.get("FM_SAMPLER", "heun")
         # Guards must be calibrated against this model family, not an absolute constant.
@@ -255,7 +334,7 @@ def run_reward_finetune(config, args):
         aniso_max = float(_am) if _am is not None else None
         peak_max = float(_pm) if _pm is not None else None
         use_ckpt = bool(config.get("REWARD_GRAD_CHECKPOINT", True))
-        logger.info(f"reward mode={mode} K={K} M={M} w_reward={w_reward:g} w_prox={w_prox:g} "
+        logger.info(f"reward mode={mode} form={form} K={K} M={M} w_reward={w_reward:g} w_prox={w_prox:g} "
                     f"w_retain={w_retain:g} "
                     f"w_spread={w_spread:g} guards: aniso<{aniso_max} peak<{peak_max}")
 
@@ -342,7 +421,8 @@ def run_reward_finetune(config, args):
                     fields.append(_decode(mu[:, 0:1] + sigma * r))
                 fields = torch.stack(fields, 0)                       # [M,B,1,H,W]
 
-                reward = minkowski_reward(geom_fn, fields, Ygamma, mode, anneal, w_spread)
+                reward = minkowski_reward(geom_fn, fields, Ygamma, mode, anneal, w_spread,
+                                          form, _decode(Y[:, 0:1]))
 
                 # proximal anchor: keep the velocity field near the frozen reference
                 with torch.no_grad():
@@ -390,7 +470,8 @@ def run_reward_finetune(config, args):
                                                                method=sampler, in_channels=1))
                         for _ in range(M)], 0)
                     v_reward += float(minkowski_reward(geom_fn, fields, Ygamma, mode,
-                                                       anneal, w_spread))
+                                                       anneal, w_spread, form,
+                                                       _decode(Y[:, 0:1])))
                     tgt = _decode(Y[:, 0:1])
                     p0 = fields[0].squeeze(1).cpu().numpy()
                     v_aniso.append(directional_anisotropy(p0))

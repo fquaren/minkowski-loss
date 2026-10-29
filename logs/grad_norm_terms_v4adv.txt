@@ -1,0 +1,28 @@
+##### energy
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  print(f"batch {bi}: R={float(reward):.4f} prox={float(prox):.2e} L_FM={float(loss_fm):.4f} | "
+batch 0: R=0.2236 prox=1.40e-07 L_FM=0.1605 | |g| reward=4.797e-04 prox=9.926e-05 fm=2.878e-01 total=2.877e-01 cos(reward,total)=-0.149
+batch 1: R=0.3147 prox=1.32e-07 L_FM=0.3083 | |g| reward=1.987e-03 prox=5.805e-05 fm=1.349e+00 total=1.349e+00 cos(reward,total)=+0.140
+batch 2: R=0.1695 prox=1.42e-07 L_FM=0.0810 | |g| reward=4.821e-04 prox=6.995e-05 fm=3.373e-01 total=3.373e-01 cos(reward,total)=-0.057
+batch 3: R=0.1751 prox=3.94e-07 L_FM=0.2529 | |g| reward=3.767e-04 prox=2.660e-04 fm=6.222e-01 total=6.222e-01 cos(reward,total)=+0.033
+
+mean |g|: reward 8.313e-04  prox 1.233e-04  fm 6.490e-01  total 6.491e-01
+reward share of the total norm: 0.129%   mean cos(reward, total) -0.008   (clip threshold 1.0)
+##### dist
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  print(f"batch {bi}: R={float(reward):.4f} prox={float(prox):.2e} L_FM={float(loss_fm):.4f} | "
+batch 0: R=0.3440 prox=1.15e-07 L_FM=0.2378 | |g| reward=4.592e-04 prox=6.094e-05 fm=0.000e+00 total=4.432e-04 cos(reward,total)=+0.992
+batch 1: R=0.4675 prox=1.42e-07 L_FM=0.1447 | |g| reward=7.700e-04 prox=7.825e-05 fm=0.000e+00 total=7.893e-04 cos(reward,total)=+0.995
+batch 2: R=0.2839 prox=1.09e-07 L_FM=0.0765 | |g| reward=1.675e-03 prox=5.494e-05 fm=0.000e+00 total=1.663e-03 cos(reward,total)=+0.999
+batch 3: R=0.2595 prox=2.05e-07 L_FM=0.1436 | |g| reward=4.055e-04 prox=9.822e-05 fm=0.000e+00 total=4.266e-04 cos(reward,total)=+0.973
+
+mean |g|: reward 8.274e-04  prox 7.309e-05  fm 0.000e+00  total 8.306e-04
+reward share of the total norm: 99.228%   mean cos(reward, total) +0.990   (clip threshold 1.0)
+##### dist qm
+[grad] mode=distributional form=quantile_mass K=1 M=4 w_reward=0.001 w_prox=1 w_retain=0 w_spread=0.5 anneal=0.05
+mean |g|: reward 4.993e-04  prox 7.309e-05  fm 0.000e+00  total 5.099e-04
+reward share of the total norm: 96.189%   mean cos(reward, total) +0.965   (clip threshold 1.0)
+##### energy qm
+[grad] mode=energy form=quantile_mass K=1 M=16 w_reward=0.001 w_prox=1 w_retain=1 w_spread=0 anneal=0.05
+mean |g|: reward 5.053e-04  prox 1.233e-04  fm 6.490e-01  total 6.491e-01
+reward share of the total norm: 0.074%   mean cos(reward, total) -0.034   (clip threshold 1.0)

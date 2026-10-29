@@ -2803,3 +2803,35 @@ The trainer's progress bar shows the full loader (162,460 batches) but stops eac
   so the apparent loss above is withdrawn; so is xi_pred (0.047 vs 0.186 between draws of one model, which confirms
   the CLAUDE.md rule). This measures evaluation noise only, not training-seed noise: one fine-tune, one FM, one seed,
   validation subsets.
+
+---
+
+## 39. The reward must reach heavy rain: quantile area + inverse-mass weights (2026-10-29)
+
+**Problem (derivation, measured).** Through the soft mask, a pixel feels a threshold u only within a few tau = 0.005u
+of it. Summed over pixels, a threshold's pull is N p(u), the number of pixels near it, independent of tau (which is
+why the §5 anneal sweep could not move the shares). Thresholds above the prediction's reach give no gradient at
+all. On the clean hourly FM, 73% of the reward's model-space gradient lands on pixels < 1 mm on the heavy subset,
+3.7% on pixels >= 20 mm (`logs/reward_threshold_share_v4adv.txt`).
+
+**Decision (researcher).** Keep K = 1. New `REWARD_FORM: quantile_mass` (`src/trainers/reward_finetune.py:
+reward_features`; `threshold`, the original, stays the default): (i) the area channel is compared horizontally,
+log1p of the n_j-th largest predicted vs target value with n_j = #{target >= u_j}, masked above the target
+maximum: one pixel per populated threshold gets a model-space gradient of size c = 6.42 whatever its value;
+(ii) perimeter and Euler are weighted by (n_j + 1)^-1, normalised to mean 1, capped above the target maximum at the
+top populated weight. Ranks and weights depend on the target only, so the energy score stays proper on the features.
+Rejected: weights alone (no gradient out of reach); a heavy-tailed surrogate backward pass (new width
+hyperparameter, surrogate gradients invite gaming). Configs `configs/config_v4_adv_fm_{dist,energy}_qm.yaml`.
+
+**Checks before any fine-tune.** `tests/test_reward_form.py` (13 pass). Gradient share >= 20 mm on the heavy subset
+3.7% -> 40.9%, < 1 mm 73% -> 16% (alpha = 1; alpha = 0 changes almost nothing; alpha = 0.5 in between). Coupling
+checks drivable: distributional -31.6% (floor 0.108, noise 18.9% of the mean, was 11.4%), energy -35.1% (floor 0.024).
+Per-term gradient split (`logs/grad_norm_terms_v4adv.txt`): with the new form the reward is 96% of the dist
+gradient but **0.07% of the energy gradient** (retention weight 1), so the energy configuration needs its weights
+rebalanced (gradient-norm rule, §9; ~x1000 on w_reward) before a fine-tune. Also measured the same day on the original form: the
+energy fine-tune's reward is 0.13% of the gradient (cos with the total -0.01), so FM + energy is continued FM
+training; the dist fine-tune is 99% reward.
+
+**Open before a fine-tune with it.** Fix the proximal anchor (evaluated at clamp(field/6.42, 0, 1), not on the
+model's r/sigma_r coordinates); run the w_reward = 0 control. Write-ups: `notes/minkowski_reward_intensity.md`
+(decision), `notes/minkowski_reward_coupling.pdf` (full explanation).
