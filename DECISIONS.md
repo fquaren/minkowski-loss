@@ -2775,14 +2775,31 @@ The trainer's progress bar shows the full loader (162,460 batches) but stops eac
 | | FM + dist | **0.377** (580 / 1,537) | **0.741** | 0.109 / **0.554** | **-23% / -20% / -15%** | 0.62 (0.22) | **0.81** | 1.30 | 0.160 |
 
   Better than clean FM on exceedances, FSS at 21 px, every return level, the spectrum and (slightly) CRPS, at
-  unchanged anisotropy. One column is worse: the median peak ratio on the most extreme patches (>= 142 mm/h
-  threshold) falls from 0.33 to 0.22. gpd_xi_pred 0.205 against 0.155 observed (FM 0.047); per CLAUDE.md the xi
+  unchanged anisotropy. One column looked worse, the median peak ratio on the most extreme patches (>= 142 mm/h
+  threshold, 0.33 -> 0.22), but it is within eval noise (see below). gpd_xi_pred 0.205 against 0.155 observed (FM 0.047); per CLAUDE.md the xi
   column is not used to rank.
 - *Attribution.* The only non-reward term is the proximal anchor, zero at initialisation, so the change comes from
   the Minkowski reward (its mean and spread parts together; which of the two is not separated). Why a reward
   whose gradient comes almost entirely from u <= 0.83 mm moves the > 50 mm tail is not established; my inference:
   matching the low-threshold structure and its spread makes fields more intermittent and contrasted, which shifts the
   whole residual distribution.
-- *Not yet known:* eval-to-eval sampling noise (`eval_extremes` does not seed the FM noise). A second evaluation of
-  clean FM on the heavy subset is running (`scripts/hpc/run_fm_eval_repeat.sh`, tag `fm_rep2`). Single seed, single
-  fine-tune, validation subsets.
+- *Eval-to-eval noise (2026-10-29; `scripts/hpc/run_fm_eval_repeat.sh`, `eval_results/extremes/v4adv_valext/fm_rep2`).*
+  `eval_extremes` does not seed the FM noise, so clean FM was evaluated a second time on the heavy subset:
+
+  | heavy 1,024 | FM draw 1 | FM draw 2 | FM + dist |
+  |---|---|---|---|
+  | exceedances (of 1,537) | 458 | 393 | **580** |
+  | RL bias λ10 / 100 / 1000 | -30% / -36% / -44% | -33% / -36% / -36% | **-23% / -20% / -15%** |
+  | FSS 31.7 mm 21 px | 0.707 | 0.707 | **0.741** |
+  | FSS 50.1 mm 1 / 21 px | 0.114 / 0.506 | 0.103 / 0.523 | 0.109 / 0.554 |
+  | peak ratio (extreme) | 0.55 (0.33) | 0.54 (0.20) | 0.62 (0.22) |
+  | RAPSD dist. | 1.14 | 1.19 | **0.81** |
+  | CRPS (extreme) | 0.1613 (0.336) | 0.1614 (0.335) | 0.1598 (0.333) |
+  | gpd_xi_pred | 0.047 | 0.186 | 0.205 |
+
+  *Verdict:* the fine-tune's gain exceeds the eval noise on the 100- and 1000-yr return levels, FSS at 31.7 mm,
+  the spectrum and CRPS; on the exceedance count it is ~3 noise sd (crude: two draws). FSS at 50.1 mm and the 10-yr
+  level gain by about 1-2x the noise. **The extreme-patch peak ratio is noise** (clean FM alone moves 0.33 -> 0.20),
+  so the apparent loss above is withdrawn; so is xi_pred (0.047 vs 0.186 between draws of one model, which confirms
+  the CLAUDE.md rule). This measures evaluation noise only, not training-seed noise: one fine-tune, one FM, one seed,
+  validation subsets.
