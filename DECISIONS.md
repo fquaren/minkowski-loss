@@ -2729,3 +2729,31 @@ epoch 28** (`fm_best.pth`, evaluated). Val_fm by epoch: 0.281, 0.264, 0.259, 0.2
 0.242 (ep 10), 0.240 (ep 12), 0.238 (ep 15), 0.235 (ep 19), 0.233 (ep 23-24), 0.232 (ep 28); train_fm 0.320 -> 0.239.
 Comparable in scale with the 15-min FM (0.297 / 0.285 / 0.279 at epochs 1-3; residual normalised by sigma_r in both),
 ~1.9 h per epoch, 64 h in total. Evaluation chain started 00:28 (`logs/after_fm_v4adv.log`).
+
+**§38 step 3, first part: FM on hourly data works (2026-10-29; `notes/data_analysis_v4/fm_hourly_validation.csv`,
+`eval_results/extremes/v4adv_val{sub,ext}/`).** FM best checkpoint (epoch 28) with the hourly vanilla backbone,
+16 members, heun-16, u = 50.1 mm, against the vanilla and 6e-5 backbones on the same patches (FM eval: 56 min on
+4,096 patches, 13 min on 1,024).
+
+| subset | model | exceedance ratio | FSS 50.1 mm 1 / 21 px | RL bias λ10 / 100 / 1000 | peak ratio (extreme) | RAPSD dist. | anisotropy |
+|---|---|---|---|---|---|---|---|
+| random 4,096 | vanilla | 0.055 | 0.052 / 0.138 | (too few exceedances) | 0.36 (0.20) | 3.57 | 1.84 |
+| | 6e-5 | 0.179 | 0.047 / 0.248 | | 0.85 (0.54) | 1.33 | 0.51 |
+| | FM | 0.272 | 0.130 / 0.466 | | 0.86 (0.55) | 0.86 | 1.40 |
+| heavy 1,024 | vanilla | 0.046 | 0.041 / 0.100 | (too few predicted) | 0.24 (0.10) | 3.86 | 1.53 |
+| | 6e-5 | 0.162 | 0.067 / 0.401 | -39% / -41% / -43% | 0.65 (0.28) | 1.44 | 0.36 |
+| | FM | 0.298 | 0.114 / 0.506 | -30% / -36% / -44% | 0.55 (0.33) | 1.14 | 1.31 |
+
+gpd_xi_obs identical within each subset (0.155 heavy; -0.032 random, too few exceedances for a fit). FM is the best
+row on exceedances, FSS and the spectrum; the tail is still under-predicted (about 3 in 10 exceedances above
+50.1 mm, long return levels -36% to -44%). Single run, validation subsets.
+
+**Coupling checks (`logs/coupling_v4adv_{distributional,energy}.log`, extreme batch, fixed noise, 40 steps).**
+- distributional (M = 4): reward 0.271 -> 0.195 (-28.1%), change 0.076 against a noise floor of 0.071 -- a marginal
+  pass (15-min: -59.7%, 5x the floor); still falling at step 36; cos(K=1, K=2) 0.97, (K=1, K=4) 0.90.
+- energy (M = 16): 0.157 -> 0.106 (-32.5%), change 0.051 against a floor of 0.027 (1.9x); 1 of 40 steps clipped;
+  cos 0.97 / 0.85.
+- Per-threshold gradient: almost all from u <= 0.83 mm, zero from 20.2 mm up (the pixel-mass bottleneck again);
+  100% of the field gradient in the top 1% of pixels.
+Both pass the script's verdict; fine-tunes launched as planned (`scripts/hpc/run_finetunes_v4adv.sh`,
+configs `config_v4_adv_fm_{dist,energy}.yaml`, `logs/finetune_v4adv_{dist,energy}.log`).
