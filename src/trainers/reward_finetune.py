@@ -90,6 +90,27 @@ def _make_fm(config, c_in, device):
     return FlowMatching(**kw).to(device)
 
 
+def proximal_anchor(fm, fm_ref, r_gen, cond, t=None):
+    """||v_theta - v_ref||^2 at states x_t = (1-t) x0 + t r_gen, with x0 fresh base noise.
+
+    r_gen is a generated residual in the model's own coordinates (r / sigma_r), not a
+    field in mm. With independent x0, these states have the same marginal law at each t
+    as the sampler's own states (the marginal-preservation property of flow matching,
+    exact when the flow is learned exactly), so the anchor holds the velocity field near
+    the reference where the sampler goes. The earlier version used clamp(field / 6.42),
+    a mm field saturating at 6.4 mm, which the ODE never visits (DECISIONS §39).
+    t (one value per batch element) is drawn uniformly unless given.
+    """
+    x1 = r_gen.detach()
+    with torch.no_grad():
+        x0 = _base_sample(fm, x1.shape, x1.device, x1.dtype)
+        tt = torch.rand(x1.shape[0], device=x1.device, dtype=x1.dtype) if t is None else t
+        xt = (1 - tt.view(-1, 1, 1, 1)) * x0 + tt.view(-1, 1, 1, 1) * x1
+        v_ref = fm_ref.velocity(xt, tt, cond)
+    v_now = fm.velocity(xt, tt, cond)
+    return ((v_now - v_ref) ** 2).mean()
+
+
 def draft_k_sample(fm, cond, n_steps, method, K, in_channels=1, use_checkpoint=False):
     """Integrate the probability-flow ODE, keeping gradients only on the last K steps.
 
@@ -416,8 +437,10 @@ def run_reward_finetune(config, args):
                 cond = _cond(X, mu)
 
                 fields = []
-                for _ in range(M):
+                for m in range(M):
                     r = draft_k_sample(fm, cond, n_steps, sampler, K, 1, use_ckpt)
+                    if m == 0:
+                        r_gen = r.detach()                            # anchor endpoint
                     fields.append(_decode(mu[:, 0:1] + sigma * r))
                 fields = torch.stack(fields, 0)                       # [M,B,1,H,W]
 
@@ -425,14 +448,7 @@ def run_reward_finetune(config, args):
                                           form, _decode(Y[:, 0:1]))
 
                 # proximal anchor: keep the velocity field near the frozen reference
-                with torch.no_grad():
-                    x0 = _base_sample(fm, fields.shape[1:], device, X.dtype)
-                    x1 = ((fields[0] / max_val)).clamp(0, 1)          # cheap in-range surrogate
-                    tt = torch.rand(x0.shape[0], device=device)
-                    xt = (1 - tt.view(-1, 1, 1, 1)) * x0 + tt.view(-1, 1, 1, 1) * x1
-                    v_ref = fm_ref.velocity(xt, tt, cond)
-                v_now = fm.velocity(xt, tt, cond)
-                prox = ((v_now - v_ref) ** 2).mean()
+                prox = proximal_anchor(fm, fm_ref, r_gen, cond)
 
                 # Retention term. The reward and the proximal anchor between them contain no
                 # pixel-aligned data-fidelity signal: the anchor constrains the velocity

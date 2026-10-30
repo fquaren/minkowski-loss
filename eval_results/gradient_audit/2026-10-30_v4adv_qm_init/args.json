@@ -1,0 +1,30 @@
+{
+ "config": "configs/config_v4_adv_qm.yaml",
+ "out_dir": "eval_results/gradient_audit/2026-10-30_v4adv_qm_init",
+ "n_batches": 512,
+ "batch_size": 128,
+ "groups": 8,
+ "grad_at": [
+  "init"
+ ],
+ "losses": [
+  "minkowski"
+ ],
+ "runs": [
+  "vanilla",
+  "minkowski",
+  "spectral",
+  "ssim",
+  "wetarea",
+  "opticalflow",
+  "vanilla_34ep"
+ ],
+ "which": "best",
+ "anneal": 0.1,
+ "data_percentage": 10.0,
+ "num_workers": 0,
+ "seed": 0,
+ "adam": true,
+ "skip_eval": true,
+ "run": []
+}

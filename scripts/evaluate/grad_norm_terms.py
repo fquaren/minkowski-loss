@@ -7,7 +7,7 @@ the total gradient is tiny, a fine-tune is mostly whatever the other terms are (
 flow-matching training), and its gains cannot be credited to the reward.
 
 Each term is built exactly as in src/trainers/reward_finetune.py (same sampler, K, M,
-anchor surrogate and retention loss) and back-propagated on its own, before clipping.
+proximal anchor and retention loss) and back-propagated on its own, before clipping.
 
 Usage:
   python scripts/evaluate/grad_norm_terms.py configs/config_v4_adv_fm_energy.yaml \
@@ -26,7 +26,7 @@ from src.models.unet import LogSpaceResidualUNet
 from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss
 from src.trainers.reward_finetune import (
-    draft_k_sample, minkowski_reward, _base_sample, _load_sigma, _make_fm,
+    draft_k_sample, minkowski_reward, proximal_anchor, _load_sigma, _make_fm,
 )
 
 
@@ -103,20 +103,14 @@ def main():
             mu = backbone(X)
         cond = torch.cat([X, mu[:, 0:1]], dim=1) if cond_on_mean else X
 
-        fields = torch.stack([decode(mu[:, 0:1] + sigma * draft_k_sample(
-            fm, cond, n_steps, sampler, K, 1, True)) for _ in range(M)], 0)
+        rs = [draft_k_sample(fm, cond, n_steps, sampler, K, 1, True) for _ in range(M)]
+        fields = torch.stack([decode(mu[:, 0:1] + sigma * r) for r in rs], 0)
         reward = minkowski_reward(geom_fn, fields, Ygamma, mode, anneal, w_spread,
                                   form, decode(Y[:, 0:1]))
         g_rew = grad_of(w_reward * reward)
 
-        # anchor, as in the trainer (same surrogate x1)
-        with torch.no_grad():
-            x0 = _base_sample(fm, fields.shape[1:], device, X.dtype)
-            x1 = (fields[0].detach() / max_val).clamp(0, 1)
-            tt = torch.rand(x0.shape[0], device=device)
-            xt = (1 - tt.view(-1, 1, 1, 1)) * x0 + tt.view(-1, 1, 1, 1) * x1
-            v_ref = fm_ref.velocity(xt, tt, cond)
-        prox = ((fm.velocity(xt, tt, cond) - v_ref) ** 2).mean()
+        # anchor, as in the trainer (on the generated residual, DECISIONS §41)
+        prox = proximal_anchor(fm, fm_ref, rs[0], cond)
         g_prox = grad_of(w_prox * prox)
 
         # retention is measured even when its weight is 0, to show what it would contribute

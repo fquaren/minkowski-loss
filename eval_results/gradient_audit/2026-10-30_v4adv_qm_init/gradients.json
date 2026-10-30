@@ -1,0 +1,49 @@
+[
+ {
+  "checkpoint": "init",
+  "which": "init",
+  "epoch": 0,
+  "n_batches": 512,
+  "batch_size": 128,
+  "anneal": 0.1,
+  "adam_state": false,
+  "terms": {
+   "mse": {
+    "value_mean": 0.0017353519467633305,
+    "per_batch_norm_median": 0.6405419198435722,
+    "per_batch_norm_iqr": [
+     0.5946454494019611,
+     0.6893567881963758
+    ],
+    "mean_grad_norm": 0.6380069315946357,
+    "signal_norm": 0.637994397046591,
+    "signal_norm_se": 0.003628221195815599,
+    "noise_fraction": 0.007938455844882175
+   },
+   "minkowski": {
+    "value_mean": 3.8992227348499,
+    "per_batch_norm_median": 560.4885054626907,
+    "per_batch_norm_iqr": [
+     525.4225837209711,
+     599.8447622504044
+    ],
+    "mean_grad_norm": 544.0288078309824,
+    "signal_norm": 543.986565122602,
+    "signal_norm_se": 2.1805289716621346,
+    "noise_fraction": 0.058017299416411094,
+    "lambda_used": 0.0001,
+    "parity_lambda": 0.0011728127824311282,
+    "parity_lambda_se": 8.448635719749457e-06,
+    "share_r": 0.08526510070320824,
+    "share_r_rel_se": 0.007203737754491597,
+    "mse_signal_below_noise": false,
+    "cos_mean_grads": 0.8189448118209839,
+    "cos_se": 0.0035763896636908247,
+    "cos_noise_corrected": 0.8190106373209127,
+    "cos_noise_corrected_se": 0.003576662691885039,
+    "parity_lambda_per_batch_median": 0.0011353709070692657,
+    "clip_engaged_frac": 0.0
+   }
+  }
+ }
+]
