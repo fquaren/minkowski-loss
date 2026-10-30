@@ -2914,3 +2914,67 @@ trades it off against the bulk. An auxiliary objective helps the tail if (i) its
 base loss's and (ii) it gives a gradient to samples that fall short of the target's tail; both are measurable with the two
 scripts above for any candidate loss. Status: consistent with (a)-(b) and §38; not yet tested across losses.
 
+
+---
+
+## 41. The corrected runs: anchor fix, energy weight, control, and the quantile form for the U-Net (2026-10-30)
+
+**Order (researcher, 2026-10-30):** (1) FM + Minkowski reward, distributional, `quantile_mass`; (2) the same with
+the energy reward; (3) U-Net + Minkowski with `quantile_mass`.
+
+**Anchor fix (derivation; `src/trainers/reward_finetune.py:proximal_anchor`, `tests/test_proximal_anchor.py`).**
+The anchor is now evaluated at x_t = (1 - t) x0 + t r_gen, with r_gen the first member's generated residual in
+the model's own coordinates (r / sigma_r) and x0 fresh base noise. With independent x0 these states have the
+same marginal law at each t as the sampler's states (marginal preservation of flow matching, exact for an
+exactly learned flow), so the anchor constrains the velocity where the sampler goes. The old surrogate
+clamp(field / 6.42, 0, 1) is gone. Tests: zero at initialisation, the t = 1 state equals r_gen unclamped
+(30.0 and negative values pass through; the old version saturated at 1), gradient reaches the model only.
+`scripts/evaluate/grad_norm_terms.py` uses the same function. `diagnose_coupling.py` runs reward-only steps
+and does not involve the anchor, so its §39 result stands; it was not re-run.
+
+**Gradient budget with the fixed anchor (measured; `logs/grad_norm_terms_v4adv_anchorfix.txt`, 4 train
+batches, clean FM).** dist_qm: reward 5.0e-4, anchor 8.3e-5, total 5.2e-4, reward share 95%, cos +0.96.
+energy_qm (w_reward 1e-3): reward 5.1e-4, FM retention 0.65, share 0.07%. Anchor value ~1e-7 at
+initialisation, as expected for a model equal to its reference.
+
+**Energy weight (decision under the plan approved 2026-10-30).** Gradient-norm parity with the retention term
+gives w_reward = 1e-3 x 0.649 / 5.05e-4 = 1.29; set **REWARD_WEIGHT 1.0** in `config_v4_adv_fm_energy_qm.yaml`
+(reward ~44% of the gradient norm). Caveat from §9: at a trained checkpoint the per-batch FM gradient is
+mostly minibatch noise, so per-batch parity is not a well-posed target. Parity is used anyway because it
+leaves the energy run less reward-driven than the dist run (95% reward), which stayed within its guards;
+the guards and the fixed anchor bound it from above.
+
+**Control (`config_v4_adv_fm_energy_ctl.yaml`).** The energy_qm config with REWARD_WEIGHT 0: retention 1 +
+anchor 1, M = 16, same seed (42) and budget (10 x 500 steps). It attributes both energy runs. A dist control
+is not run: with w_retain = 0 and w_reward = 0 the only term is the anchor, zero at initialisation, so the
+model would not move.
+
+**Launched 2026-10-30 10:15** (`scripts/hpc/run_qm_finetunes_v4adv.sh`, `logs/run_qm_finetunes_v4adv.log`):
+dist_qm, then energy_ctl, then energy_qm, each followed by `eval_extremes` on both validation subsets
+(16 members, heun-16, u = 50.1 mm, `fm_mink_latest.pth`, tags `fm_<run>`). dist_qm startup lines:
+`config FM_RESIDUAL_SCALE=0.01267`, `reward mode=distributional form=quantile_mass K=1 M=4 w_reward=0.001
+w_prox=1 w_retain=0 w_spread=0.5`, GPU 1.
+
+**U-Net port (`src/losses/competing.py:QuantileMassMinkowskiLoss`, config key `MINKOWSKI_FORM`,
+`tests/test_minkowski_quantile_det.py`, 6 pass).** `MINKOWSKI_FORM: quantile_mass` builds the deterministic
+loss from the reward's own `reward_features` (one member), with the threshold form's distance (trapezoid over
+log u, channel sum, batch mean); the trainer's startup line then reads `auxiliary structural loss: minkowski
+(quantile_mass)`. Unset or `threshold` builds exactly the old loss (tested). Tests: exact prediction scores 0;
+a 17 mm core under an 80 mm target gets no gradient from the threshold form and is pulled up by the new one.
+Pre-existing failures in `tests/test_losses.py` / `test_analytical_minkowski.py` unchanged (5, the same as
+on HEAD). Config `configs/config_v4_adv_qm.yaml` = `config_v4_adv.yaml` + MINKOWSKI_FORM (via
+`sweep_util.py patch`).
+
+**U-Net qm, parity at initialisation (measured; `eval_results/gradient_audit/2026-10-30_v4adv_qm_init/`,
+`logs/gradient_audit_v4adv_qm_init.log`; same settings as §37 step 1a: 512 x 128 patches, anneal 0.1, 10%
+data).** lambda*_qm = 1.17e-3 (± 8.4e-6), against 8.90e-4 for the threshold form: the quantile form's
+gradient is 1.31x smaller at the start, cos with the MSE gradient +0.82 (threshold +0.86). Smoke test on 8
+real validation patches through the trainer's code path: finite loss and gradients with and without AMP
+(loss 12.044 / 12.044).
+
+**U-Net qm bracket (queued; `scripts/hpc/run_bracket_qm_v4adv.sh`, `logs/bracket_qm_v4adv.log`).** The §37
+rule unchanged: waits for the FM chain (stops if it failed), step 1b audit of the qm form at the hourly
+vanilla checkpoint, w*_qm = 1e-4 x 16.127 / Adam share, then {w*/3, w*, 3w*, 10w*} at full budget (25 epochs,
+~18 h each), seed as §37, one after another on GPU 1, with `configs/config_v4_adv_qm.yaml`. Run order w*/3
+first (the threshold-form bracket was won at w*/3 = 6e-5). The init ratio predicts w*_qm ~ 1.8e-4 x 1.31
+~ 2.4e-4. Evaluation of the bracket is not part of the script (as in §37).

@@ -263,6 +263,32 @@ class OpticalFlowConsistencyLoss(nn.Module):
         return out.mean()
 
 
+class QuantileMassMinkowskiLoss(nn.Module):
+    """Deterministic Minkowski loss in the reward's quantile_mass form (DECISIONS §39, §41).
+
+    The same features and weights as the FM reward (reward_finetune.reward_features): the
+    area channel is the n_j-th largest predicted vs target value (log1p mm), with n_j the
+    target's exceedance count at u_j, masked above the target maximum; perimeter and Euler
+    keep the threshold form, weighted by (n_j + 1)^-1 normalised to mean 1. The distance
+    is the threshold form's: trapezoid over log u / xi-range, summed over the three
+    channels, mean over the batch, so only the features and weights differ.
+    """
+
+    def __init__(self, geom):
+        super().__init__()
+        self.geom = geom
+
+    def forward(self, pred_phys, target_gamma_log, target_phys, anneal_factor: float = 1.0):
+        from src.trainers.reward_finetune import reward_features
+        if target_gamma_log.shape[1] != 3:
+            raise ValueError("quantile_mass needs the 3-channel gamma target")
+        lg, tg, W = reward_features(self.geom, pred_phys.unsqueeze(0), target_gamma_log.float(),
+                                    anneal_factor, "quantile_mass", target_phys)
+        diff = W * (lg[0] - tg).abs()                                         # [B,3,Q]
+        dist = torch.trapezoid(diff, self.geom.xi, dim=2) / self.geom.xi_range
+        return dist.sum(dim=1).mean()
+
+
 # ----------------------------------------------------------------------------------
 # uniform interface for the trainer
 # ----------------------------------------------------------------------------------
@@ -273,17 +299,21 @@ class StructuralLoss(nn.Module):
     """
 
     def __init__(self, fn: nn.Module, name: str, space: str,
-                 needs_gamma: bool = False, needs_reference: bool = False):
+                 needs_gamma: bool = False, needs_reference: bool = False,
+                 needs_target_field: bool = False):
         super().__init__()
         self.fn = fn
         self.name = name
         self.space = space
         self.needs_gamma = needs_gamma
         self.needs_reference = needs_reference
+        self.needs_target_field = needs_target_field
 
     def forward(self, pred_norm, target_norm, pred_phys, target_phys,
                 gamma_target=None, reference_phys=None, anneal_factor: float = 0.05):
         if self.needs_gamma:
+            if self.needs_target_field:
+                return self.fn(pred_phys, gamma_target, target_phys, anneal_factor=anneal_factor)
             return self.fn(pred_phys, gamma_target, anneal_factor=anneal_factor)
         pred = pred_phys if self.space == "phys" else pred_norm
         target = target_phys if self.space == "phys" else target_norm
@@ -314,6 +344,12 @@ def build_structural_loss(name: str, config: dict, device) -> StructuralLoss:
             persistence_thresh_b0=(load_persistence_thresholds(config)[0]
                                    if topo == "b0" else 0.0),
         )
+        form = config.get("MINKOWSKI_FORM", "threshold")
+        if form == "quantile_mass":
+            return StructuralLoss(QuantileMassMinkowskiLoss(fn), "minkowski (quantile_mass)", "phys",
+                                  needs_gamma=True, needs_target_field=True).to(device)
+        if form != "threshold":
+            raise ValueError(f"unknown MINKOWSKI_FORM {form!r}")
         return StructuralLoss(fn, "minkowski", "phys", needs_gamma=True).to(device)
 
     if name == "spectral":

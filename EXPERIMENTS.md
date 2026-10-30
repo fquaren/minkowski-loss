@@ -517,16 +517,24 @@ isoperimetric scatter.
       (form, weights, `FM_RESIDUAL_SCALE` source, GPU), `fm_mink_latest.pth` evaluated on `val_subset4096` and
       `val_extremes1024`, compared with both clean-FM draws, images looked at.
       1. [ ] **FM + Minkowski reward, distributional, `quantile_mass`.**
-             - [ ] Fix the proximal anchor (item above), with a test that it is zero at initialisation and
-                   evaluated on the scaled residual the sampler visits.
-             - [ ] Coupling check again with the fixed anchor (`diagnose_coupling.py --extreme_batch`).
+             - [x] Fix the proximal anchor (item above), with a test that it is zero at initialisation and
+                   evaluated on the scaled residual the sampler visits. *Done 2026-10-30 (DECISIONS §41).*
+             - [x] ~~Coupling check again with the fixed anchor~~: `diagnose_coupling.py` runs reward-only steps
+                   and never uses the anchor, so §39's result stands. Gradient budget re-measured instead
+                   (`logs/grad_norm_terms_v4adv_anchorfix.txt`).
              - [ ] Fine-tune `configs/config_v4_adv_fm_dist_qm.yaml`, evaluate, compare with FM + dist (threshold).
+                   *Running since 2026-10-30 10:15 (`scripts/hpc/run_qm_finetunes_v4adv.sh`).*
       2. [ ] **FM + Minkowski reward, energy, `quantile_mass`.**
-             - [ ] Rebalance w_reward vs w_retain by the gradient-norm rule (~x1000 on w_reward), confirmed with
-                   `grad_norm_terms.py` before launching.
-             - [ ] w_reward = 0 control (same config, seed, budget): attributes both energy runs.
+             - [x] Rebalance w_reward vs w_retain by the gradient-norm rule: REWARD_WEIGHT 1.0 (parity 1.29;
+                   reward ~44% of the norm). *Done 2026-10-30 (DECISIONS §41).*
+             - [ ] w_reward = 0 control (`config_v4_adv_fm_energy_ctl.yaml`): attributes both energy runs.
+                   *Queued after dist_qm in the same chain.*
              - [ ] Fine-tune `configs/config_v4_adv_fm_energy_qm.yaml` with the new weights, evaluate.
-      3. [ ] **U-Net + Minkowski, `quantile_mass`.** Port the form to the deterministic loss
+                   *Queued after the control.*
+      3. [ ] **U-Net + Minkowski, `quantile_mass`.** *Port done 2026-10-30 (`MINKOWSKI_FORM: quantile_mass`,
+             `QuantileMassMinkowskiLoss`, 6 tests; `configs/config_v4_adv_qm.yaml`); parity audit at init running
+             (`eval_results/gradient_audit/2026-10-30_v4adv_qm_init/`). Open: bracket, after the FM chain.*
+             Port the form to the deterministic loss
              (`src/losses/minkowski.py`; needs the target field in the loss call), tests (synthetic case with a
              known answer; unit weights reproduce the current loss), gradient share by intensity, then a new
              weight bracket (§37 weights do not carry over). Supersedes the open Study-1 weight choice.

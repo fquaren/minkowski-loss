@@ -79,7 +79,7 @@ BACKBONE_CHECKPOINT: /work/fquareng/ch2/minkowski-loss/.claude/worktrees/radar-d
 REWARD_MODE: energy
 REWARD_K: 1
 REWARD_ENSEMBLE: 16
-REWARD_WEIGHT: 0.001
+REWARD_WEIGHT: 1.0   # gradient-norm parity with retention, DECISIONS §41 (was 1e-3: reward 0.07% of the gradient)
 REWARD_PROXIMAL_WEIGHT: 1.0
 REWARD_SPREAD_WEIGHT: 0.0
 REWARD_ANNEAL: 0.05
