@@ -2804,6 +2804,25 @@ The trainer's progress bar shows the full loader (162,460 batches) but stops eac
   the CLAUDE.md rule). This measures evaluation noise only, not training-seed noise: one fine-tune, one FM, one seed,
   validation subsets.
 
+**§38 step 3, third part: the energy fine-tune (recorded 2026-10-30; `runs/sr_fm_minkowski/FMenergy_v4adv_20261029_043819`,
+`logs/finetune_v4adv_energy.log`, `eval_results/extremes/v4adv_val{ext,sub}/fm_energy/`).** Startup line `config FM_RESIDUAL_SCALE=0.01267`;
+energy K = 1, M = 16, w_reward 1e-3, proximal 1, retention 1, 10 x 500 steps, ended 2026-10-29 17:19; guards within bounds
+every epoch (anisotropy 1.22-1.79, peak ratio 0.81-1.00). Train reward 0.199 -> 0.205, val 0.201 -> 0.205: the reward did not
+move, as expected with the reward at 0.13% of the gradient (§39). The eval summary does not record its checkpoint; it ran
+17:22-18:30 right after training, assumed `fm_mink_latest.pth` per protocol (not confirmed).
+
+| subset | model | exceedances | RL bias λ10 / 100 / 1000 | FSS 31.7 mm 21 px | FSS 50.1 mm 1 / 21 px | RAPSD dist. | anisotropy | CRPS |
+|---|---|---|---|---|---|---|---|---|
+| heavy 1,024 | FM draws 1 / 2 | 458 / 393 | -30/-36/-44% ; -33/-36/-36% | 0.707 / 0.707 | 0.114/0.506 ; 0.103/0.523 | 1.14 / 1.19 | 1.31 / 1.27 | 0.1613 / 0.1614 |
+| | FM + energy | 411 | -31% / -33% / -33% | 0.726 | 0.086 / 0.469 | 1.24 | 1.28 | 0.1615 |
+| random 4,096 | FM | 79 (0.272) | | 0.508 | 0.130 / 0.466 | 0.86 | 1.40 | 0.0324 |
+| | FM + energy | 66 (0.228) | | 0.634 | 0.124 / 0.454 | 0.97 | 1.38 | 0.0324 |
+
+*Verdict:* tail columns inside the spread of the two clean-FM draws; FSS 50.1 mm and the spectrum slightly worse; the only gain is
+FSS at 31.7 mm, which cannot be separated from the 5,000 extra FM steps without the w_reward = 0 control. gpd_xi error 0.011 (best
+of the table) next to a weak tail: the xi/sigma trade-off of CLAUDE.md, not used. **FM + energy as configured is continued FM
+training and tests nothing about the reward;** the hourly tail gains come from the distributional fine-tune only. Single seed.
+
 ---
 
 ## 39. The reward must reach heavy rain: quantile area + inverse-mass weights (2026-10-29)
@@ -2835,3 +2854,63 @@ training; the dist fine-tune is 99% reward.
 **Open before a fine-tune with it.** Fix the proximal anchor (evaluated at clamp(field/6.42, 0, 1), not on the
 model's r/sigma_r coordinates); run the w_reward = 0 control. Write-ups: `notes/minkowski_reward_intensity.md`
 (decision), `notes/minkowski_reward_coupling.pdf` (full explanation).
+
+---
+
+## 40. Where the base loss looks, and whether the tail is too noisy for the reward (2026-10-30)
+
+**Question (researcher).** (a) How does the FM velocity loss split its gradient across target intensity? (b) The whiteboard
+"stability in the tails" argument: is the tail of the reward features too noisy to learn from, and is the rank (quantile)
+reading more stable than the count (threshold) reading? All at the clean hourly FM (`Extremes_20261026_092630/fm_best.pth`,
+startup line `config FM_RESIDUAL_SCALE=0.01267`), validation subsets, one seed.
+
+**(a) FM loss by target intensity (`scripts/evaluate/fm_loss_intensity_share.py`, `logs/fm_loss_intensity_share_v4adv.txt`;
+heavy: 1,024 patches x 4 (t, x0) draws; random: 2,048 x 2).** The loss is a pixel mean, so it splits exactly into bins.
+Share in %: pixels / loss / |dL/dv| on the output; "param" = <G_b, G>/|G|^2 of the parameter gradients (sums to 100%).
+
+| target mm | heavy pixels / loss / \|dL/dv\| | heavy param | random pixels / loss / \|dL/dv\| | random param |
+|---|---|---|---|---|
+| < 1 | 92.3 / 51.2 / 69.9 | +327 | 97.5 / 68.7 / 84.3 | +65 |
+| 1-10 | 7.2 / 41.7 / 27.3 | -170 | 2.4 / 29.5 / 15.2 | +38 |
+| 10-20 | 0.44 / 4.9 / 2.1 | -37 | 0.046 / 1.4 / 0.43 | -1.9 |
+| 20-50 | 0.12 / 2.0 / 0.66 | -17 | 0.009 / 0.34 / 0.09 | -1.5 |
+| >= 50 | 0.009 / 0.28 / 0.06 | -2.5 | 0.0005 / 0.03 / 0.007 | -0.2 |
+
+- *Not proportional to pixel mass* (corrects the §39-era statement "any pixel-averaged loss weights a level by its mass"):
+  the squared velocity error per pixel grows with intensity (x16-30 the mean above 20 mm on heavy, x39-60 on random), so the
+  tail's share is 5-10x its pixel share. In absolute terms still ~1%: pixels >= 20 mm carry 0.72% of |dL/dv| (heavy), 0.10% (random).
+- *The tail pulls against the net gradient:* every bin >= 10 mm has a negative projection, so a step along the total gradient
+  raises the loss on heavy pixels; per-bin gradients largely cancel (dry bin |G_b| = 6.0 |G| on heavy). Some cancellation is
+  expected near a minimum; the sign says the bulk wins the trade-off. Validation patches, not training ones.
+- *Comparison with the reward (rough: the reward is binned on the generated field, in z-space; the loss on the target, in v-space):*
+  the original threshold-form reward put 3.7% of |dR/dz| on pixels >= 20 mm, ~5x the FM loss's 0.72%. *Inference, untested:* this
+  relative tilt may be why the dist fine-tune moved the tail (§38) although its gradient was mostly on light rain.
+
+**(b) Signal and noise of the reward features in the tail (`scripts/evaluate/tail_reading_snr.py`, `logs/tail_reading_snr_v4adv.txt`;
+M = 16, heun-16, 256 heavy / 512 random patches).** Per patch and threshold with n_j >= 1: d = member mean - target, s = member sd;
+b/s = mean(d)/rms(s). Heavy subset (random subset the same pattern):
+
+| u mm | members with max < u | count b/s | rank b/s | perim b/s | euler b/s |
+|---|---|---|---|---|---|
+| 3.43 | 2% | -0.53 | -0.73 | -0.82 | -0.91 |
+| 8.61 | 15% | -1.32 | -1.97 | -1.34 | -1.36 |
+| 20.2 | 55% | -1.86 | -2.04 | -1.90 | -1.92 |
+| 50.1 | 73% | -2.47 | -2.77 | -2.58 | -2.51 |
+| 79 | 79% | -3.28 | -3.14 | -3.28 | -3.22 |
+
+- *The tail deficit is detectable in every channel:* above ~5 mm the ensemble sits 1-3 spreads below the target and the gap grows
+  with u. Noise is not what hid the tail from the reward.
+- *The rank reading is only modestly better:* 1.1-1.5x the b/s between 3 and 50 mm, even at 79 mm. Perimeter and Euler track the
+  count reading. **Withdrawn:** the earlier "rank reading ~1/xi (~6x) more stable" claim compared noise only; the change of axis
+  scales signal and noise together to first order.
+- *What separates the forms is reach:* 55% of members never reach 20.2 mm, 73% never reach 50.1 mm. The threshold form gives these
+  no gradient; the quantile form does. This, with the gradient share in (a), is the case for `quantile_mass`, not stability.
+- *Synthetic check* (`scripts/evaluate/tail_reading_synthetic.py`, CPU, GPD xi = 0.155, model intensities x0.7): rank b/s 1.4-1.9x
+  the count b/s with independent pixels; roughly even with 4-px spatial correlation; masking thresholds with n_j = 0 biases even a
+  calibrated model at n ~ 5 (-1.6 sd count, -1.2 sd rank), a selection effect the `quantile_mass` mask shares.
+
+**Working hypothesis (researcher's framing, generalises beyond Minkowski).** The base loss gives heavy rain ~1% of its gradient and
+trades it off against the bulk. An auxiliary objective helps the tail if (i) its gradient share on high intensities exceeds the
+base loss's and (ii) it gives a gradient to samples that fall short of the target's tail; both are measurable with the two
+scripts above for any candidate loss. Status: consistent with (a)-(b) and §38; not yet tested across losses.
+

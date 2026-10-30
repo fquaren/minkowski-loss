@@ -1,0 +1,22 @@
+####### evalext
+[fm-share] sigma_r: config FM_RESIDUAL_SCALE=0.01267  params=57,128,257
+[fm-share] /home/fquareng/work/data/extremes/OPERA/patches_v4_adv/meta/val_extremes1024.txt: 1024 patches x 4 draws
+
+ target mm   pixels%    loss%  |dL/dv|%   param%  |G_b|/|G|  loss/px
+     [0,1)   92.2696   51.232    69.932   327.29      6.009     0.56
+    [1,10)    7.1559   41.676    27.263  -170.48      4.305     5.82
+   [10,20)    0.4420    4.856     2.085   -37.27      1.046    10.99
+   [20,50)    0.1232    1.958     0.658   -17.03      0.551    15.89
+  [50,inf)    0.0092    0.277     0.061    -2.51      0.081    30.02
+loss/px: mean squared velocity error per pixel in the bin, relative to the overall mean
+####### evalsub
+[fm-share] sigma_r: config FM_RESIDUAL_SCALE=0.01267  params=57,128,257
+[fm-share] /home/fquareng/work/data/extremes/OPERA/patches_v4_adv/meta/val_subset4096.txt: 2048 patches x 2 draws
+
+ target mm   pixels%    loss%  |dL/dv|%   param%  |G_b|/|G|  loss/px
+     [0,1)   97.5004   68.721    84.250    65.48      3.176     0.70
+    [1,10)    2.4447   29.458    15.220    38.13      2.841    12.05
+   [10,20)    0.0456    1.448     0.429    -1.86      0.293    31.76
+   [20,50)    0.0088    0.340     0.094    -1.54      0.109    38.71
+  [50,inf)    0.0005    0.033     0.007    -0.21      0.013    60.36
+loss/px: mean squared velocity error per pixel in the bin, relative to the overall mean
