@@ -5,6 +5,10 @@
    prediction/target pair (patch 979 of the v4adv heavy validation subset, clean FM member 0).
 2. share.pdf: share of the reward gradient landing on pixels of each intensity bin, original
    form vs quantile_mass (alpha = 1), from logs/reward_threshold_share_v4adv.txt.
+3. fmloss.pdf: share of pixels, of the FM loss and of |dL/dv| per target-intensity bin
+   (DECISIONS §40a), from logs/fm_loss_intensity_share_v4adv.txt.
+4. tailsnr.pdf: bias/spread of the four reward features and the share of members out of
+   reach, per threshold (DECISIONS §40b), from logs/tail_reading_snr_v4adv.txt.
 
 Run from the repository root.
 """
@@ -79,3 +83,59 @@ axes[0].legend(frameon=False, fontsize=8)
 fig.tight_layout()
 fig.savefig(f"{OUT}/share.pdf")
 print("share: written")
+
+
+# ---- 3. FM loss by target intensity --------------------------------------------------
+C3, C4 = "#1baf7a", "#eda100"                # categorical slots 3 and 4
+txt = open("logs/fm_loss_intensity_share_v4adv.txt").read()
+blocks = re.split(r"####### ", txt)[1:]
+fig, axes = plt.subplots(1, 2, figsize=(6.4, 2.9), sharey=True)
+for ax, blk in zip(axes, blocks):
+    name = blk.split()[0]
+    rows = [l.split() for l in blk.splitlines() if re.match(r"\s*\[\d", l)]
+    px, loss, dv = (np.array([float(r[k]) for r in rows]) for k in (1, 2, 3))
+    x = np.arange(len(rows)); w = 0.27
+    ax.bar(x - w - 0.02, px, w, color=MUTED, label="pixels")
+    ax.bar(x, loss, w, color=C_TGT, label="loss value")
+    ax.bar(x + w + 0.02, dv, w, color=C_PRED, label="|∂L/∂v| (gradient)")
+    ax.set_yscale("log"); ax.set_ylim(3e-4, 150)
+    ax.set_xticks(x, bins); ax.set_xlabel("target intensity [mm]")
+    ax.set_title("heavy subset" if name == "evalext" else "random subset", fontsize=9, color=INK)
+    ax.grid(axis="y", color=MUTED, alpha=0.25, lw=0.5)
+axes[0].set_ylabel("share [%] (log scale)")
+fig.legend(*axes[0].get_legend_handles_labels(), frameon=False, fontsize=8, ncol=3,
+           loc="upper center")
+fig.tight_layout(rect=(0, 0, 1, 0.9))
+fig.savefig(f"{OUT}/fmloss.pdf")
+
+# ---- 4. tail signal / noise of the reward features ----------------------------------
+txt = open("logs/tail_reading_snr_v4adv.txt").read()
+blocks = re.split(r"####### ", txt)[1:]
+CHS = [("count (threshold area)", C_TGT, "o", "-"), ("rank (quantile area)", C_PRED, "s", "--"),
+       ("perimeter", C3, "^", "-."), ("Euler", C4, "D", ":")]
+fig, axes = plt.subplots(2, 2, figsize=(6.4, 4.6), sharex=True,
+                         gridspec_kw={"height_ratios": [2.2, 1]})
+for col, blk in enumerate(blocks):
+    name = blk.split()[0]
+    rows = [l for l in blk.splitlines() if re.match(r"\s*[0-9.]+\s+\d+\s+[0-9.]+\s+\|", l)]
+    uu = np.array([float(l.split()[0]) for l in rows])
+    reach = np.array([float(l.split()[2]) for l in rows])
+    cells = [l.split("|")[1:] for l in rows]
+    ax = axes[0, col]
+    for k, (lab, c, mk, ls) in enumerate(CHS):
+        bs = np.array([float(cc[k].split()[0]) for cc in cells])
+        ax.plot(uu, bs, color=c, marker=mk, ms=4, lw=1.5, ls=ls, label=lab)
+    ax.axhline(0, color=MUTED, lw=0.8)
+    ax.set_xscale("log"); ax.set_ylim(-4.2, 2.0)
+    ax.set_title("heavy subset" if name == "evalext" else "random subset", fontsize=9, color=INK)
+    ax.grid(color=MUTED, alpha=0.25, lw=0.5)
+    axb = axes[1, col]
+    axb.bar(uu, reach, width=uu * 0.25, color=MUTED)
+    axb.set_ylim(0, 100); axb.set_xlabel("threshold u [mm]")
+    axb.grid(axis="y", color=MUTED, alpha=0.25, lw=0.5)
+axes[0, 0].set_ylabel("bias / member spread")
+axes[1, 0].set_ylabel("members with\nmax < u [%]")
+axes[0, 0].legend(frameon=False, fontsize=7.5, loc="lower left")
+fig.tight_layout()
+fig.savefig(f"{OUT}/tailsnr.pdf")
+print("fmloss.pdf, tailsnr.pdf written")

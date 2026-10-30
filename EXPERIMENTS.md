@@ -506,6 +506,35 @@ isoperimetric scatter.
             3.7% -> 40.9% of the gradient on the heavy subset). Still open: a fine-tune with it, after the anchor
             fix and the control above. For the energy config, rebalance w_reward vs w_retain first: with the new
             form its reward is still 0.07% of the gradient (`logs/grad_norm_terms_v4adv.txt`).
+      - [x] *Where the base loss looks; tail signal vs noise (2026-10-30, DECISIONS §40).* FM loss: pixels >= 20 mm carry
+            ~1% of the gradient (0.72% heavy, 0.10% random) and pull against the net direction. Reward features: the tail
+            deficit is 1-3 member spreads in every channel, so noise is not the limit; 55-73% of members never reach
+            20-50 mm, so reach is. FM + energy evaluated (§38): no tail gain, continued FM training.
+      - [x] *Notes rewritten (2026-10-30):* `notes/minkowski_reward_coupling.pdf` now covers every loss (MSE,
+            deterministic Minkowski, FM, dist, energy, anchor, retention), the gradient budget, the quantile fix,
+            §40 and the general hypothesis.
+- [ ] **Priority order for the corrected runs (researcher, 2026-10-30).** Each step: startup lines checked
+      (form, weights, `FM_RESIDUAL_SCALE` source, GPU), `fm_mink_latest.pth` evaluated on `val_subset4096` and
+      `val_extremes1024`, compared with both clean-FM draws, images looked at.
+      1. [ ] **FM + Minkowski reward, distributional, `quantile_mass`.**
+             - [ ] Fix the proximal anchor (item above), with a test that it is zero at initialisation and
+                   evaluated on the scaled residual the sampler visits.
+             - [ ] Coupling check again with the fixed anchor (`diagnose_coupling.py --extreme_batch`).
+             - [ ] Fine-tune `configs/config_v4_adv_fm_dist_qm.yaml`, evaluate, compare with FM + dist (threshold).
+      2. [ ] **FM + Minkowski reward, energy, `quantile_mass`.**
+             - [ ] Rebalance w_reward vs w_retain by the gradient-norm rule (~x1000 on w_reward), confirmed with
+                   `grad_norm_terms.py` before launching.
+             - [ ] w_reward = 0 control (same config, seed, budget): attributes both energy runs.
+             - [ ] Fine-tune `configs/config_v4_adv_fm_energy_qm.yaml` with the new weights, evaluate.
+      3. [ ] **U-Net + Minkowski, `quantile_mass`.** Port the form to the deterministic loss
+             (`src/losses/minkowski.py`; needs the target field in the loss call), tests (synthetic case with a
+             known answer; unit weights reproduce the current loss), gradient share by intensity, then a new
+             weight bracket (§37 weights do not carry over). Supersedes the open Study-1 weight choice.
+- [ ] **Test the general hypothesis across losses (DECISIONS §40).** For each competing loss (roadmap M4), measure
+      before training (i) gradient share on pixels >= 20 mm (`fm_loss_intensity_share.py` /
+      `reward_threshold_share.py` pattern) and (ii) share of members/predictions out of reach; prediction: at
+      matched gradient norm, tail columns rank as (i)-(ii). Include an inverse-mass-weighted FM loss as the
+      non-proper baseline.
 
 ### Validation: every stage passes its checks before the next starts (added 2026-10-19)
 `scripts/validate/validate_stage.py <stage>` writes `validation/<stage>/<date>_<commit>.md`
