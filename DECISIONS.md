@@ -3042,3 +3042,18 @@ energy ctl, FM + energy qm).**
 - *SAL:* energy_qm has the lowest structure S (median 0.40, vs 0.64 FM, 0.54 dist) and amplitude A ≈ 0 (FM -0.04).
 - *Perception-distortion:* energy_qm has the lowest mean spectral distance (1.28, vs 1.51 FM, 1.32 dist) at
   RMSE 0.957 (FM 0.950).
+
+**Return levels without a fit (2026-11-02).** The valsub return-level panel shows only energy_qm: the other FM
+rows have < 200 predicted exceedances (79 / 150 / 83), below `min_exceedances` (`tail_metrics.py:115`), so no fit
+and RL bias NaN. Its divergence (382 vs 183 mm at lambda = 1000) is mostly extrapolation: lambda beyond ~265
+exceeds the model's own exceedance count, so the curve there is set by xi (0.35 vs -0.03; sigma 12.0 vs 21.5).
+The observed fit rests on 38 patches with tmax >= 50.1 mm and correlated pixels, so xi_obs is uncertain beyond
+the iid standard error (~0.08). Ranked patch maxima from `extremes_arrays.npz` (peak_ratio x tmax, no fit), ranks
+1 / 2 / 3 / 5 / 10 / 20 / 30, mm:
+- valsub target 151 150 144 128 100 76 58; energy_qm 256 200 180 164 111 88 72; FM 176 148 118 80 60 49 44.
+- valext target 201 191 174 159 142 123 106; energy_qm 377 315 224 188 150 129 109; FM 139 121 121 113 92 74 64.
+
+Reading: from rank 10 down energy_qm tracks the target within ~5-20% (FM is 25-40% short); the top 5 overshoot
+by 1.3-1.9x. The overshoot is real but confined to the most extreme few patches; the 2-4x gaps in the plot are the
+fit's extrapolation. Open checks: day-block bootstrap intervals on xi for pred and obs (`src/evaluation/day_block.py`),
+and the two top valsub targets (151, 150 mm) looked at for artefacts.
