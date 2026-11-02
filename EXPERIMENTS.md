@@ -522,22 +522,61 @@ isoperimetric scatter.
              - [x] ~~Coupling check again with the fixed anchor~~: `diagnose_coupling.py` runs reward-only steps
                    and never uses the anchor, so §39's result stands. Gradient budget re-measured instead
                    (`logs/grad_norm_terms_v4adv_anchorfix.txt`).
-             - [ ] Fine-tune `configs/config_v4_adv_fm_dist_qm.yaml`, evaluate, compare with FM + dist (threshold).
-                   *Running since 2026-10-30 10:15 (`scripts/hpc/run_qm_finetunes_v4adv.sh`).*
+             - [x] Fine-tune `configs/config_v4_adv_fm_dist_qm.yaml`, evaluate, compare with FM + dist (threshold).
+                   *Done 2026-10-31 (DECISIONS §42): no gain over clean FM, worse than threshold dist on every
+                   tail column.*
+             - [ ] **Re-run dist_qm with a retention term (researcher, 2026-11-02, DECISIONS §42)** so the two
+                   reward modes share the loss settings: w_retain 1 and w_reward by the same gradient-norm parity
+                   rule as energy_qm (measure with `grad_norm_terms.py` first; expect ~1). M and the spread term
+                   stay as in dist_qm unless decided otherwise. Evaluate on both subsets, field panels.
       2. [ ] **FM + Minkowski reward, energy, `quantile_mass`.**
              - [x] Rebalance w_reward vs w_retain by the gradient-norm rule: REWARD_WEIGHT 1.0 (parity 1.29;
                    reward ~44% of the norm). *Done 2026-10-30 (DECISIONS §41).*
-             - [ ] w_reward = 0 control (`config_v4_adv_fm_energy_ctl.yaml`): attributes both energy runs.
-                   *Queued after dist_qm in the same chain.*
-             - [ ] Fine-tune `configs/config_v4_adv_fm_energy_qm.yaml` with the new weights, evaluate.
-                   *Queued after the control.*
+             - [x] w_reward = 0 control (`config_v4_adv_fm_energy_ctl.yaml`): attributes both energy runs.
+                   *Done 2026-10-30 (§42): no tail gain, so the §38 energy row was continued FM training.*
+             - [x] Fine-tune `configs/config_v4_adv_fm_energy_qm.yaml` with the new weights, evaluate.
+                   *Done 2026-10-31 (§42): exceedance ratio 0.28 -> 0.67, RL bias 0.37 -> 0.09, RAPSD 1.14 -> 0.41 on
+                   val_extremes1024, RMSE +0.6%; panels clean (`figures/v4adv_valext_fields_qm/`). Single seed.*
+             - [ ] Seeds for energy_qm (3, as the §16 rule) before any claim.
       3. [ ] **U-Net + Minkowski, `quantile_mass`.** *Port done 2026-10-30 (`MINKOWSKI_FORM: quantile_mass`,
              `QuantileMassMinkowskiLoss`, 6 tests; `configs/config_v4_adv_qm.yaml`); parity audit at init running
-             (`eval_results/gradient_audit/2026-10-30_v4adv_qm_init/`). Open: bracket, after the FM chain.*
+             (`eval_results/gradient_audit/2026-10-30_v4adv_qm_init/`). Bracket running (`logs/bracket_qm_v4adv.log`):
+             w*_qm = 7.7e-4; w = 2.6e-4 (`UNet_Ana_20261031_145244`) and 7.7e-4 (`UNet_Ana_20261101_111234`) done,
+             not evaluated; 2.3e-3 started 2026-11-02 07:32, 7.7e-3 after (~20 h each).*
              Port the form to the deterministic loss
              (`src/losses/minkowski.py`; needs the target field in the loss call), tests (synthetic case with a
              known answer; unit weights reproduce the current loss), gradient share by intensity, then a new
              weight bracket (§37 weights do not carry over). Supersedes the open Study-1 weight choice.
+- [ ] **Follow-ups from the researcher's margin notes on the coupling notes (2026-10-30).** Answers are folded into
+      `notes/minkowski_reward_coupling.tex` (source only; the committed PDF predates them, regenerate when wanted).
+      - [ ] *Spread decomposition (BANKED 2026-11-02 by the researcher; plan drafted, not run).* Measure whether the dist
+            reward's pooled spread is dominated by between-patch variance: per feature, E_b[Var_m] vs Var_b(E_m) on the
+            batches the reward sees. Why it matters: if between dominates, the spread term constrains patch-to-patch
+            diversity, not ensemble spread, and per-condition spread cannot be targeted from one observation -> argues
+            for the energy reward over the spread term.
+            Draft plan: new `scripts/evaluate/spread_decomposition.py`; clean FM; 64 random *training* batches of B=8;
+            both reward forms (threshold, quantile_mass); M=4 (what training sees; within biased by (M-1)/M) and M=16
+            (reference), raw and bias-corrected; repeat on `val_extremes1024`; report target pooled spread as a
+            reference (purely between). Check: within + between = total to 1e-6. Rule: "dominates" if corrected
+            between-fraction >= 0.8 at most thresholds of every channel. Minutes on GPU 1.
+            Open choices to settle on return: (1) clean FM vs the FM+dist fine-tune; (2) batch composition -- the
+            answer depends on B and on how alike the batch's patches are, not only on the model; (3) add M=32 to check
+            M=16 converged; (4) decision rule -- weight thresholds by their share of the reward gradient, or compare
+            with the target's spread; (5) also test whether it matters: drop the spread term or use a within-patch
+            spread, and measure the cosine of the reward gradient with the full one.
+      - [ ] *Bulk check on dist_qm.* No retention term: compare CRPS, MAE, RAPSD and low-threshold FSS with clean FM
+            before claiming the quantile form "tackles both bulk and extremes".
+      - [ ] *lambda_s = 0.5 is an untested default* (inherited from `Extremes_20260804_170256`). If the spread term is
+            kept, write it in convex form and choose lambda by a rule fixed beforehand.
+      - [ ] *Energy score with L1 = weighted sum of 45 CRPS* (derived in the notes): proper per feature, blind to
+            dependence between features. Consider an L2 (joint, strictly proper) variant; cost: no per-threshold control.
+      - [ ] *Thresholds as a hyperparameter:* any tuning needs a rule fixed in advance (e.g. equal target-pixel counts
+            between thresholds), never the reported tail metrics.
+      - [ ] *Citations to verify before the paper* (opened in no session yet): Hadwiger's theorem, Cauchy-Crofton
+            formula, straight-through estimator (Bengio et al. 2013), flow-matching marginal velocity theorem,
+            energy score (Gneiting & Raftery 2007), energy distance (Euclidean case).
+      - [ ] *Channel sum (deterministic, 3d) vs mean (reward, d):* documented, not changed; Study-1 and reward
+            weights are not comparable by a factor 3.
 - [ ] **Test the general hypothesis across losses (DECISIONS §40).** For each competing loss (roadmap M4), measure
       before training (i) gradient share on pixels >= 20 mm (`fm_loss_intensity_share.py` /
       `reward_threshold_share.py` pattern) and (ii) share of members/predictions out of reach; prediction: at

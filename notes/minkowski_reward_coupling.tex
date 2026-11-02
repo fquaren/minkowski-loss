@@ -18,7 +18,7 @@
 
 \title{Structural losses for heavy rain:\\ the Minkowski loss, flow matching, and where the gradient goes}
 \author{minkowski-loss project notes \quad (DECISIONS \S37--\S40)}
-\date{30 October 2026}
+\date{30 October 2026 (revised after the researcher's margin notes)}
 
 \begin{document}
 \sloppy
@@ -39,18 +39,25 @@ All numbers refer to the hourly v4 data (\texttt{patches\_v4\_adv}), the hourly 
 \section{The problem in one page}
 %=====================================================================
 
-We want 2-km precipitation fields from 12.5-km inputs that get \emph{heavy rain} right: how much of it there is, how
+We want 2-km precipitation fields from 25-km inputs (a super-resolution factor of 12.5) that get \emph{heavy rain} right: how much of it there is, how
 intense it gets and what shape it has. Two observations drive the whole project.
 
 \begin{enumerate}[leftmargin=1.4em]
 \item \textbf{Pixel losses do not care about heavy rain.} Pixels above 20\,mm are about $10^{-3}$ of the pixels of a
 heavy patch and $10^{-4}$ of a random one. Any loss that averages over pixels gives them a tiny share of its
 gradient, so a model trained on it can afford to get them wrong. Section~\ref{sec:fmloss} measures this for the
-flow-matching loss: about 1\% of its gradient.
+flow-matching loss: about 1\% of its gradient. Figure~\ref{fig:fmloss} shows both statistics side by side: the share of
+pixels and the share of the loss gradient in each intensity bin.
 \item \textbf{Structural statistics see heavy rain directly.} The Minkowski functionals describe the set of pixels
 above a threshold $u$ (its area, its perimeter, how many pieces it has) at many thresholds, including high ones. A
 loss on them can, in principle, give the top of the distribution its own weight.
 \end{enumerate}
+
+\begin{figure}[t]\centering
+\includegraphics[width=0.95\linewidth]{figures/reward_coupling/fmloss.pdf}
+\caption{Motivation. Share of pixels, of the FM loss value and of its output gradient $|\partial L/\partial v|$ per target-intensity
+bin, clean FM (Section~\ref{sec:fmloss}). Heavy pixels are about 0.1\% of the pixels and receive about 1\% of the gradient. Log scale: each grid line is a factor 10.}\label{fig:fmloss}
+\end{figure}
 
 \noindent The notes follow one question: \emph{does the Minkowski loss actually put gradient on heavy rain, and if not,
 why not and how do we fix it?} The short answer, built up in the sections below:
@@ -61,8 +68,11 @@ threshold}, so light rain still dominates, and thresholds the prediction never r
 \item The fix (\texttt{REWARD\_FORM: quantile\_mass}) reads the area curve along the intensity axis and reweights
 perimeter and Euler by inverse pixel mass. It moves the share of gradient on pixels $\ge20$\,mm from 3.7\% to 40.9\%
 on heavy patches (Section~\ref{sec:fix}).
-\item The tail mismatch is not hidden by noise: every reward feature sees it at 1--3 times the member spread. What
-blocked the original form was \emph{reach} (Section~\ref{sec:stability}).
+\item There were two possible reasons the original reward ignored heavy rain. \emph{Noise}: the reward cannot tell a
+model with too little heavy rain from a correct one. \emph{Reach}: the reward sees the error but cannot send a gradient
+to fix it. Section~\ref{sec:stability} rules out noise (the samples sit 1--3 times their own scatter below the
+observation at every threshold above about 5\,mm) and confirms reach (55--73\% of samples never reach 20--50\,mm, and
+with the soft mask a sample that never reaches a threshold gets no gradient from it).
 \end{itemize}
 
 %=====================================================================
@@ -71,7 +81,7 @@ blocked the original form was \emph{reach} (Section~\ref{sec:stability}).
 
 \subsection{Model space}
 A precipitation field is a vector $f\in\R_{\ge 0}^N$ of hourly accumulations in mm, $N = 128^2 = 16{,}384$ pixels of
-$2\times 2$\,km. Networks work in the \emph{model space}
+$2\times 2$\,km. Networks work in the \emph{model space}: a log1p transform, divided by the log1p of the scaler maximum (613\,mm),
 \begin{equation}\label{eq:z}
   z = \frac{\log(1+f)}{c},\qquad f = e^{cz}-1,\qquad c = \log(1+613\ \text{mm}) = 6.42 ,
 \end{equation}
@@ -86,8 +96,8 @@ error in model space,
 \end{equation}
 
 \paragraph{What it converges to.} \status{derivation} For one pixel, $\min_{a}\E[(a - Z)^2\mid X]$ is reached at
-$a^\star = \E[Z\mid X]$, the conditional mean. Where the coarse input cannot tell where inside a 12.5-km cell the core
-will be, the conditional mean spreads the core over all the places it could be.
+$a^\star = \E[Z\mid X]$, the conditional mean. Where the coarse input cannot tell where inside a 25-km cell (about 156 target pixels) the
+core will be, the conditional mean spreads the core over all the places it could be.
 
 \begin{example}
 Suppose that, given $X$, a 2-km pixel has a 20\% chance of 50\,mm and an 80\% chance of 1\,mm. In model space,
@@ -97,14 +107,17 @@ mean in log space is a geometric-type mean, which falls even further below the 5
 (10.8\,mm) would.
 \end{example}
 
-\noindent This is the smoothing that the structural loss is meant to counteract in Study~1.
+\noindent The smoothing itself comes from the MSE. How strong it is depends on the space the MSE is computed in: an MSE
+on $\log(1+f)$ has a geometric-type mean as its optimum (2.8\,mm here), an MSE in mm the arithmetic mean (10.8\,mm). So
+the log normalisation makes peak smoothing worse; the price of an MSE in mm would be a loss dominated by the few heavy
+pixels. This is the smoothing that the structural loss is meant to counteract in Study~1.
 
 \paragraph{The structural loss in Study 1.} The deterministic objective is
 \begin{equation}\label{eq:det}
   \mathcal L_{\mathrm{det}} = \mathcal L_{\mathrm{MSE}} + w(e)\; D_{\mathrm{Mink}}\big(f(\hat z),\, g^{\mathrm{obs}}\big),
 \end{equation}
-with $D_{\mathrm{Mink}}$ the distance of Section~\ref{sec:mink} summed over its three channels, and $w(e)$ a cosine
-warm-up from 0 to $w_{\max}$ over the first epochs (\texttt{src/trainers/unet\_analytical.py}). Hourly data needed a new
+with $D_{\mathrm{Mink}}$ the distance of Section~\ref{sec:mink} summed over its three channels, and $w(e)$ the weight
+of the Minkowski term relative to the MSE, ramped by a cosine warm-up from 0 to $w_{\max}$ over the first epochs (\texttt{src/trainers/unet\_analytical.py}). Hourly data needed a new
 $w_{\max}$ (DECISIONS \S37); Section~\ref{sec:study1} summarises the bracket.
 
 \subsection{The flow-matching residual model (Study 2)}
@@ -122,16 +135,20 @@ $t\sim U(0,1)$, forms the straight path $x_t = (1-t)x_0 + t\,r$ and regresses th
 
 \paragraph{What it converges to, and why that differs from the backbone.} \status{derivation} Again an MSE, so the
 optimum is a conditional mean, but now of the \emph{path velocity given the current state}:
-$v^\star(x,t,\mathbf c) = \E[r - x_0\mid x_t = x,\mathbf c]$. Integrating $\mathrm dx/\mathrm dt = v^\star$ from noise
-transports the noise distribution exactly onto $p(r\mid\mathbf c)$ \citeq{flow matching / rectified flow, marginal
-velocity theorem}. So the FM loss is \emph{not} biased toward the mean in principle: at its optimum the sampler
+$v^\star(x,t,\mathbf c) = \E[r - x_0\mid x_t = x,\mathbf c]$. In words: at each point the learned velocity is the \emph{average} of the straight-path velocities that pass through
+it. Integrating $\mathrm dx/\mathrm dt = v^\star$ from noise transports the noise distribution exactly onto
+$p(r\mid\mathbf c)$, and more: at every time $t$ the sampler's state has the same distribution as the straight-line
+mixture $(1-t)x_0 + t\,r$ with $x_0$ and $r$ independent \citeq{flow matching / rectified flow, marginal velocity
+theorem}. This \emph{marginal-preservation} property is what the anchor fix in Section~\ref{sec:coupling} relies on.
+(To study further: researcher's note.) So the FM loss is \emph{not} biased toward the mean in principle: at its optimum the sampler
 reproduces the whole conditional distribution, tail included. The bias toward the mean in the backbone comes from
 asking for one field; FM asks for a velocity at every intermediate state, which is a different question.
 
 \paragraph{What goes wrong in practice.} The optimum is not reached. With a finite network and finite training, the
 error ends up where the loss is least sensitive. Equation~\eqref{eq:fm} is a pixel mean, so heavy pixels are a
 tiny part of it. Section~\ref{sec:fmloss} measures how tiny. The clean hourly FM produces about 3 in 10 of the observed
-exceedances of 50.1\,mm on heavy patches (Table~\ref{tab:fm}).
+exceedances of 50.1\,mm on heavy patches, and its 1000-year return level is 36--44\% too low (Table~\ref{tab:fm}): a
+clear failure on the extremes, which the reward exists to fix.
 
 \paragraph{Sampling.} Heun's method, 16 steps of $h = 1/16$:
 \begin{equation}\label{eq:heun}
@@ -147,10 +164,17 @@ and the generated field is $f = e^{c\,\mathrm{clamp}(\mu + \sigma_r x_{16},\,0,\
 describe its geometry: its area $A(u)$, its perimeter $P(u)$ and its Euler characteristic $\chi(u)$ (number of pieces
 minus number of holes). In two dimensions these are, up to linear combination, the only additive, continuous,
 motion-invariant functionals of a set \citeq{Hadwiger's characterisation theorem}. The loss uses $Q = 15$ thresholds,
-evenly spaced in $\xi = \log u$:
+evenly spaced in $\xi = \log u$, with the hourly levels matched to the 15-min ones by exceedance frequency
+(DECISIONS \S33):
 \[
 u \in \{0.1,\, 0.192,\, 0.314,\, 0.509,\, 0.828,\, 1.35,\, 2.11,\, 3.43,\, 5.36,\, 8.61,\, 13.5,\, 20.2,\, 31.7,\, 50.1,\, 79.0\}\,\text{mm}.
 \]
+
+\paragraph{The thresholds are a hyperparameter.} We chose them; nothing in the theory fixes them. Two remarks for
+tuning them. (1) In the quantile form (Section~\ref{sec:fix}) a threshold only selects \emph{which rank} $n_j$ the area
+channel compares, and the ranks come from the target, so the grid should matter less than in the threshold form
+\status{inference, untested}. (2) Tuning them on the tail metrics we report would select on the test quantity; a rule
+must be fixed beforehand (e.g.\ equal numbers of target pixels between consecutive thresholds).
 
 \paragraph{Discrete, differentiable estimators} (\texttt{src/losses/minkowski.py}). The hard indicator
 $\mathbb 1[f_i\ge u]$ has zero derivative almost everywhere. The loss therefore uses a \emph{soft mask}
@@ -165,9 +189,11 @@ with $\sigma$ the logistic function and anneal factor $a$; at $a = 0.05$ (the re
   P(u) &= \ell\Big[w_{\mathrm{ax}}\!\!\sum_{\text{axial pairs}}\!|s_i-s_j| + w_{\mathrm{di}}\!\!\sum_{\text{diagonal pairs}}\!|s_i-s_j|\Big],\\
   \chi(u) &= V - E_x - E_y + F ,
 \end{align}
-with $\ell = 2$\,km, Cauchy--Crofton weights $w_{\mathrm{ax}} = 0.473$, $w_{\mathrm{di}} = 0.218$, and $V,E,F$ soft counts
+with $\ell = 2$\,km, Cauchy--Crofton weights $w_{\mathrm{ax}} = 0.473$, $w_{\mathrm{di}} = 0.218$ (from the Cauchy--Crofton
+formula for perimeter \citeq{Cauchy--Crofton formula}; the two values are our own calibration), and $V,E,F$ soft counts
 of pixels, edges and faces (an edge or face counts with the minimum of its pixels' masks). The area uses a
-\emph{straight-through estimator}: the exact count in the forward pass, the soft-mask derivative in the backward pass.
+\emph{straight-through estimator} \citeq{Bengio, L\'eonard \& Courville 2013, straight-through estimator; not opened}:
+the exact count in the forward pass, the soft-mask derivative in the backward pass.
 
 \paragraph{The curves and the distance.} Each field becomes three curves over the 15 thresholds,
 \begin{equation}
@@ -179,7 +205,10 @@ and two curves are compared by integrating the absolute difference over log-inte
 \end{equation}
 evaluated by the trapezoid rule on the thresholds, with weights $w_k\equiv1$ in the original form (Section~\ref{sec:fix}
 introduces other weights). The deterministic loss \eqref{eq:det} uses the channel \emph{sum}, $D_{\mathrm{Mink}} = 3d$;
-the reward uses the channel mean $d$. Every decade of intensity gets equal weight \emph{in this sum}.
+the reward uses the channel mean $d$. The difference is history (two code paths), not design. A constant factor changes
+nothing about the update direction (Section~\ref{sec:budget}), but it means Study-1 weights and reward weights differ by
+a factor 3 before any other difference and cannot be compared directly. The code is left as is, since changing it would
+silently rescale every existing weight. Every decade of intensity gets equal weight \emph{in this sum}.
 Section~\ref{sec:heavy} shows why that is not equal weight in the gradient.
 
 \paragraph{What the functionals cannot see.} They do not change when the field is shifted or rotated. A loss on them
@@ -201,8 +230,9 @@ $1.8\times10^{-3}$ & +19.0\% & 0.607 & $-18$ / $-21$ / $-24$\% & 0.125 / 0.714\\
 \noindent More weight gives more exceedances, higher peaks and better FSS at 21\,px, at a rising cost in MAE and,
 visibly in the images, grid-aligned striping from $1.8\times10^{-4}$ upward. Only $6\times10^{-5}$ is inside the +5\% MAE
 cap. Every Minkowski run under-predicts the long return levels more than vanilla does. The Study-1 weight on hourly
-data is still open. All these runs use the \emph{original} threshold form, so everything in Section~\ref{sec:heavy}
-applies to them too.
+data is still open. All these runs use the \emph{original} threshold form, with thresholds set by us, so everything in
+Section~\ref{sec:heavy} applies to them too. \textbf{They are to be redone with the quantile form}: the bracket is queued
+(DECISIONS \S41).
 
 %=====================================================================
 \section{How the Minkowski loss is coupled to flow matching}\label{sec:coupling}
@@ -225,11 +255,16 @@ $K=1$ reward acts on the smallest scales. The $K=1$ and $K=2$ gradients are alig
 \texttt{logs/coupling\_v4adv\_*.log}), so $K=1$ is not missing a direction that $K=2$ would see.
 
 \paragraph{One optimiser step.} For a batch of $B = 8$ conditions, draw $M$ members per condition, decode each to mm,
-compute $g$ for each member, compare with the target curve $g^{\mathrm{obs}}$. The total fine-tune loss is
+compute $g = [\log(1+A), \log(1+P), \operatorname{sign}(\chi)\log(1+|\chi|)]\in\R^{3\times15}$ for each member,
+compare with the target curve $g^{\mathrm{obs}}$. The total fine-tune loss is
 \begin{equation}\label{eq:total}
   L = w_{\mathrm r}\,R + w_{\mathrm p}\,\mathcal L_{\mathrm{prox}} + w_{\mathrm{ret}}\,\mathcal L_{\mathrm{FM}},
 \end{equation}
-optimised with AdamW, learning rate $10^{-5}$, gradient clipping at norm 1, 10 epochs of 500 steps.
+optimised with AdamW, learning rate $10^{-5}$, gradient clipping at norm 1, 10 epochs of 500 steps. The terms:
+$R$ is the Minkowski reward, a distance between generated and observed curves (Sections~\ref{sec:dist}--\ref{sec:energy});
+$\mathcal L_{\mathrm{prox}}$ is the proximal anchor, keeping the fine-tuned velocity close to the clean model's;
+$\mathcal L_{\mathrm{FM}}$ is the ordinary flow-matching loss \eqref{eq:fm} on real data, here called \emph{retention};
+$w_{\mathrm r}, w_{\mathrm p}, w_{\mathrm{ret}}$ are their weights.
 
 \begin{table}[h]\centering\small
 \begin{tabular}{lcc}\toprule
@@ -249,7 +284,7 @@ produced the starting model. (2) The proximal anchor (below) is itself an MSE be
 velocity field, a limit on how far the model may move, not a data term. (3) In the energy run it is present as the
 retention term, and there, as Section~\ref{sec:budget} shows, it dominates.
 
-\subsection{The distributional reward}
+\subsection{The distributional reward}\label{sec:dist}
 \begin{equation}\label{eq:dist-reward}
   R_{\mathrm{dist}} = \frac1B\sum_{b} d\Big(\tfrac1M\textstyle\sum_m g_{bm},\ g^{\mathrm{obs}}_b\Big)
   + \lambda_s\, d\Big(\log\!\big(1+\operatorname{std}_{b,m}\, g_{bm}\big),\ \log\!\big(1+\operatorname{std}_b\, g^{\mathrm{obs}}_b\big)\Big).
@@ -257,18 +292,34 @@ retention term, and there, as Section~\ref{sec:budget} shows, it dominates.
 The first term asks the \emph{average} member curve of each condition to match the observation. The second asks the
 spread of the curves to match the spread of the observed curves.
 
+\paragraph{The spread weight $\lambda_s$.} $\lambda_s = 0.5$ was inherited from the 15-min run of August 2026
+(\texttt{Extremes\_20260804\_170256}); DECISIONS records no tuning, so it is an untested default. A convex form
+$(1-\lambda)A + \lambda B$ gives the same training direction: $A + \lambda_s B = \frac{1}{1-\lambda}\big[(1-\lambda)A +
+\lambda B\big]$ with $\lambda = \lambda_s/(1+\lambda_s)$, so $\lambda_s = 0.5$ is $\lambda = 1/3$ times a constant. The
+constant only rescales the reward against the anchor, which hardly matters when the reward is 95\% of the gradient. The
+convex form reads better, since $\lambda$ is then directly the share given to spread.
+
 \paragraph{What the spread term actually measures.} \status{derivation} Both standard deviations are pooled over the
 batch: $\operatorname{std}_{b,m}$ runs over all $M\times B = 32$ generated curves. By the law of total variance,
 \begin{equation}
   \operatorname{Var}_{b,m}(g) = \underbrace{\E_b\big[\operatorname{Var}_m(g\mid b)\big]}_{\text{ensemble spread}}
   + \underbrace{\operatorname{Var}_b\big(\E_m[g\mid b]\big)}_{\text{differences between patches}} .
 \end{equation}
-Eight different patches differ far more than four members of one patch do, so the second term dominates. As written,
-the spread term mostly asks the eight patches to differ as much as their targets do. It does little to control the
+\emph{This is an exact identity, not an approximation}, for the numbers the code computes. Write
+$g_{bm} - \bar g = (g_{bm} - \bar g_b) + (\bar g_b - \bar g)$, with $\bar g_b$ the mean over the $M$ members of patch
+$b$. Squaring and summing, the cross term is $2\sum_b(\bar g_b - \bar g)\sum_m(g_{bm}-\bar g_b) = 0$, because the inner
+sum vanishes by the definition of $\bar g_b$. Hence
+$\sum_{b,m}(g-\bar g)^2 = \sum_b\sum_m(g-\bar g_b)^2 + M\sum_b(\bar g_b-\bar g)^2$, and dividing by $MB$ gives the
+identity. It is exact when every patch has the same number of members and the variances divide by $n$ (the code uses
+\texttt{unbiased=False} and $M$ members per condition).
+
+What is \emph{not} established is the next step. \status{inference, not measured} Eight different patches should differ
+far more than four members of one patch, so the second term should dominate; then the spread term mostly asks the eight
+patches to differ as much as their targets do. (A measurement is planned: EXPERIMENTS, ``spread decomposition''.) It does little to control the
 ensemble's own spread. $R_{\mathrm{dist}}$ is \emph{not} a proper scoring rule (next subsection): a model can lower it
 without matching the true conditional distribution.
 
-\subsection{The energy reward}
+\subsection{The energy reward}\label{sec:energy}
 \begin{equation}\label{eq:energy}
   R_{\mathrm{ES}} = \frac1B\sum_b\Big[\frac1M\sum_m d\big(g_{bm}, g^{\mathrm{obs}}_b\big)
    - \frac{1}{2M(M-1)}\sum_{m\ne m'} d\big(g_{bm}, g_{bm'}\big)\Big].
@@ -288,9 +339,34 @@ distribution equals the true one. For a distance $d$ of negative type, the energ
 using $P$ and the truth $Q$ is half the energy distance between them, which is non-negative. The trapezoid integral
 \eqref{eq:dist} is a weighted $L^1$ distance between 45-dimensional vectors, and $L^1$ distances are of negative type,
 so $R_{\mathrm{ES}}$ is proper for the distribution of the curves $g$ \status{derivation, given the negative-type
-property}. Whether it is \emph{strictly} proper (the truth is the unique minimiser) with an $L^1$ distance, we do not
-know \citeq{strong negative type of $\ell^1$ metrics}. And proper only ever means proper \emph{on the features}: two
-field distributions with the same distribution of curves score the same.
+property}. And proper only ever means proper \emph{on the features}: two field distributions with the same distribution
+of curves score the same.
+
+\paragraph{With an $L^1$ distance the energy score is a sum of CRPS.} \status{derivation} The trapezoid rule makes $d$ a
+weighted $L^1$ distance over the 45 features (channel $k$, threshold $j$): $d(g,h) = \sum_{kj}\omega_{kj}|g_{kj} -
+h_{kj}|$ with fixed weights $\omega_{kj}\ge0$. An $L^1$ distance splits over coordinates, so every expectation in the
+energy score does too:
+\begin{equation}
+  \mathrm{ES}(P,y) = \sum_{kj}\omega_{kj}\Big[\E|G_{kj}-y_{kj}| - \tfrac12\E|G_{kj}-G'_{kj}|\Big]
+  = \sum_{kj}\omega_{kj}\,\mathrm{CRPS}(P_{kj}, y_{kj}),
+\end{equation}
+since the bracket is the energy form of the continuous ranked probability score of the single feature $kj$. The energy
+reward is therefore \textbf{a weighted sum of 45 separate CRPS terms}. Three consequences.
+\begin{itemize}[nosep,leftmargin=1.2em]
+\item \emph{Strictly proper for each feature.} The CRPS is strictly proper (for distributions with a finite mean), so
+the reward is minimised only when the distribution of every single feature is right.
+\item \emph{Blind to dependence between features.} Two models whose 45 features each have the correct distribution, but
+which couple them differently (say, large area at 20\,mm with a smooth perimeter at 20\,mm in one model and not in the
+other), score the same. The reward cannot see the shape of the curve across thresholds as a joint object. It is
+\emph{not} strictly proper on the joint distribution of the features; this settles the question left open in the
+previous version of these notes.
+\item \emph{An alternative and its cost.} With the Euclidean distance the energy score is strictly proper on the joint
+distribution \citeq{energy distance is a metric on distributions with finite mean, Euclidean case}. But its gradient no
+longer splits by threshold, which would undo the per-threshold control that the quantile form relies on.
+\end{itemize}
+The distributional reward \eqref{eq:dist-reward} is not proper at all. The flow-matching loss, at its optimum, gets the
+joint distribution of whole fields right; the reward corrects the marginals of the features. This division of labour is
+one more reason to keep a pixel-aligned data term in the fine-tune.
 
 \subsection{The proximal anchor and the retention term}
 \begin{equation}
@@ -309,18 +385,45 @@ log-residual $r = (Y-\mu)/\sigma_r$, mostly near 0 and of order $\pm1$, with out
 A pixel with 10\,mm gives $\tilde x_1 = \min(10/6.42, 1) = 1$ wherever it is. A residual of $0.05$ in model space (the
 backbone 0.05 below the target, a factor $e^{0.05c}\approx1.38$ in $1+f$) is $r = 0.05/0.01267 \approx 3.9$.
 \end{example}
-\noindent So $\tilde x_t$ blends noise with a binary-looking rain mask, states the ODE does not visit, and the anchor
-constrains the velocity there. In the dist run, which has no retention term, this anchor is the only thing holding the
-model near the clean one. This must be fixed before any new fine-tune (Section~\ref{sec:plan}).
+\noindent So $\tilde x_t$ blended noise with a binary-looking rain mask, states the ODE does not visit, and the anchor
+constrained the velocity there. In the dist run, which has no retention term, this anchor was the only thing holding the
+model near the clean one. Both \S38 fine-tunes ran with this bug.
+
+\paragraph{The fix (2026-10-30, DECISIONS \S41; \texttt{reward\_finetune.py:proximal\_anchor},
+\texttt{tests/test\_proximal\_anchor.py}).}
+\begin{center}\small\begin{tabular}{ll}
+before & $\tilde x_1 = \mathrm{clamp}(f_{\mathrm{mm}}/6.42,\,0,\,1)$: a field in mm, cut at 6.4\,mm, never negative\\
+after & $\tilde x_1 = r_{\mathrm{gen}}$: the model's own generated residual, in its own units $r = (Y-\mu)/\sigma_r$\\
+both & $\tilde x_t = (1-t)x_0 + t\tilde x_1$, $x_0$ fresh noise, penalise $\|v_\theta(\tilde x_t)-v_{\mathrm{ref}}(\tilde x_t)\|^2$
+\end{tabular}\end{center}
+\begin{example}
+A drizzle pixel where the backbone over-predicts slightly has $r=-0.5$: the old anchor used $0.3/6.42 = 0.047$, the new
+one uses $-0.5$. A heavy pixel 0.05 below the backbone in $z$ has $r = +3.9$: the old anchor used 1 (cut), the new one
+3.9.
+\end{example}
+\noindent \emph{Why these states are the right ones.} By the marginal-preservation property of Section~2.3, the
+sampler's state at time $t$ has the same distribution as $(1-t)x_0 + t\,r$ with $x_0$ fresh noise and $r$ drawn from
+what the model generates. Interpolating toward the model's own samples therefore puts the anchor where the sampler goes.
+Tests: the anchor is 0 when the model equals its reference; at $t=1$ the state equals $r_{\mathrm{gen}}$ unclamped; only
+the trained model receives a gradient. At the clean checkpoint its value is $\sim10^{-7}$.
 
 %=====================================================================
 \section{How the terms share the update: the gradient budget}\label{sec:budget}
 %=====================================================================
 
-\paragraph{Weights are not what matters; gradient mix is.} \status{derivation} Adam's update is
-$\Delta\theta = -\eta\,\hat m/(\sqrt{\hat v}+\epsilon)$, with $\hat m,\hat v$ running averages of the gradient and its
-square. Multiplying every gradient by a constant $\lambda$ multiplies $\hat m$ by $\lambda$ and $\sqrt{\hat v}$ by
-$|\lambda|$, so the step is unchanged (while $\epsilon$ is negligible). Two consequences:
+\paragraph{Weights are not what matters; gradient mix is.} \status{derivation} Step by step, per parameter:
+\begin{enumerate}[nosep,leftmargin=1.4em]
+\item Adam keeps two running averages of the gradient $g$: $m \leftarrow \beta_1 m + (1-\beta_1)g$ and
+$v \leftarrow \beta_2 v + (1-\beta_2)g^2$.
+\item The step is $\Delta\theta = -\eta\,\hat m/(\sqrt{\hat v}+\epsilon)$, where the hats are a bias correction by a
+constant.
+\item Multiply every gradient by $\lambda$: $m$ scales by $\lambda$, $v$ by $\lambda^2$, $\sqrt{v}$ by $|\lambda|$, and the
+step $\lambda\hat m/(|\lambda|\sqrt{\hat v}+\epsilon)\approx\hat m/\sqrt{\hat v}$ is unchanged while $\epsilon = 10^{-8}\ll
+\sqrt{\hat v}$.
+\end{enumerate}
+Numbers: a constant gradient of $10^{-4}$ gives $\hat m = 10^{-4}$, $\sqrt{\hat v} = 10^{-4}$ and a step of $\eta$; a
+gradient of 1 gives the same step. The one place absolute size matters is the gradient clip at norm 1, which acts only
+above 1. Two consequences:
 \begin{itemize}[nosep]
 \item A loss whose total gradient is tiny (the dist run: norm $8\times10^{-4}$, far below the clip at 1) still makes
 full-size steps, all in its own direction.
@@ -428,7 +531,8 @@ The two failures need different fixes: (1) the gradient grows with pixel mass; (
 nothing. Options considered, all keeping $K = 1$:
 \begin{description}[leftmargin=1.2em,nosep]
 \item[A. Inverse-mass weights.] Weight each threshold's term by $(n_j+1)^{-\alpha}$, $n_j$ the target's number of pixels
-above $u_j$. Fixes (1), not (2).
+above $u_j$. The exponent $\alpha$ sets how strongly: $\alpha = 0$ is no reweighting; $\alpha = 1$ removes the growth of a
+threshold's pull with its pixel count (Section~7.2). We use $\alpha = 1$. Fixes (1), not (2).
 \item[B. Hard forward, heavy-tailed backward.] Exact counts forward, a heavy-tailed kernel of width $\sim0.3u$
 backward. Fixes (2), but adds a width hyperparameter, and a surrogate gradient can point where the true objective
 does not, which is how gaming starts.
@@ -509,6 +613,14 @@ Euler term at 0.1\,mm alone carried 17--28\%.
 their noise floors. The reward's sampling noise rises from 11.4\% to 18.9\% of its mean (distributional).
 \end{itemize}
 
+\paragraph{Bulk and extremes.} \status{researcher's framing, to be tested} If the new form works, the claim is that it
+tackles \emph{both} the bulk and the extremes. Figure~\ref{fig:share} supports the first half of the premise: the
+quantile form still puts 16\% of its gradient below 1\,mm and 27\% at 1--10\,mm on heavy patches (61\% / 32\% on random
+ones), so it moves gradient toward the tail without abandoning the bulk. A gradient share is not an outcome, though. The
+claim needs both: bulk metrics (CRPS, MAE, spectrum, FSS at low thresholds) no worse than clean FM, \emph{and} better
+exceedances and return levels. The dist\_qm run has no retention term, so only the anchor holds the bulk in place; if its
+bulk metrics degrade, the retention term has to come back.
+
 \begin{figure}[t]\centering
 \includegraphics[width=0.95\linewidth]{figures/reward_coupling/share.pdf}
 \caption{Share of the reward's model-space gradient $|\partial R/\partial z|$ on generated pixels of each intensity bin,
@@ -537,12 +649,6 @@ Why the projection share: a gradient step $\Delta\theta = -\eta G$ changes bin $
 $\Delta L_b \approx -\eta\,\langle G_b, G\rangle$. So $\pi_b$ is the fraction of the first-order decrease of the loss that
 comes from bin $b$. The $\pi_b$ sum to 1; $\pi_b < 0$ means a step along the total gradient \emph{increases} bin $b$'s
 loss. (Adam rescales each parameter, so its step is not exactly $-\eta G$; $\pi_b$ is the plain-gradient version.)
-
-\begin{figure}[t]\centering
-\includegraphics[width=0.95\linewidth]{figures/reward_coupling/fmloss.pdf}
-\caption{Share of pixels, of the FM loss value and of its output gradient $|\partial L/\partial v|$ per target-intensity
-bin, clean FM. Log scale: each grid line is a factor 10.}\label{fig:fmloss}
-\end{figure}
 
 \begin{center}\small\begin{tabular}{lccccc}\toprule
 target mm & $<1$ & 1--10 & 10--20 & 20--50 & $\ge50$\\\midrule
