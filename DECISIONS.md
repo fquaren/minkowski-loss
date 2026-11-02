@@ -2978,3 +2978,53 @@ vanilla checkpoint, w*_qm = 1e-4 x 16.127 / Adam share, then {w*/3, w*, 3w*, 10w
 ~18 h each), seed as §37, one after another on GPU 1, with `configs/config_v4_adv_qm.yaml`. Run order w*/3
 first (the threshold-form bracket was won at w*/3 = 6e-5). The init ratio predicts w*_qm ~ 1.8e-4 x 1.31
 ~ 2.4e-4. Evaluation of the bracket is not part of the script (as in §37).
+
+## 42. Results of the corrected FM runs: the energy reward in the quantile form moves the tail (2026-11-02)
+
+**Runs (startup lines checked; all `config FM_RESIDUAL_SCALE=0.01267`, GPU 1, from `fm_mink_latest.pth`, 16
+members, heun-16, u = 50.1 mm; `eval_results/extremes/v4adv_val{ext,sub}/fm_*`).**
+- dist_qm `FMdistqm_v4adv_20261030_101504`: distributional, quantile_mass, M=4, w_reward 1e-3, w_prox 1, w_retain 0, w_spread 0.5.
+- energy_ctl `FMenergyctl_v4adv_20261030_141741`: energy, M=16, w_reward 0, w_prox 1, w_retain 1.
+- energy_qm `FMenergyqm_v4adv_20261031_022957`: energy, quantile_mass, M=16, w_reward 1, w_prox 1, w_retain 1.
+
+**val_extremes1024 (n = 1024, 1,537 observed exceedances; gpd_xi_obs +0.155 in every row).**
+
+| Row | RMSE | FSS@50.1 w5 | RAPSD | Exc. ratio | RL bias | Anisot. | Peak ratio ext. | CRPS_ext |
+|---|---|---|---|---|---|---|---|---|
+| FM clean (draw 1 / 2) | 1.153 / 1.152 | 0.285 / 0.287 | 1.14 / 1.19 | 0.298 / 0.256 | 0.367 / 0.353 | 1.31 / 1.27 | 0.33 / 0.20 | 0.336 / 0.335 |
+| FM + dist (threshold, §38) | 1.152 | 0.319 | 0.81 | 0.377 | 0.194 | 1.30 | 0.22 | 0.333 |
+| FM + dist, quantile_mass | 1.152 | 0.267 | 1.20 | 0.273 | 0.340 | 1.32 | 0.29 | 0.337 |
+| energy control (w_reward 0) | 1.153 | 0.263 | 1.30 | 0.187 | 0.318 | 1.36 | 0.28 | 0.338 |
+| **FM + energy, quantile_mass** | 1.160 | **0.348** | **0.41** | **0.665** | **0.089** | 1.36 | 0.34 | **0.332** |
+
+val_subset4096 (n = 4,096, 290 observed exceedances; RL bias undefined for most rows): exceedance ratio FM 0.27,
+dist 0.52, dist_qm 0.25, control 0.29, energy_qm **0.91**; RAPSD 0.86 / 0.35 / 0.83 / 1.01 / **0.25**; FSS@50.1
+0.337 / 0.419 / 0.310 / 0.264 / 0.246; RMSE 0.336 / 0.336 / 0.335 / 0.336 / 0.339.
+
+**Reading.**
+- *energy_qm is the first FM coupling with a large tail effect, and it is the reward's.* The control does not
+  move the tail (exceedance 0.19 on valext), so the gain is not continued FM training; it also confirms that the
+  §38 energy row (w_reward 1e-3, reward 0.07-0.13% of the gradient) was continued FM training. The exceedance
+  gain (0.28 -> 0.67) is ~10x the clean-FM draw-to-draw difference (0.04). Cost: RMSE +0.6%, CRPS_ext unchanged
+  or better, anisotropy equal to the control's (so not attributable to the reward). Single seed.
+- *FSS@50.1 disagrees between subsets for energy_qm* (valext 0.285 -> 0.348, valsub 0.337 -> 0.246). On
+  valsub the heavy pixels are few (290 exceedances), so this column is noisy there; not attributed.
+- *dist_qm did not improve on clean FM, and is worse than threshold dist on every tail column.* §39 showed the
+  form moves gradient share onto pixels >= 20 mm, so the form alone is not the explanation. Untested differences
+  from energy_qm: no retention term (w_retain 0), w_reward 1e-3 instead of the parity value, M = 4 instead of 16,
+  and the spread term (lambda_s 0.5). Next run: §42 follow-up below.
+
+**Field panels (`figures/v4adv_valext_fields_qm/`, bundle `eval_results/fields/v4adv_valext_qm.npz`; the six §38
+patches, one member each, so per-patch values are single draws).** No grid-aligned filaments or texture artefacts
+in any FM row. energy_qm cores are compact and in the right place, and its patch maxima are closest to the target
+on 4/6 patches (191/172, 143/158, 87/91, 63/68). Two failure cases: patch 764 overshoots (52 vs 30 mm) with one
+concentrated core; patch 393 undershoots (8 vs 44 mm). On patch 979 energy_qm reaches the target maximum
+(91 vs 87 mm) but on the northern core, while the target's maximum is on the southern one, which every model
+misses: the peak-ratio metric scores this as a hit. The panels label units "mm h-1"; they are hourly mm
+(open plot-units TODO).
+
+**Follow-up (researcher, 2026-11-02): dist_qm with retention.** To compare the two reward modes under the same
+loss settings, re-run dist_qm with the energy run's retention term (w_retain 1) and w_reward set by the same
+gradient-norm parity rule as energy_qm (measure with `grad_norm_terms.py` first; the dist reward's norm at
+w 1e-3 is 5.0e-4 vs 5.1e-4 for energy, so parity should land near 1). M (4 vs 16) and the spread term stay as in
+dist_qm unless decided otherwise; they remain differences between the two modes.
