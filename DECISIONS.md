@@ -3028,3 +3028,17 @@ loss settings, re-run dist_qm with the energy run's retention term (w_retain 1) 
 gradient-norm parity rule as energy_qm (measure with `grad_norm_terms.py` first; the dist reward's norm at
 w 1e-3 is 5.0e-4 vs 5.1e-4 for energy, so parity should land near 1). M (4 vs 16) and the spread term stay as in
 dist_qm unless decided otherwise; they remain differences between the two modes.
+
+**Summary plots (2026-11-02; `figures/v4adv_val{ext,sub}_summary_qm/`, rows vanilla, mink 6e-5, FM, FM + dist,
+energy ctl, FM + energy qm).**
+- *Spectrum:* energy_qm has the most small-scale power of any row on both subsets. On valext its ratio to the
+  target is 0.5-0.8 from 30 km down to 2 km, against 0.25-0.35 for FM and the control and 0.4-0.5 for FM + dist.
+  On valsub it reaches ~1 below ~6 km and ends slightly above (≈1.2), as FM + dist does.
+- *The low RL bias hides an overshoot.* On valext, return levels at lambda = 10 / 100 / 1000 are 83.9 / 151.2 /
+  266.8 mm against 90.0 / 147.0 / 228.3 observed: -7%, +3%, +17%. `rl_bias_mean_abs` (0.089) averages them. The
+  fitted shape is heavier than observed (xi 0.234 vs 0.155, sigma 14.2 vs 14.4), so energy_qm makes fewer
+  exceedances than observed (ratio 0.67) but makes them too large. The control and FM + dist have the same xi
+  excess (0.24, 0.21) at lower levels.
+- *SAL:* energy_qm has the lowest structure S (median 0.40, vs 0.64 FM, 0.54 dist) and amplitude A ≈ 0 (FM -0.04).
+- *Perception-distortion:* energy_qm has the lowest mean spectral distance (1.28, vs 1.51 FM, 1.32 dist) at
+  RMSE 0.957 (FM 0.950).
