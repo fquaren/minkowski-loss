@@ -3042,3 +3042,62 @@ energy ctl, FM + energy qm).**
 - *SAL:* energy_qm has the lowest structure S (median 0.40, vs 0.64 FM, 0.54 dist) and amplitude A ≈ 0 (FM -0.04).
 - *Perception-distortion:* energy_qm has the lowest mean spectral distance (1.28, vs 1.51 FM, 1.32 dist) at
   RMSE 0.957 (FM 0.950).
+
+**Return levels without a fit (2026-11-02).** The valsub return-level panel shows only energy_qm: the other FM
+rows have < 200 predicted exceedances (79 / 150 / 83), below `min_exceedances` (`tail_metrics.py:115`), so no fit
+and RL bias NaN. Its divergence (382 vs 183 mm at lambda = 1000) is mostly extrapolation: lambda beyond ~265
+exceeds the model's own exceedance count, so the curve there is set by xi (0.35 vs -0.03; sigma 12.0 vs 21.5).
+The observed fit rests on 38 patches with tmax >= 50.1 mm and correlated pixels, so xi_obs is uncertain beyond
+the iid standard error (~0.08). Ranked patch maxima from `extremes_arrays.npz` (peak_ratio x tmax, no fit), ranks
+1 / 2 / 3 / 5 / 10 / 20 / 30, mm:
+- valsub target 151 150 144 128 100 76 58; energy_qm 256 200 180 164 111 88 72; FM 176 148 118 80 60 49 44.
+- valext target 201 191 174 159 142 123 106; energy_qm 377 315 224 188 150 129 109; FM 139 121 121 113 92 74 64.
+
+Reading: from rank 10 down energy_qm tracks the target within ~5-20% (FM is 25-40% short); the top 5 overshoot
+by 1.3-1.9x. The overshoot is real but confined to the most extreme few patches; the 2-4x gaps in the plot are the
+fit's extrapolation. Open checks: day-block bootstrap intervals on xi for pred and obs (`src/evaluation/day_block.py`),
+and the two top valsub targets (151, 150 mm) looked at for artefacts.
+
+**U-Net quantile_mass bracket, first two weights (2026-11-02; §41 bracket, §37 protocol: full validation list, last
+checkpoints, u = 50.1 mm; `eval_results/{backbone,extremes}/v4adv_val/mink_qm_*`, images
+`notes/data_analysis_v4/bracket_gallery_qm.pdf`, the same 12 patches as `bracket_gallery.pdf`).** Logs: "auxiliary
+structural loss: minkowski (quantile_mass)", w_max = 2.6e-4 / 7.7e-4. Threshold-form rows (§37) interleaved by MAE cost.
+
+| model | ΔMAE | anisotropy (x vanilla) | exceedance ratio | RL bias λ10 / 100 / 1000 | FSS 50.1 mm, 1 / 21 px | peak ratio (extreme) | fitted xi |
+|---|---|---|---|---|---|---|---|
+| vanilla | 0 | 2.12 (1.00) | 0.113 | -44% / -31% / -13% | 0.106 / 0.383 | 0.36 (0.20) | 0.32 |
+| thr 6.0e-5 | +4.7% | 0.56 (0.26) | 0.192 | -37% / -41% / -44% | 0.097 / 0.417 | 0.86 (0.52) | 0.15 |
+| **qm 2.6e-4** | +5.9% | 0.83 (0.39) | 0.156 | -40% / -43% / -47% | 0.064 / 0.329 | 0.88 (0.50) | 0.13 |
+| thr 1.8e-4 | +7.9% | 2.24 (1.05) | 0.287 | -32% / -36% / -41% | 0.118 / 0.535 | 0.86 (0.53) | 0.15 |
+| **qm 7.7e-4** | +8.9% | 0.91 (0.43) | 0.296 | -32% / -36% / -40% | 0.120 / 0.586 | 0.85 (0.50) | 0.16 |
+| thr 5.4e-4 | +12.5% | 2.02 (0.95) | 0.442 | -25% / -32% / -39% | 0.131 / 0.648 | 0.93 (0.58) | 0.12 |
+
+gpd_xi_obs = 0.183 in every row. Both runs are above the §16 MAE cap (+5%); 2.3e-3 and 7.7e-3 are still training.
+- *Tail: no gain over the threshold form at matched MAE cost.* On the ΔMAE-exceedance plane the two qm points sit on
+  or slightly below the threshold-form curve (qm 7.7e-4 matches thr 1.8e-4 at +1 point more MAE; qm 2.6e-4 is below
+  thr 6.0e-5 at more MAE, with FSS@50.1 below vanilla). Long return levels are under-predicted as in every Minkowski
+  run. So the quantile form, which moved the FM tail (§42), does not move the deterministic U-Net's tail further.
+  *Inference, untested:* the U-Net's problem was never reach (a deterministic field already gets threshold gradient
+  wherever its smooth peak sits), which is what the rank reading fixes for FM members.
+- *Images: the quantile form removes most of the grid-aligned striping.* In the gallery, thr 1.8e-4 and 5.4e-4 show
+  vertical striping inside rain areas; qm 2.6e-4 is smooth like vanilla and qm 7.7e-4 shows only faint texture at a
+  similar exceedance ratio to thr 1.8e-4. Consistent with the per-patch anisotropy (e.g. 2021-05-11: thr 1.8e-4 7.9,
+  qm 2.6e-4 0.75, qm 7.7e-4 1.7, target 0.86). *Inference:* the threshold form's gradient concentrates on light-rain
+  pixels near dense threshold crossings, where a periodic pattern is a cheap way to change perimeter and Euler; the
+  1/n weights move that pull to sparse high thresholds. Single seed.
+
+*Third weight, qm 2.3e-3 (2026-11-03; log: minkowski (quantile_mass), w_max = 0.0023; images
+`notes/data_analysis_v4/bracket_gallery_qm_hi.pdf`, same 12 patches, with thr 5.4e-4 and 1.8e-3).*
+
+| model | ΔMAE | anisotropy (x vanilla) | exceedance ratio | RL bias λ10 / 100 / 1000 | FSS 50.1 mm, 1 / 21 px | peak ratio (extreme) | fitted xi |
+|---|---|---|---|---|---|---|---|
+| thr 5.4e-4 | +12.5% | 2.02 (0.95) | 0.442 | -25% / -32% / -39% | 0.131 / 0.648 | 0.93 (0.58) | 0.12 |
+| **qm 2.3e-3** | +14.2% | 1.18 (0.56) | 0.669 | -14% / -18% / -21% | 0.128 / 0.720 | 0.96 (0.68) | 0.16 |
+| thr 1.8e-3 | +19.0% | 3.45 (1.62) | 0.607 | -18% / -21% / -24% | 0.125 / 0.714 | 0.92 (0.61) | 0.17 |
+
+- *Here the quantile form is ahead of the threshold curve:* a higher exceedance ratio, smaller RL bias at every λ and the
+  same FSS as thr 1.8e-3 for 5 points less MAE. Outside the §16 cap (+5%), single seed.
+- *Images:* no grid striping or blocks (thr 1.8e-3 has both, strongly), but a different, milder artefact: small
+  cross-hatched "x" spots of a few pixels at local maxima inside rain areas (visible at 220 dpi, faint at 7.7e-4).
+  *Inference, untested:* the rank reading gives its gradient to one pixel per threshold, so concentrated hot spots are
+  the cheap way to match the target's upper quantiles; this is the quantile form's version of gaming the loss.
