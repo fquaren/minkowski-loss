@@ -387,7 +387,8 @@ isoperimetric scatter.
                 checkpoint (Adam share; `tools/gradient_audit.py --run vanilla_v4=<run>`). Step 2:
                 the calibrated bracket with the §16 selection rule (best exceedance ratio with
                 ΔMAE <= +5% and anisotropy <= 1.2x vanilla; 3 seeds at the chosen point);
-          - [ ] re-derive the POT level on `patches_v4_adv` (`pot_threshold.py`) before any evaluation:
+          - [ ] *(Deferred by the researcher, 2026-11-02; all v4 rows share u = 50.1 mm meanwhile.)*
+                re-derive the POT level on `patches_v4_adv` (`pot_threshold.py`) before any evaluation:
                 the corrected field lowers tile maxima by a median ~30% (§35);
           - [x] radar exclusions: §36b (3 radar-years), §36c (Lithuania 2026), rsjas and hrulj 2023 (researcher);
           - [ ] rule 5 is blind to a radar that is bad for weeks: its reference is the radar's own
@@ -406,7 +407,8 @@ isoperimetric scatter.
                 24% of train stays. *2026-10-21:* the running vanilla baseline is the all-data arm (both
                 arms select on the full val list, DECISIONS §34 amendment); the post-break arm runs after
                 it on GPU 1 (`<list>_postbreak.txt` lists ready);
-          - [ ] recompute sigma_r (`compute_residual_stats.py`) for each new backbone;
+          - [ ] recompute sigma_r (`compute_residual_stats.py`) for each new backbone *used under an FM model*
+                (not needed for the U-Net quantile_mass bracket: no FM on it, researcher 2026-11-02);
           - [x] a v4 config (store path, scaler, DEM stats) and a smoke run (`configs/config_v4_adv.yaml`,
                 2026-10-21).
       Small items:
@@ -529,6 +531,10 @@ isoperimetric scatter.
                    reward modes share the loss settings: w_retain 1 and w_reward by the same gradient-norm parity
                    rule as energy_qm (measure with `grad_norm_terms.py` first; expect ~1). M and the spread term
                    stay as in dist_qm unless decided otherwise. Evaluate on both subsets, field panels.
+                   *Config `configs/config_v4_adv_fm_dist_qm_ret.yaml` (w_reward 1.0: parity 1e-3 x 0.649 / 4.99e-4
+                   = 1.30 from the §41 budget, rounded as for energy_qm). Queued after the U-Net bracket and its
+                   evals: `scripts/hpc/run_qm_bracket_evals_then_distret.sh`, `logs/qm_bracket_evals_then_distret.log`
+                   (gradient budget re-measured first, `logs/grad_norm_terms_v4adv_dist_qm_ret.txt`).*
       2. [ ] **FM + Minkowski reward, energy, `quantile_mass`.**
              - [x] Rebalance w_reward vs w_retain by the gradient-norm rule: REWARD_WEIGHT 1.0 (parity 1.29;
                    reward ~44% of the norm). *Done 2026-10-30 (DECISIONS §41).*
@@ -537,10 +543,13 @@ isoperimetric scatter.
              - [x] Fine-tune `configs/config_v4_adv_fm_energy_qm.yaml` with the new weights, evaluate.
                    *Done 2026-10-31 (§42): exceedance ratio 0.28 -> 0.67, RL bias 0.37 -> 0.09, RAPSD 1.14 -> 0.41 on
                    val_extremes1024, RMSE +0.6%; panels clean (`figures/v4adv_valext_fields_qm/`). Single seed.*
-             - [ ] Seeds for energy_qm (3, as the §16 rule) before any claim.
+             - [ ] Seeds for energy_qm (3, as the §16 rule) before any claim. *Lower priority (researcher,
+                   2026-11-02): after the other losses (dist_qm_ret, competing losses) have their rows.*
       3. [ ] **U-Net + Minkowski, `quantile_mass`.** *Port done 2026-10-30 (`MINKOWSKI_FORM: quantile_mass`,
              `QuantileMassMinkowskiLoss`, 6 tests; `configs/config_v4_adv_qm.yaml`); parity audit at init running
-             (`eval_results/gradient_audit/2026-10-30_v4adv_qm_init/`). Bracket running (`logs/bracket_qm_v4adv.log`):
+             (`eval_results/gradient_audit/2026-10-30_v4adv_qm_init/`). Each run is evaluated as it finishes with
+             the §37 protocol (labels `mink_qm_<w>` in `eval_results/{backbone,extremes}/v4adv_val/`), started
+             2026-11-02 09:11. Bracket running (`logs/bracket_qm_v4adv.log`):
              w*_qm = 7.7e-4; w = 2.6e-4 (`UNet_Ana_20261031_145244`) and 7.7e-4 (`UNet_Ana_20261101_111234`) done,
              not evaluated; 2.3e-3 started 2026-11-02 07:32, 7.7e-3 after (~20 h each).*
              Port the form to the deterministic loss
@@ -568,15 +577,57 @@ isoperimetric scatter.
             before claiming the quantile form "tackles both bulk and extremes".
       - [ ] *lambda_s = 0.5 is an untested default* (inherited from `Extremes_20260804_170256`). If the spread term is
             kept, write it in convex form and choose lambda by a rule fixed beforehand.
-      - [ ] *Energy score with L1 = weighted sum of 45 CRPS* (derived in the notes): proper per feature, blind to
-            dependence between features. Consider an L2 (joint, strictly proper) variant; cost: no per-threshold control.
-      - [ ] *Thresholds as a hyperparameter:* any tuning needs a rule fixed in advance (e.g. equal target-pixel counts
-            between thresholds), never the reported tail metrics.
+      - [ ] *Energy score, L1 vs L2 (researcher, 2026-11-02: to be done eventually).* The current reward uses the
+            L1 norm, which makes it a weighted sum of 45 CRPS, one per feature: proper, but it sees only each feature's
+            marginal distribution, never how features vary together across members (e.g. whether the members with
+            a large 20 mm area are the ones with a large 50 mm area). The Euclidean (L2) energy score with
+            beta in (0, 2) is strictly proper for the joint law (Gneiting & Raftery 2007, from search results; the
+            paper itself not yet opened). What to expect, from the literature found on 2026-11-02 (search
+            snippets and abstracts, full texts not read):
+            - the energy score detects mean errors well and variance / dependence errors weakly (Pinson & Tastu
+              2013, DTU tech. rep.; a Gaussian upper bound on its sensitivity to dependence), so L2's theoretical
+              gain may be small in practice; follow-ups dispute how strong this is (arXiv 2101.12693; Bernard &
+              Mueller, arXiv 2004.11770);
+            - its discrimination improves with smaller beta (Stock, PhD thesis, Siegen), which also needs fewer
+              moments and so suits heavy tails;
+            - the variogram score (Scheuerer & Hamill 2015, MWR 143) targets dependence directly but is not strictly
+              proper and is blind to a bias shared by all components, so it complements rather than replaces.
+            Our inference: under L2 the per-feature gradient is (x - y)/||x - y||, so features with large spread
+            dominate and the quantile_mass weights lose their direct per-threshold control unless the features are
+            standardised first. Expected outcome: similar marginal tail columns, possibly worse at the highest
+            thresholds; any gain would show in joint consistency across thresholds, which no current metric
+            measures. Design before running: standardisation of the 45 features, beta (1 and a smaller value), a
+            joint-consistency diagnostic, and the same gradient-norm parity rule.
+      - [ ] *Threshold grid as a hyperparameter (BANKED 2026-11-02 by the researcher for a later stage; order agreed).*
+            Any tuning needs a rule fixed in advance, never the reported tail metrics. How the qm form weights
+            intensity (Claude, from the code): (1) the trapezoid in log u gives each decade equal weight, so the
+            range sets the weight and the spacing only the resolution (0.1 mm 4.9%, interior ~7%, 79 mm 3.4%,
+            >= 20.2 mm 20% in all); (2) area weight 1 where populated, perimeter/Euler (n_j+1)^-alpha, alpha = 1
+            flattening the per-threshold gradient (§39); (3) log1p compresses errors below ~1 mm (factor 2 at
+            0.1 mm -> 0.095, at 50 mm -> 0.68); (4) the area rank reading pins only the pixel at rank n_j, so the
+            top n_j* - 1 pixels above the highest populated threshold are free (gap up to the grid ratio, ~1.58x).
+            Equal target-pixel spacing is rejected (97% of pixels < 1 mm would take almost every threshold);
+            log-uniform spacing is kept fixed and not tuned. Check run 2026-11-02 on stored evals: energy_qm's
+            peak overshoot is largest on moderate patches (valext peak ratio q90 1.73 at target max 20-50 mm,
+            1.54 at 50-79, 1.30 at >= 79; clean FM 1.05 / 1.00 / 0.92), so "nothing constrains above 79 mm" is
+            ruled out; the general gap hypothesis is untested. Planned order:
+            - E0 (no training, ~1 h): per-threshold, per-channel gradient share binned by target intensity for the
+              current qm form, heavy and random subsets (extends the §39 share script);
+            - E1: add rank 1 (patch maximum) as an area reading, or extend the grid to 125 / 200 mm; prediction if
+              the gap drives the overshoot: q90 peak ratio on 20-50 mm patches 1.7 -> ~1, some exceedance gain lost;
+            - E2: alpha = 0.5 vs 1, trained only if E0 shows a clearly different share profile;
+            - E3: u_min 0.1 -> 0.5 mm (drops 24% of the measure, drizzle and speckle; links to §34).
+            Every variant re-calibrated by gradient-norm parity, selected on validation by a criterion written
+            before the runs (proposed: valext RL bias and exceedance ratio, guards on FSS@50.1 and q90 peak ratio).
+            Open: which study (FM energy_qm or U-Net); on FM, the energy_qm seeds give the noise floor and should
+            run first.
       - [ ] *Citations to verify before the paper* (opened in no session yet): Hadwiger's theorem, Cauchy-Crofton
             formula, straight-through estimator (Bengio et al. 2013), flow-matching marginal velocity theorem,
             energy score (Gneiting & Raftery 2007), energy distance (Euclidean case).
-      - [ ] *Channel sum (deterministic, 3d) vs mean (reward, d):* documented, not changed; Study-1 and reward
-            weights are not comparable by a factor 3.
+      - [x] *Channel sum (deterministic, 3d) vs mean (reward, d):* left as is (researcher, 2026-11-02). A constant
+            factor is absorbed by the weight, and every weight is set by a per-loss gradient-norm rule, so no result
+            depends on it; only a weight copied between Study 1 and the reward would be off by 3, which the
+            per-loss-weight convention already forbids.
 - [ ] **Test the general hypothesis across losses (DECISIONS §40).** For each competing loss (roadmap M4), measure
       before training (i) gradient share on pixels >= 20 mm (`fm_loss_intensity_share.py` /
       `reward_threshold_share.py` pattern) and (ii) share of members/predictions out of reach; prediction: at
