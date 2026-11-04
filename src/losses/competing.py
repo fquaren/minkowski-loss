@@ -73,15 +73,21 @@ class FFT2DKernelCRPSLoss(nn.Module):
 
 
 class ImageSSIMLoss(nn.Module):
-    """Structural similarity loss on [B, C, H, W] tensors, with a per-sample data range."""
+    """Structural similarity loss on [B, C, H, W] tensors with a fixed data range.
+
+    The data range L is that of the space the loss runs in (1.0 for the log-normalised [0, 1]
+    fields), as in standard SSIM. A per-sample range made c1, c2 tiny on mostly dry patches, and
+    with eps = 1e-6 in the denominator a dry window scored SSIM ~ 0 even for a perfect prediction
+    (a 0.465 floor, DECISIONS §16). c1, c2 > 0 keep the denominator positive, so no eps is needed.
+    """
 
     def __init__(self, window_size: int = 11, k1: float = 0.01, k2: float = 0.03,
-                 eps: float = 1.0e-6) -> None:
+                 data_range: float = 1.0) -> None:
         super().__init__()
         if window_size <= 0 or window_size % 2 == 0:
             raise ValueError("window_size must be a positive odd integer")
         self.window_size = int(window_size)
-        self.k1, self.k2, self.eps = float(k1), float(k2), float(eps)
+        self.k1, self.k2, self.data_range = float(k1), float(k2), float(data_range)
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if pred.shape != target.shape:
@@ -98,15 +104,12 @@ class ImageSSIMLoss(nn.Module):
         var_p = torch.clamp(var_p, min=0.0)
         var_t = torch.clamp(var_t, min=0.0)
 
-        hi = torch.maximum(pred, target).amax(dim=(-2, -1), keepdim=True)
-        lo = torch.minimum(pred, target).amin(dim=(-2, -1), keepdim=True)
-        data_range = (hi - lo).clamp_min(self.eps)
-        c1 = (self.k1 * data_range).square()
-        c2 = (self.k2 * data_range).square()
+        c1 = (self.k1 * self.data_range) ** 2
+        c2 = (self.k2 * self.data_range) ** 2
 
         num = (2.0 * mu_p * mu_t + c1) * (2.0 * cov + c2)
         den = (mu_p.square() + mu_t.square() + c1) * (var_p + var_t + c2)
-        ssim = num / (den + self.eps)
+        ssim = num / den
         return torch.clamp((1.0 - ssim) * 0.5, min=0.0).mean()
 
 

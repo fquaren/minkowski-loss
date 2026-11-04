@@ -3164,3 +3164,19 @@ impact, gauges available, one per rung. All events of both catalogues go in an a
 
 **Dropped:** a held-out storm type (E2; the MCH types label 73 Swiss events, too few to hold one out; used to
 stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the time shift).
+
+**§43 amendments (researcher, 2026-11-04, after todo A1-A4 and B5's first pass).**
+- *u_c = 50.1 mm*, the POT level kept on 2026-10-24 (§37 area), so R1 and R4 share one level. 305 test days
+  above it; above-cut inputs are not out of range (A3: 0.5% exceed the cut-train input maximum), so R4 tests an
+  unfamiliar fine peak from a familiar coarse field. Degradation is reported by distance above the cut
+  (50-80, 80-100, >= 100 mm), which gives prediction 4 from the same runs. Radar-gauge agreement at the level: A1.
+- *Cut = the tile-hours >= u_c only*, not day x 3x3-tile blocks. The splits are week-blocked, so no held-out storm
+  has training data from its week; H3 needs only that no training target holds a pixel >= u_c. Removed: 1.08% of
+  train (the blocks would remove 17.5%). One size-matched random-drop control, for MSE only.
+- *NIMBUS tail:* the 48 largest held-out tile-hours contain clear errors the screen misses (radial rays, wedge
+  sectors, stationary pixel spikes over consecutive hours; about a third, nearly all NIMBUS). Rules for these are
+  added for NIMBUS, each kept only if it raises agreement with gauges (§22), and only the `nimbus` lists are
+  rebuilt (never trained on, so no retraining). R3/R5 are scored on the cleaned lists, the uncleaned ones as a
+  sensitivity row.
+- *Area-only ablation weight:* gradient-norm parity, its Adam share at the vanilla checkpoint matched to the chosen
+  full Minkowski loss at its weight (`tools/gradient_audit.py`), so only the channels differ.
