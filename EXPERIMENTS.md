@@ -670,9 +670,15 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
 - [ ] A2. Cut lists: drop every (day x tile + 8 neighbours) block of train with tile max >= u_c, write
       `full_train_cut<u_c>.txt` -> verify: no train tile-hour >= u_c remains; report the removed fraction; add a
       size-matched random-drop control if it is > ~1%.
-- [ ] A3. Input check: coarse-input maximum of the above-u_c test patches against the training distribution of
+- [x] A3. *Done 2026-11-04 (`scripts/data_quality/cut_input_range.py`, `quality_v4/cut_input_range/`), u_c = 50.1:*
+      held-out test inputs have coarse max q50 6.6 mm (NIMBUS 6.9); only 0.5% exceed the largest cut-train input
+      (29.4 mm) and 4.2% its q99.9 (20.1 mm); target / coarse max q50 10.3. So R4 asks for an unfamiliar fine peak
+      from a familiar coarse field, not for input extrapolation. One train input has a 191 mm coarse max (artefact).
+      Input check: coarse-input maximum of the above-u_c test patches against the training distribution of
       coarse maxima -> verify: one histogram, and the share of above-cut inputs that are themselves out of range.
-- [ ] A4. Showcases and appendix table frozen: C1 Misox, C2 Boris + MCH 36, C3 MCH 64 (§43); table of every event in
+- [x] A4. *Done 2026-11-04: `notes/event_table.csv` (`scripts/dataset_v2/event_table.py 50.1`): 18 events in
+      R1|R4, 10 in R1 only, R2 3 (Boris R2|R5), R3 8, R3|R5 8, 5 MCH events not scored (train/val); showcases marked.*
+      Showcases and appendix table frozen: C1 Misox, C2 Boris + MCH 36, C3 MCH 64 (§43); table of every event in
       both catalogues with split, rung, tile max -> verify: committed before any R2-R5 output exists.
 
 **B. Data for R2 and the independent truth**
@@ -697,23 +703,33 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       hour at 2020-02-10 00 UTC between 4.0 and 3.7 mm: no day-boundary bug (00 UTC hours have 4 frames and the
       lowest >= 50 mm share of the day; isolated >= 50 mm spikes are 2% of >= 50 mm tile-hours, at all hours), so it
       goes to the B5 gallery as a likely artefact.
-- [ ] B5. Look at every held-out tile above u_c (test and NIMBUS) and the 2022-08-19 179 mm tile, for clear errors
+- [ ] B5. *First pass 2026-11-04 (`scripts/data_quality/heldout_tail_check.py`, `quality_v4/heldout_tail_check/`):
+      isolated single-hour spikes are 1.8% of test and 0.4% of NIMBUS tile-hours >= 50.1, none >= 150. But among the
+      48 largest held-out tile-hours (all but one NIMBUS) about a third are clear errors the screen misses: radial rays
+      and wedge sectors (e.g. (768,1280) 2025-07-09 05-07 UTC, (128,384) 2025-01-06) and stationary single-pixel
+      spikes persisting over hours ((768,1280) 2026-03-31/04-01, 314-358 mm). Random sample: ~4-5 of 48 suspect.
+      How to treat the NIMBUS tail is pending the researcher.* Look at every held-out tile above u_c (test and NIMBUS) and the 2022-08-19 179 mm tile, for clear errors
       only (§17) -> verify: a gallery and a rejection count by intensity bin.
 
 **C. Evaluation code**
-- [ ] C1. Input-conditioned selection in `eval_extremes.py` (cases chosen by the coarse-input maximum), and
+- [x] C1. *Done 2026-11-04 (`src/evaluation/conditioning.py`, keys `conditioned`, arrays in `eval_extremes.py`;
+      tests `tests/test_conditioning.py`). Smoke test on 2,560 `extremes_val` patches, bicubic: the observation- and
+      the input-selected sets (127 each) share only 27% of their cases.* Input-conditioned selection in `eval_extremes.py` (cases chosen by the coarse-input maximum), and
       false-alarm rates -> verify: on the identity model (prediction = target) false alarms are 0 and the
       input- and observation-conditioned scores are perfect.
-- [ ] C2. Threshold-weighted CRPS for the FM ensembles (and the weighted MAE for deterministic models) -> verify:
+- [x] C2. *Done 2026-11-04 (`twcrps_mean`, `twcrps_extreme`).* Threshold-weighted CRPS for the FM ensembles (and the weighted MAE for deterministic models) -> verify:
       reduces to CRPS with a unit weight; matches a closed form for a Gaussian ensemble.
 - [ ] C3. Gauge verification: pixel containing the gauge and its 3x3 maximum, against the gauge hour -> verify:
       on the radar target itself it reproduces the §22 radar-gauge agreement.
-- [ ] C4. Analogue distance (O7) per test case: distance to the nearest training case in coarse-input space ->
+- [x] C4. *Code done 2026-11-04 (`scripts/evaluate/analogue_distance.py`; self-distance 0 checked); test-split run
+      in `quality_v4/analogue/`.* Analogue distance (O7) per test case: distance to the nearest training case in coarse-input space ->
       verify: zero for a training case scored against the training set.
 
 **D. Models (inputs to R4)**
 - [ ] D1. Study-1 choice (form and weight) by the §16 rule, after the qm 7.7e-3 eval.
-- [ ] D2. Area-only Minkowski variant (perimeter and Euler weights 0); not in the code yet -> verify: unit weights
+- [x] D2. *Done 2026-11-04: `MINKOWSKI_CHANNEL_WEIGHTS` (default [1,1,1]); tests `tests/test_minkowski_channels.py`
+      (unit weights reproduce both forms; area-only invariant to shuffling the prediction's pixels, full loss not).
+      Its weight still needs a rule (decision pending).* Area-only Minkowski variant (perimeter and Euler weights 0); not in the code yet -> verify: unit weights
       reproduce the current loss; area-only equals the W1-type form of DECISIONS §13 on a synthetic pair.
 - [ ] D3. One competing loss at a verified-active weight (M4; fix SSIM or take spectral at its parity weight).
 - [ ] D4. Study 2: dist_qm_ret result (running), then energy_qm 3 seeds.
