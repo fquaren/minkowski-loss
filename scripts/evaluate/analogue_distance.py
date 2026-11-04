@@ -79,14 +79,40 @@ if __name__ == "__main__":
             np.savez_compressed(cache, X=Xtr, rows=tr.r.values)
         mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-6
         Xtr, Xq = (Xtr - mu) / sd, (shape(a.split, q.r.values) - mu) / sd
-    for name, keep in (("full", np.ones(len(tr), bool)), ("cut", (tr.mx < a.u_c).values)):
+    rand = np.ones(len(tr), bool)        # control: as many rows as the cut removes, dropped at random (DECISIONS §43)
+    rand[np.random.default_rng(43).choice(len(tr), int((tr.mx >= a.u_c).sum()), replace=False)] = False
+    for name, keep in (("full", np.ones(len(tr), bool)), ("cut", (tr.mx < a.u_c).values), ("rand", rand)):
         tree = KDTree(Xtr[keep])
         d, i = tree.query(Xq, k=1)
         q[f"dist_{name}"], q[f"analogue_row_{name}"] = d[:, 0], tr.r.values[keep][i[:, 0]]
         print(f"{name}: reference n={keep.sum()}, query n={len(q)}, distance q50/q90 = "
               f"{np.median(d):.3f} / {np.quantile(d, .9):.3f}", flush=True)
+    q["analogue_mx_full"] = tr.set_index("r").mx.reindex(q.analogue_row_full.values).values
     q = q.rename(columns={"r": "store_row", "mx": "target_max"})
     q.to_csv(os.path.join(a.out, f"analogue_{a.split}{'_shape' if a.space == 'shape' else ''}.csv.gz"), index=False)
-    hi = q.target_max >= a.u_c
-    print(f"above u_c={a.u_c}: n={hi.sum()}, dist_cut q50 {q.dist_cut[hi].median():.3f} vs dist_full "
-          f"{q.dist_full[hi].median():.3f}; below: dist_cut q50 {q.dist_cut[~hi].median():.3f}")
+    base = float((tr.mx >= a.u_c).mean())
+    days = q.t.astype(str).str[:8].values
+    rng = np.random.default_rng(0)
+    print(f"H1 check ({a.space} space; DECISIONS §43), base rate of >= u_c rows in the pool {base:.1%}")
+    for lab, sel in ((f">= {a.u_c}", q.target_max >= a.u_c), (f"[{a.min}, {a.u_c}) control", q.target_max < a.u_c)):
+        g = q[sel.values]
+        r_cut = (g.dist_cut / g.dist_full.clip(lower=1e-9)).values
+        r_rand = (g.dist_rand / g.dist_full.clip(lower=1e-9)).values
+        d = days[sel.values]
+        ud = np.unique(d); idx = {k: np.flatnonzero(d == k) for k in ud}
+        bs = []
+        for _ in range(1000):
+            j = np.concatenate([idx[k] for k in rng.choice(ud, len(ud))])
+            bs.append(np.median(r_cut[j]) - np.median(r_rand[j]))
+        lo, hi_ = np.percentile(bs, [2.5, 97.5])
+        excess = np.median(r_cut) - np.median(r_rand)
+        share = float((g.analogue_mx_full >= a.u_c).mean())
+        if hi_ <= 0.05 and share <= 2 * base:
+            verdict = "SUPPORTED"
+        elif lo > 0.05 or share > 5 * base:
+            verdict = "NOT SUPPORTED"
+        else:
+            verdict = "INCONCLUSIVE"
+        print(f"  {lab}: n={len(g)}, days={len(ud)}; median d_cut/d_full {np.median(r_cut):.3f}, d_rand/d_full "
+              f"{np.median(r_rand):.3f}, excess {excess:+.3f} [{lo:+.3f}, {hi_:+.3f}]; analogue >= u_c {share:.1%} "
+              f"({share / base:.1f}x base) -> {verdict if '>=' in lab else '(control)'}")

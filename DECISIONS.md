@@ -3220,3 +3220,16 @@ stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the ti
   Code: `MINKOWSKI_MAX_THRESHOLD` in `build_structural_loss` (targets sliced to the matching prefix, only when set);
   tests `tests/test_minkowski_channels.py` (equals a loss built on the prefix grid; cannot tell a 60 mm pixel from
   a 200 mm one, while the full grid can). The startup line reads `minkowski [13 thresholds < 50.1]`.
+- *H1 check at the shape level, criterion fixed before the result (researcher, 2026-11-04).* H1 (RESEARCH_NOTES §1):
+  extreme storms have the geometry of ordinary ones. Tested with the peak-normalised shape features
+  (`src/evaluation/analogue.py`; scale-invariant area, perimeter, Euler at fractions of the patch peak) on the
+  test cases with target max >= u_c = 50.1, against the train rows >= 5 mm (417,331), of which 14,067 are >= u_c.
+  1. *Excess distance:* median(d_cut / d_full) - median(d_rand / d_full), where d_cut is the distance to the nearest
+     analogue without the >= u_c rows and d_rand without 14,067 rows dropped at random from the same pool (seeded);
+     95% day-block bootstrap interval (test processing days).
+  2. *Analogue preference:* share of these cases whose nearest analogue in the full pool is itself >= u_c, against
+     the base rate 14,067 / 417,331 = 3.4%.
+  **Supported** if the excess interval's upper bound is <= 0.05 and the share is <= 2x the base rate; **not
+  supported** if the excess interval's lower bound is > 0.05 or the share is > 5x the base rate; otherwise
+  **inconclusive**. The same numbers on the 20.2-50.1 mm band are reported as a control. Not a test of H3: it says
+  whether the data offer the transferable geometry H3 needs, not whether a model uses it.
