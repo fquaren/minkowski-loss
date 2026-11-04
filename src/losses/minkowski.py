@@ -172,8 +172,13 @@ class AnalyticalMinkowskiLoss(nn.Module):
         persistence_thresh_b0: float = 0.0,
         tau_persistence: float = 0.1,
         channel_weights=(1.0, 1.0, 1.0),
+        target_prefix: bool = False,
     ):
         super().__init__()
+        # target_prefix: the grid is the first Q thresholds of the grid the gamma targets were computed on
+        # (MINKOWSKI_MAX_THRESHOLD, DECISIONS §43), so targets are cut to their first Q columns. Off by
+        # default, so a mismatched grid still fails on shape instead of being sliced silently.
+        self.target_prefix = bool(target_prefix)
         # [area, perimeter, topology]; (1, 0, 0) is the area-only ablation (DECISIONS §43, §13):
         # area depends only on the marginal intensity distribution, not on geometry.
         self.register_buffer("channel_weights", torch.tensor(channel_weights, dtype=torch.float32))
@@ -279,6 +284,8 @@ class AnalyticalMinkowskiLoss(nn.Module):
         """
         from src.utils import signed_log1p, signed_expm1
 
+        if self.target_prefix:
+            target_gamma_log = target_gamma_log[..., :self.xi.numel()]
         area, perimeter, topo = self._functionals(pred_phys, anneal_factor)
         pred_log = signed_log1p(torch.stack([area, perimeter, topo], dim=1))  # [B,3,Q]
 

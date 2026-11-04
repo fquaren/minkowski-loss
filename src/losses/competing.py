@@ -292,6 +292,8 @@ class QuantileMassMinkowskiLoss(nn.Module):
         from src.trainers.reward_finetune import reward_features
         if target_gamma_log.shape[1] != 3:
             raise ValueError("quantile_mass needs the 3-channel gamma target")
+        if self.geom.target_prefix:
+            target_gamma_log = target_gamma_log[..., :self.geom.xi.numel()]
         lg, tg, W = reward_features(self.geom, pred_phys.unsqueeze(0), target_gamma_log.float(),
                                     anneal_factor, "quantile_mass", target_phys)
         diff = W * (lg[0] - tg).abs()                                         # [B,3,Q]
@@ -345,8 +347,13 @@ def build_structural_loss(name: str, config: dict, device) -> StructuralLoss:
         from src.losses.minkowski import AnalyticalMinkowskiLoss
         from src.utils import load_physical_thresholds, load_persistence_thresholds
         topo = config.get("TOPOLOGY_MODE", "euler")
+        u = load_physical_thresholds(config)
+        u_max = config.get("MINKOWSKI_MAX_THRESHOLD")       # R4: no threshold at or above the cut (§43)
+        if u_max is not None:
+            u = u[u < float(u_max)]
         fn = AnalyticalMinkowskiLoss(
-            physical_thresholds=load_physical_thresholds(config),
+            physical_thresholds=u,
+            target_prefix=u_max is not None,
             quantile_levels=config.get("QUANTILE_LEVELS"),
             pixel_size_km=config.get("PIXEL_SIZE_KM", 2.0),
             topology_mode=topo,
@@ -356,12 +363,15 @@ def build_structural_loss(name: str, config: dict, device) -> StructuralLoss:
             channel_weights=config.get("MINKOWSKI_CHANNEL_WEIGHTS", [1.0, 1.0, 1.0]),
         )
         form = config.get("MINKOWSKI_FORM", "threshold")
+        tag = "" if u_max is None else f" [{len(u)} thresholds < {float(u_max):g}]"
+        cw = config.get("MINKOWSKI_CHANNEL_WEIGHTS")
+        tag += "" if cw is None or list(map(float, cw)) == [1.0, 1.0, 1.0] else f" [channels {list(map(float, cw))}]"
         if form == "quantile_mass":
-            return StructuralLoss(QuantileMassMinkowskiLoss(fn), "minkowski (quantile_mass)", "phys",
+            return StructuralLoss(QuantileMassMinkowskiLoss(fn), "minkowski (quantile_mass)" + tag, "phys",
                                   needs_gamma=True, needs_target_field=True).to(device)
         if form != "threshold":
             raise ValueError(f"unknown MINKOWSKI_FORM {form!r}")
-        return StructuralLoss(fn, "minkowski", "phys", needs_gamma=True).to(device)
+        return StructuralLoss(fn, "minkowski" + tag, "phys", needs_gamma=True).to(device)
 
     if name == "spectral":
         fn = FFT2DKernelCRPSLoss(alpha=float(config.get("SPECTRAL_ALPHA", 1.0)))

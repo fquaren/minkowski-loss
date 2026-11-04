@@ -67,3 +67,36 @@ def test_area_only_ignores_where_the_pixels_are(form):
     full_shuf = _losses((1.0, 1.0, 1.0), _shuffled(pred), y)[form]
     assert area_shuf == pytest.approx(area, rel=1e-5, abs=1e-7)
     assert abs(full_shuf - full) > 0.05 * full
+
+
+def _trunc(u_max, w=(1.0, 1.0, 1.0)):
+    u = np.array(U, np.float32)
+    return AnalyticalMinkowskiLoss(physical_thresholds=u[u < u_max], pixel_size_km=2.0, topology_mode="euler",
+                                   area_mode="ste", channel_weights=w, target_prefix=True)
+
+
+def test_truncated_grid_equals_prefix_grid():
+    # the full-grid gamma target, cut to its first Q columns, scores like a loss built on that grid alone
+    y, pred = _field(60.0, 0), _field(30.0, 1)
+    full = _geom()
+    tg_full = _log_gamma(full, y, ANNEAL).detach()
+    tr = _trunc(50.1)
+    q = tr.xi.numel()
+    assert q == 13
+    explicit = AnalyticalMinkowskiLoss(physical_thresholds=np.array(U[:q], np.float32), pixel_size_km=2.0,
+                                       topology_mode="euler", area_mode="ste")
+    assert float(tr(pred, tg_full, ANNEAL)) == pytest.approx(float(explicit(pred, tg_full[..., :q], ANNEAL)), rel=1e-6)
+
+
+def test_truncated_grid_is_blind_above_the_cut():
+    # pixels at 60 or at 200 mm lie above every remaining threshold: the truncated loss cannot tell them apart
+    y = _field(40.0, 0)
+    a = _field(30.0, 1)
+    a[0, 0, 20:24, 20:24] = 60.0
+    b = a.clone()
+    b[0, 0, 20:24, 20:24] = 200.0
+    full = _geom()
+    tg = _log_gamma(full, y, ANNEAL).detach()
+    tr = _trunc(50.1)
+    assert float(tr(a, tg, ANNEAL)) == pytest.approx(float(tr(b, tg, ANNEAL)), rel=1e-5, abs=1e-7)
+    assert abs(float(full(a, tg, ANNEAL)) - float(full(b, tg, ANNEAL))) > 1e-3

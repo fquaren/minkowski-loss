@@ -3197,3 +3197,26 @@ stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the ti
   the four competitors and the MSE random-drop control; more seeds only for a loss whose effect comes within the
   seed spread of Minkowski's. 21 runs, ~17.5 GPU-days. Queue: `scripts/hpc/run_r4_queue.sh`
   (`logs/r4_queue.log`, done list `logs/r4_queue_done.txt`), evaluated on validation after each run.
+- *R4 uses the Minkowski grid truncated below the cut, in both arms (researcher, 2026-11-04).*
+  `MINKOWSKI_MAX_THRESHOLD: 50.1` keeps the 13 thresholds below u_c (0.1-31.7 mm) and drops 50.1 and 79 mm.
+  **Why.** The threshold-form loss compares area, perimeter and Euler characteristic at fixed physical
+  thresholds. In the cut training set no target reaches 50.1 mm, so at the 50.1 and 79 mm thresholds every
+  target has zero area, perimeter and Euler characteristic, and any predicted pixel above 50.1 mm adds a penalty:
+  the cut-trained Minkowski model would be taught, explicitly, never to exceed the cut. MSE never sees targets
+  above the cut either, but has no term aimed at those thresholds. If that penalty dominated, Minkowski would
+  degrade more than MSE from R1 to R4 for a mechanical reason, and R4 would reject H3 without testing it. H2/H3
+  (RESEARCH_NOTES §1) claim that geometry learned at *lower* thresholds carries upward; a loss that is silent above
+  the cut tests that claim, a loss that penalises everything above it does not. This is the "fixed physical
+  thresholds cannot express same geometry, higher intensity" limitation of RESEARCH_NOTES §1, where it bites.
+  **Why both arms.** With the truncated grid in the full-data arm too, the loss is identical in the two arms and
+  the only difference between them is the data above the cut, so the R1 -> R4 degradation is attributable to
+  the data alone. The full-grid 6.0e-5 run (`UNet_Ana_20261025_042024`) stays the Study-1 model for R1; R4 compares
+  truncated with truncated. Cost: one more run (truncated, full data, seed 42): 22 runs in all.
+  **Weight.** Integrating over fewer decades changes the loss's scale, so the 6.0e-5 weight is not reused: the
+  truncated loss (and the truncated area-only one) get their own parity audits, Adam share = 5.30 like the
+  competitors. **What it does not fix:** the area-only ablation is truncated the same way; the FM energy_qm reward
+  has the same issue (its perimeter and Euler terms give empty thresholds the largest weight) and needs the same
+  treatment before the FM arm of R4 (E2).
+  Code: `MINKOWSKI_MAX_THRESHOLD` in `build_structural_loss` (targets sliced to the matching prefix, only when set);
+  tests `tests/test_minkowski_channels.py` (equals a loss built on the prefix grid; cannot tell a 60 mm pixel from
+  a 200 mm one, while the full grid can). The startup line reads `minkowski [13 thresholds < 50.1]`.
