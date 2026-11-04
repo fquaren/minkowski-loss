@@ -17,6 +17,13 @@ some agreement at every level (spatial representativeness), so what matters is h
 change with u, not their absolute value.
 
 Usage: python scripts/data_quality/gauge_levels.py <smn_dir> <out_dir>
+       python scripts/data_quality/gauge_levels.py dwd <out_dir> [min_tile_max]
+
+DWD (German gauges, `validation/gauges`: sparse wet 10-min intervals as labelled, UTC, and per-station-day
+completeness, both from scripts/validation/fetch_gauges.py): every tile holding a station, same windows; a window
+counts only if every labelled day it touches is complete (144 values). To keep the store reads affordable, only
+tile-hours with tile max >= min_tile_max (default 10 mm) are read, which drops only gross misses at levels >= 20 mm
+(gauge >= 20 while the radar stays < 10 mm over the whole 256 km tile).
 """
 
 import os
@@ -88,6 +95,58 @@ def pairs(smn):
     return p.dropna(subset=["g_clock", "g_shift"])
 
 
+G = "/home/fquareng/work/data/extremes/OPERA/validation/gauges"
+
+
+def pairs_dwd(min_tile_max):
+    st = pd.read_csv(f"{G}/dwd_stations.csv", dtype={"station": str})
+    st["sid"] = np.arange(len(st))                     # index used by dwd_wet.npz / dwd_avail.npz
+    st = st[st.row.notna() & (st.n_valid_days > 0)].copy()
+    st["ty"], st["tx"] = (st.row // 128 * 128).astype(int), (st.col // 128 * 128).astype(int)
+    st["py"], st["px"] = (st.row - st.ty).astype(int), (st.col - st.tx).astype(int)
+    tiles = set(zip(st.ty, st.tx))
+    by_tile = {k: g for k, g in st.groupby(["ty", "tx"])}
+    store = zarr.open(os.path.join(V4, "preprocessed_dataset.zarr"), mode="r")
+    rows = []                                          # pass 1: radar at every station pixel
+    for sp, grp in GROUP.items():
+        m = pd.read_csv(f"{V4}/meta/full_{sp}.txt", header=None, names=["t", "y", "x", "mx", "r"])
+        m = m[np.array([k in tiles for k in zip(m.y, m.x)]) & (m.mx >= min_tile_max).values]
+        g = store[grp]["original_precip"]
+        print(f"[dwd] {sp}: {len(m)} tile-hours", flush=True)
+        for t, y, x, mx, r in m.itertuples(index=False):
+            f = np.asarray(g[int(r)])
+            T = int(np.datetime64(pd.Timestamp(str(t)), "m").astype(np.int64))
+            for s in by_tile[(y, x)].itertuples():
+                win = f[max(s.py - 1, 0):s.py + 2, max(s.px - 1, 0):s.px + 2]
+                rows.append((sp, T, s.station, s.sid, float(f[s.py, s.px]), float(win.max()), mx))
+    p = pd.DataFrame(rows, columns=["split", "tmin", "abbr", "sid", "radar", "radar3", "tile_max"])
+    # pass 2: gauge window sums from the sparse wet intervals, by cumulative sums per station
+    w, a = np.load(f"{G}/dwd_wet.npz"), np.load(f"{G}/dwd_avail.npz")
+    order = np.lexsort((w["t"], w["sid"]))
+    sid_w, t_w, rr_w = w["sid"][order], w["t"][order], w["rr"][order].astype(np.float64)
+    day0 = int(a["days"][0].astype("datetime64[m]").astype(np.int64))
+    ok_day = a["n_valid"] >= 144
+    p["g_clock"] = np.nan
+    p["g_shift"] = np.nan
+    for sid, idx in p.groupby("sid").groups.items():
+        lo, hi = np.searchsorted(sid_w, [sid, sid + 1])
+        tt, cs = t_w[lo:hi], np.concatenate([[0.0], np.cumsum(rr_w[lo:hi])])
+        T = p.loc[idx, "tmin"].values
+        S = lambda a_, b_: cs[np.searchsorted(tt, b_, "right")] - cs[np.searchsorted(tt, a_, "right")]
+
+        def complete(first, last):                     # labelled days of the first and last interval
+            d1, d2 = (first - 1 - day0) // 1440, (last - 1 - day0) // 1440
+            inr = (d1 >= 0) & (d2 < ok_day.shape[1])
+            out = np.zeros(len(first), bool)
+            out[inr] = ok_day[sid, d1[inr]] & ok_day[sid, d2[inr]]
+            return out
+        clock = np.where(complete(T - 50, T), S(T - 60, T), np.nan)            # labels T-50 .. T
+        shift = np.where(complete(T - 40, T + 10), S(T - 50, T + 10), np.nan)   # labels T-40 .. T+10
+        p.loc[idx, "g_clock"], p.loc[idx, "g_shift"] = clock, shift
+    p["time"] = pd.to_datetime(p.tmin, unit="m")
+    return p.dropna(subset=["g_clock", "g_shift"]).drop(columns=["tmin", "sid"])
+
+
 def boot_median(x, days, rng):
     ud = np.unique(days)
     idx = {d: np.flatnonzero(days == d) for d in ud}
@@ -120,7 +179,7 @@ def summary(p, g):
 if __name__ == "__main__":
     smn, out = sys.argv[1:3]
     os.makedirs(out, exist_ok=True)
-    p = pairs(smn)
+    p = pairs_dwd(float(sys.argv[3]) if len(sys.argv) > 3 else 10.0) if smn == "dwd" else pairs(smn)
     p.to_csv(os.path.join(out, "pairs.csv.gz"), index=False)
     pd.set_option("display.width", 250)
     for g in ("g_clock", "g_shift"):
