@@ -16,7 +16,13 @@ and are skipped to keep the reads affordable.
 Output: <out>/analogue_<split>.csv.gz with store_row, timestamp, row, col, target max, coarse max and
 the distance to the nearest analogue in each reference set (+ that analogue's store row).
 
-Usage: python scripts/evaluate/analogue_distance.py --split test --min 20.2 --u_c 50.1 --out <dir>
+--space shape (DECISIONS §43, 2026-11-04): the target's peak-normalised Minkowski features instead
+(`src.evaluation.analogue.shape_features`: area, perimeter, Euler at fractions of the patch peak), each feature
+standardised with the reference rows' mean and sd. Scale-invariant, so it grades how unseen a storm's *shape* is,
+which the coarse-input space cannot do for R4 (cut and full analogue distances were identical there). Evaluation
+only: the target is not available at inference. Train features are cached in <out>/shape_train_ref<ref_min>.npz.
+
+Usage: python scripts/evaluate/analogue_distance.py --split test --min 20.2 --u_c 50.1 --out <dir> [--space shape]
 """
 
 import argparse
@@ -36,6 +42,12 @@ def features(split, rows):
     return np.log1p(np.stack([np.nan_to_num(a[int(r)]) for r in rows]).reshape(len(rows), -1)).astype(np.float32)
 
 
+def shape(split, rows):
+    from src.evaluation.analogue import shape_features
+    a = zarr.open(os.path.join(V4, "preprocessed_dataset.zarr"), mode="r")[GROUP[split]]["original_precip"]
+    return np.stack([shape_features(a[int(r)]) for r in rows])
+
+
 def meta(split):
     return pd.read_csv(f"{V4}/meta/full_{split}.txt", header=None, names=["t", "y", "x", "mx", "r"])
 
@@ -47,15 +59,26 @@ if __name__ == "__main__":
     ap.add_argument("--ref_min", type=float, default=5.0, help="reference rows: target max >= this")
     ap.add_argument("--u_c", type=float, default=50.1)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--space", default="coarse", choices=["coarse", "shape"])
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     tr = meta("train")
     tr = tr[tr.mx >= a.ref_min].reset_index(drop=True)
-    Xtr = features("train", tr.r.values)
     q = meta(a.split)
     q = q[q.mx >= a.min].reset_index(drop=True)
-    Xq = features(a.split, q.r.values)
-    q["coarse_max"] = np.expm1(Xq.max(axis=1))
+    if a.space == "coarse":
+        Xtr = features("train", tr.r.values)
+        Xq = features(a.split, q.r.values)
+        q["coarse_max"] = np.expm1(Xq.max(axis=1))
+    else:
+        cache = os.path.join(a.out, f"shape_train_ref{a.ref_min:g}.npz")
+        if os.path.exists(cache) and np.array_equal(np.load(cache)["rows"], tr.r.values):
+            Xtr = np.load(cache)["X"]
+        else:
+            Xtr = shape("train", tr.r.values)
+            np.savez_compressed(cache, X=Xtr, rows=tr.r.values)
+        mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-6
+        Xtr, Xq = (Xtr - mu) / sd, (shape(a.split, q.r.values) - mu) / sd
     for name, keep in (("full", np.ones(len(tr), bool)), ("cut", (tr.mx < a.u_c).values)):
         tree = KDTree(Xtr[keep])
         d, i = tree.query(Xq, k=1)
@@ -63,7 +86,7 @@ if __name__ == "__main__":
         print(f"{name}: reference n={keep.sum()}, query n={len(q)}, distance q50/q90 = "
               f"{np.median(d):.3f} / {np.quantile(d, .9):.3f}", flush=True)
     q = q.rename(columns={"r": "store_row", "mx": "target_max"})
-    q.to_csv(os.path.join(a.out, f"analogue_{a.split}.csv.gz"), index=False)
+    q.to_csv(os.path.join(a.out, f"analogue_{a.split}{'_shape' if a.space == 'shape' else ''}.csv.gz"), index=False)
     hi = q.target_max >= a.u_c
     print(f"above u_c={a.u_c}: n={hi.sum()}, dist_cut q50 {q.dist_cut[hi].median():.3f} vs dist_full "
           f"{q.dist_full[hi].median():.3f}; below: dist_cut q50 {q.dist_cut[~hi].median():.3f}")
