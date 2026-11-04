@@ -3173,10 +3173,16 @@ stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the ti
 - *Cut = the tile-hours >= u_c only*, not day x 3x3-tile blocks. The splits are week-blocked, so no held-out storm
   has training data from its week; H3 needs only that no training target holds a pixel >= u_c. Removed: 1.08% of
   train (the blocks would remove 17.5%). One size-matched random-drop control, for MSE only.
-- *NIMBUS tail:* the 48 largest held-out tile-hours contain clear errors the screen misses (radial rays, wedge
-  sectors, stationary pixel spikes over consecutive hours; about a third, nearly all NIMBUS). Rules for these are
-  added for NIMBUS, each kept only if it raises agreement with gauges (§22), and only the `nimbus` lists are
-  rebuilt (never trained on, so no retraining). R3/R5 are scored on the cleaned lists, the uncleaned ones as a
-  sensitivity row.
+- *NIMBUS tail (revised the same day, researcher):* the 48 largest held-out tile-hours contain clear errors the
+  screen misses (radial rays, wedge sectors, stationary pixel spikes over consecutive hours; about a third, nearly
+  all NIMBUS). A NIMBUS rule was chosen first, then dropped as infeasible: the only signal that marks them, the
+  persistence-repair count `n_persist`, also acts on 36% of the ODYSSEY test tail (55% >= 150 mm), so a threshold
+  on it would reject real storms at a rate rising with intensity (§17); the ray detector (`n_ray`) is silent on
+  these rays; and the NIMBUS tail >= 150 mm is spread over 37 lead radars (top 3 = 35%), about 5x the per-day
+  rate of ODYSSEY test, i.e. mostly the product reading heavy, not a few broken radars. Gauges could validate a
+  rule only for Swiss and German radars. **Decision: gauge-anchored tail scoring.** The `nimbus` lists stay as they
+  are; bulk metrics on all of NIMBUS; R3/R5 tail claims only on cases checked against gauges (Swiss and German
+  radars, the MCH events, the showcases); the product effect itself from R2. The gallery
+  (`quality_v4/heldout_tail_check/`) goes into the paper as a limitation.
 - *Area-only ablation weight:* gradient-norm parity, its Adam share at the vanilla checkpoint matched to the chosen
   full Minkowski loss at its weight (`tools/gradient_audit.py`), so only the channels differ.

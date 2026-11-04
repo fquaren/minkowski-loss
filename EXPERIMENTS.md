@@ -667,7 +667,9 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       H3 needs only that no training target holds a pixel >= u_c, which removing those tile-hours guarantees.
       The 3x3-day block would remove 8.1% of train at 80 mm (5.9% at +-6 h), forcing a random-drop control;
       tile-hours alone remove 0.32% and need none.
-- [ ] A2. Cut lists: drop every (day x tile + 8 neighbours) block of train with tile max >= u_c, write
+- [x] A2. *Done 2026-11-04 (tile-hours only, DECISIONS §43 amendment): `full_train_cut50.1.txt` (no row >= 50.1,
+      1.08% removed) and the control `full_train_randdrop50.1.txt` (same count, random) in `patches_v4_adv/meta/`.*
+      Cut lists: drop every (day x tile + 8 neighbours) block of train with tile max >= u_c, write
       `full_train_cut<u_c>.txt` -> verify: no train tile-hour >= u_c remains; report the removed fraction; add a
       size-matched random-drop control if it is > ~1%.
 - [x] A3. *Done 2026-11-04 (`scripts/data_quality/cut_input_range.py`, `quality_v4/cut_input_range/`), u_c = 50.1:*
@@ -708,7 +710,8 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       48 largest held-out tile-hours (all but one NIMBUS) about a third are clear errors the screen misses: radial rays
       and wedge sectors (e.g. (768,1280) 2025-07-09 05-07 UTC, (128,384) 2025-01-06) and stationary single-pixel
       spikes persisting over hours ((768,1280) 2026-03-31/04-01, 314-358 mm). Random sample: ~4-5 of 48 suspect.
-      How to treat the NIMBUS tail is pending the researcher.* Look at every held-out tile above u_c (test and NIMBUS) and the 2022-08-19 179 mm tile, for clear errors
+      Decision (DECISIONS §43 amendments): gauge-anchored tail scoring for R3/R5; no NIMBUS rule (a threshold on
+      `n_persist` would reject real storms; `n_ray` is silent; the tail is spread over 37 radars).* Look at every held-out tile above u_c (test and NIMBUS) and the 2022-08-19 179 mm tile, for clear errors
       only (§17) -> verify: a gallery and a rejection count by intensity bin.
 
 **C. Evaluation code**
