@@ -3101,3 +3101,66 @@ gpd_xi_obs = 0.183 in every row. Both runs are above the §16 MAE cap (+5%); 2.3
   cross-hatched "x" spots of a few pixels at local maxima inside rain areas (visible at 220 dpi, faint at 7.7e-4).
   *Inference, untested:* the rank reading gives its gradient to one pixel per threshold, so concentrated hot spots are
   the cheap way to match the target's upper quantiles; this is the quantile form's version of gaming the loss.
+
+---
+
+## 43. The extreme-evaluation setup: a ladder of shifts, one at a time (2026-11-04)
+
+**Decision (researcher, 2026-11-04).** The paper's extreme evaluation is a ladder of test sets. Each rung adds
+**one** shift to the rung before it, so that a drop in skill can be attributed. The models are scored on every
+rung; the reported quantity is each model's **degradation from the rung before**, against a baseline on the same
+patches, with day-block intervals (§32). Differences smaller than the interval are not claimed.
+
+| Rung | Test set | Shift added | Role |
+|---|---|---|---|
+| R0 | ODYSSEY test, all tiles | none | bulk reference |
+| R1 | ODYSSEY test above u, and the catalogued events in test (`configs/prominent_events.yaml`, `configs/mch_events.csv`) | conditioning on intensity, in range | in-distribution extremes |
+| R2 | the 101 paired days 2024-07-05..10-30, scored against ODYSSEY and against NIMBUS of the same hours | **product only** | separates product from everything else |
+| R3 | NIMBUS 2024-11 .. 2026-09 (the `nimbus` split minus the paired days) | **new period and events**, at fixed product | product + time |
+| R4 | ODYSSEY test above u_c, scored by models **retrained without any block >= u_c** | **intensity beyond training** | the central hypothesis H3 |
+| R5 | the R4 models on NIMBUS above u_c; MCH events checked against gauges | all of the above | compound robustness |
+| R6 | DPC Italy (roadmap M6) | region and network | only if R4 is positive |
+
+**Why a ladder, and why the paired days.** NIMBUS changes product, period and the truth at once: on the same
+days it has 1.44x the pixels >= 31 mm/h, 2.4x the Euler characteristic and 6x the power at 4 km (§18,
+EXPERIMENTS era gap). A model trained on ODYSSEY geometry is scored against a rougher field, so a NIMBUS score
+alone cannot be read as robustness. The paired days give the product effect on identical weather.
+
+**R4, the hypothesis test.**
+- *Unit:* absolute hourly accumulation, by the target tile's maximum (E1, RESEARCH_NOTES §2). The network
+  extrapolates in absolute values (log1p scaler); a local-quantile cut (E3) would keep 60 mm Mediterranean
+  hours in training while removing 30 mm North-Sea ones. E3 is a sensitivity row only.
+- *Cut by block:* every (day x tile and its 8 neighbours) block of train with a tile maximum >= u_c is removed.
+  ODYSSEY test does not change, so full-data and cut models are scored on the same patches. The result the paper
+  needs is an interaction: the Minkowski model degrades less from R1 to R4 than MSE (RESEARCH_NOTES §1, prediction 2).
+- *u_c is fixed by a rule before any cut training:* the highest level that leaves >= ~100 test days above it
+  (day-block intervals) and at which the radar agrees with gauges. Counts on v4 (tile-hours, train / test):
+  >= 50.1 mm 14,067 / 2,383 (305 test days); >= 80 mm 4,156 / 559; >= 100 mm 2,090 / 249 (109 test days).
+  If the removed fraction exceeds ~1%, a size-matched random-drop control is added.
+- *Input:* at 12.5x coarsening, a 100 mm peak is a ~10-20 mm coarse value (inference, to be checked), so R4
+  asks for an unfamiliar fine peak from a familiar coarse field. Report how far out of range input and target are.
+- *Models:* MSE; MSE + Minkowski (Study-1 choice); MSE + Minkowski **area channel only** (geometry vs the
+  intensity distribution, prediction 3); one competing loss at a verified-active weight; FM; FM + energy_qm.
+  Three seeds for the deterministic cut runs.
+
+**Scoring rules that hold on every rung.**
+- *The forecaster's dilemma.* Both catalogues select events by observed impact, and scoring only cases chosen
+  by the observation rewards over-prediction (energy_qm's known weakness). Every observation-conditioned score is
+  paired with: the same score on cases selected by the **coarse input** (available at inference, independent of
+  the model); false-alarm rates (predicted >= u where observed < u); and a proper score over all cases weighted on
+  the tail (threshold-weighted CRPS). [CITE?: forecaster's dilemma; threshold-weighted CRPS]
+- *Independent truth for held-out extremes:* SwissMetNet gauges (open, 10-min, UTC; 72 of the 92 MCH rain-event
+  stations) and CombiPrecip (archive on request). The radar tail is the least trustworthy part of the data
+  (NIMBUS too heavy from ~31 mm/h against gauges).
+- *Test is scored once per final model*; development stays on validation.
+
+**Showcase cases, fixed now, before any output is seen.** Criteria: in an independent catalogue, documented
+impact, gauges available, one per rung. All events of both catalogues go in an appendix table.
+- C1 (R1): Misox, 2024-06-21 (both catalogues, test, 63.7 mm in 60 min at Grono).
+- C2 (R2): Storm Boris (paired days, European accumulation flagship); MCH `_id` 36, Ticino 2024-07-06 (paired, rate-type).
+- C3 (R5): MCH `_id` 64, Level-4 ex-hurricane, Ticino 2025-08-27/28 (NIMBUS, gauges CEV, SBO, MSG, ORO, VEV).
+  Tile maximum 65.9 mm, so under a cut near 80 mm it is a near-edge case; R5 events are shown ordered by their
+  distance above the training maximum (RESEARCH_NOTES §7.4, O7).
+
+**Dropped:** a held-out storm type (E2; the MCH types label 73 Swiss events, too few to hold one out; used to
+stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the time shift).

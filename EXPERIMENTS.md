@@ -1,6 +1,6 @@
 # Experiment tracker
 
-Last updated: 2026-10-08
+Last updated: 2026-11-04
 
 **Read first:** `DECISIONS.md` (why things are the way they are, and what is already ruled
 out), then `CLAUDE.md` (operational traps), then this file (the compute node in §0, what exists and what's next).
@@ -266,6 +266,8 @@ isoperimetric scatter.
 ## 5. TODO
 
 ### Highest value
+- [ ] **Current plan (2026-11-04): the extreme-evaluation todo list,** section "Extreme evaluation: the
+      robustness ladder" below (DECISIONS §43). It supersedes the o.o.d. items scattered in this file.
 - [x] **Switch to hourly targets and finish the screen before Phase 3 (decided 2026-10-08).**
       The target is the 1-h accumulation (DECISIONS §21). A rule is kept only if it raises
       agreement with independent data (DECISIONS §22). The rule-by-rule review, the MLCast /
@@ -641,6 +643,70 @@ isoperimetric scatter.
       `reward_threshold_share.py` pattern) and (ii) share of members/predictions out of reach; prediction: at
       matched gradient norm, tail columns rank as (i)-(ii). Include an inverse-mass-weighted FM loss as the
       non-proper baseline.
+
+### Extreme evaluation: the robustness ladder (added 2026-11-04, DECISIONS §43)
+Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
+
+**A. Fix the rules before any result (nothing here needs training)**
+- [ ] A1. Fix u_c: count test days above 50 / 60 / 80 / 100 mm (tile max, screened v4), and the gauge agreement at
+      each level on ODYSSEY hourly sums. Write the value and the counts into DECISIONS §43 -> verify: >= ~100 test
+      days above u_c, written down before A2 runs.
+- [ ] A2. Cut lists: drop every (day x tile + 8 neighbours) block of train with tile max >= u_c, write
+      `full_train_cut<u_c>.txt` -> verify: no train tile-hour >= u_c remains; report the removed fraction; add a
+      size-matched random-drop control if it is > ~1%.
+- [ ] A3. Input check: coarse-input maximum of the above-u_c test patches against the training distribution of
+      coarse maxima -> verify: one histogram, and the share of above-cut inputs that are themselves out of range.
+- [ ] A4. Showcases and appendix table frozen: C1 Misox, C2 Boris + MCH 36, C3 MCH 64 (§43); table of every event in
+      both catalogues with split, rung, tile max -> verify: committed before any R2-R5 output exists.
+
+**B. Data for R2 and the independent truth**
+- [ ] B1. Paired store: run the v4 hourly pipeline (screen, hourly sum, advection correction, store, gamma) on the
+      ODYSSEY originals 2024-07-05..10-30 (`raw/OPERA_orig_postswitch/`) for the same tile-hours as NIMBUS -> verify:
+      tile-hour counts per product; Boris and MCH 36 present in both; check how the 150 mm/h cap on the ODYSSEY
+      copies interacts with the v4 screen.
+- [ ] B2. Gauges: fetch SwissMetNet `rre150z0` / `rre150h0` (STAC `ch.meteoschweiz.ogd-smn`, `ogd-smn-precip`) for
+      the 72 listed stations, event windows +-1 day, plus the Swiss events of our catalogue; map stations to radar
+      pixels with `src.data.geo` -> verify: hourly gauge sums equal the sum of the 10-min values; the gauge-hour
+      convention matches ACRR (H-45..H vs the gauge's end-of-interval).
+- [ ] B3. CombiPrecip: request the hourly reanalysis (CPCH) archive for the event days 2020-2026 via the MeteoSwiss
+      contact form; meanwhile check the licence of the Swiss Data Cube copy. Ask about the `TI*` stations
+      (20 of 92 not in open data).
+- [ ] B4. Storm Sabine (`_id` 1): 15 of 96 tile-hours, max 0.015 mm. Find which rule removed the hours -> verify:
+      explained, or flagged as a screen failure.
+- [ ] B5. Look at every held-out tile above u_c (test and NIMBUS) and the 2022-08-19 179 mm tile, for clear errors
+      only (§17) -> verify: a gallery and a rejection count by intensity bin.
+
+**C. Evaluation code**
+- [ ] C1. Input-conditioned selection in `eval_extremes.py` (cases chosen by the coarse-input maximum), and
+      false-alarm rates -> verify: on the identity model (prediction = target) false alarms are 0 and the
+      input- and observation-conditioned scores are perfect.
+- [ ] C2. Threshold-weighted CRPS for the FM ensembles (and the weighted MAE for deterministic models) -> verify:
+      reduces to CRPS with a unit weight; matches a closed form for a Gaussian ensemble.
+- [ ] C3. Gauge verification: pixel containing the gauge and its 3x3 maximum, against the gauge hour -> verify:
+      on the radar target itself it reproduces the §22 radar-gauge agreement.
+- [ ] C4. Analogue distance (O7) per test case: distance to the nearest training case in coarse-input space ->
+      verify: zero for a training case scored against the training set.
+
+**D. Models (inputs to R4)**
+- [ ] D1. Study-1 choice (form and weight) by the §16 rule, after the qm 7.7e-3 eval.
+- [ ] D2. Area-only Minkowski variant (perimeter and Euler weights 0); not in the code yet -> verify: unit weights
+      reproduce the current loss; area-only equals the W1-type form of DECISIONS §13 on a synthetic pair.
+- [ ] D3. One competing loss at a verified-active weight (M4; fix SSIM or take spectral at its parity weight).
+- [ ] D4. Study 2: dist_qm_ret result (running), then energy_qm 3 seeds.
+
+**E. Training for R4** (after A1-A2, D1-D3)
+- [ ] E1. Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
+      GPU-days) -> verify: startup lines (loss, weight, train list = cut list, GPU).
+- [ ] E2. FM base model on the cut list, sigma_r recomputed for its backbone, then energy_qm on top -> verify: the
+      `config FM_RESIDUAL_SCALE` line. Cost of the FM base run to be measured.
+
+**F. Scoring (test touched once per final model)**
+- [ ] F1. R0, R1, R3 for every final model; R2 on the paired store.
+- [ ] F2. R4 and R5 for the full and cut models; degradation per rung with day-block intervals and the
+      leave-period-out variant; observation- and input-conditioned scores side by side.
+- [ ] F3. Gauge verification for the showcases and every MCH rain event outside train.
+- [ ] F4. Figures: one panel set per showcase (input, target, each model, gauges); the appendix event table.
+- [ ] (R6, DPC Italy: only if R4 is positive.)
 
 ### Validation: every stage passes its checks before the next starts (added 2026-10-19)
 `scripts/validate/validate_stage.py <stage>` writes `validation/<stage>/<date>_<commit>.md`
