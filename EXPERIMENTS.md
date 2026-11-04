@@ -651,6 +651,22 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
 - [ ] A1. Fix u_c: count test days above 50 / 60 / 80 / 100 mm (tile max, screened v4), and the gauge agreement at
       each level on ODYSSEY hourly sums. Write the value and the counts into DECISIONS §43 -> verify: >= ~100 test
       days above u_c, written down before A2 runs.
+      *Counts 2026-11-04 (screened v4 lists; tile-hours / days with tile max >= u):*
+
+      | u (mm) | test | test days | nimbus days | val days | train tile-h | removed: day x 3x3 tiles | tile-hour only |
+      |---|---|---|---|---|---|---|---|
+      | 50.1 | 2,383 | 305 | 569 | 205 | 14,067 | 17.5% | 1.08% |
+      | 60 | 1,458 | 258 | 521 | 173 | 8,974 | 13.5% | 0.69% |
+      | 80 | 559 | 171 | 389 | 131 | 4,156 | 8.1% | 0.32% |
+      | 100 | 249 | 109 | 303 | 94 | 2,090 | 4.8% | 0.16% |
+      | 125 | 98 | 60 | 197 | 53 | 884 | 2.6% | 0.07% |
+
+      By the day rule, u_c <= 100 mm. Gauge agreement per level still open (needs B2).
+      **Proposed amendment to §43 (pending the researcher):** remove only the tile-hours >= u_c, not day x 3x3
+      blocks. The v4 splits are blocked by ISO week, so no held-out storm has training data from its week, and
+      H3 needs only that no training target holds a pixel >= u_c, which removing those tile-hours guarantees.
+      The 3x3-day block would remove 8.1% of train at 80 mm (5.9% at +-6 h), forcing a random-drop control;
+      tile-hours alone remove 0.32% and need none.
 - [ ] A2. Cut lists: drop every (day x tile + 8 neighbours) block of train with tile max >= u_c, write
       `full_train_cut<u_c>.txt` -> verify: no train tile-hour >= u_c remains; report the removed fraction; add a
       size-matched random-drop control if it is > ~1%.
@@ -664,15 +680,23 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       ODYSSEY originals 2024-07-05..10-30 (`raw/OPERA_orig_postswitch/`) for the same tile-hours as NIMBUS -> verify:
       tile-hour counts per product; Boris and MCH 36 present in both; check how the 150 mm/h cap on the ODYSSEY
       copies interacts with the v4 screen.
-- [ ] B2. Gauges: fetch SwissMetNet `rre150z0` / `rre150h0` (STAC `ch.meteoschweiz.ogd-smn`, `ogd-smn-precip`) for
+- [ ] B2. *(Running 2026-11-04: `scripts/data_quality/fetch_smn.py` -> `/home/fquareng/work/data/extremes/MCH/smn/`,
+      all ~300 stations of both open networks, 2010 -> now, log `.../MCH/fetch_smn.log`. Checked on LUG: the
+      hourly value at T equals the sum of the 10-min values stamped T-50..T exactly, so both are end-of-interval
+      stamps and gauge hour T matches radar hour T.)* Gauges: fetch SwissMetNet `rre150z0` / `rre150h0` (STAC `ch.meteoschweiz.ogd-smn`, `ogd-smn-precip`) for
       the 72 listed stations, event windows +-1 day, plus the Swiss events of our catalogue; map stations to radar
       pixels with `src.data.geo` -> verify: hourly gauge sums equal the sum of the 10-min values; the gauge-hour
       convention matches ACRR (H-45..H vs the gauge's end-of-interval).
 - [ ] B3. CombiPrecip: request the hourly reanalysis (CPCH) archive for the event days 2020-2026 via the MeteoSwiss
       contact form; meanwhile check the licence of the Swiss Data Cube copy. Ask about the `TI*` stations
       (20 of 92 not in open data).
-- [ ] B4. Storm Sabine (`_id` 1): 15 of 96 tile-hours, max 0.015 mm. Find which rule removed the hours -> verify:
-      explained, or flagged as a screen failure.
+- [x] B4. Storm Sabine (`_id` 1): 15 of 96 tile-hours, max 0.015 mm. *Explained 2026-11-04: not a screen failure.*
+      The MCH window (2020-02-07 23:00 .. 02-09 23:00 UTC) is the wind phase; the CH tiles are dry in the hourly
+      scan (mostly < 1 mm, at most 6.3 mm). The front's rain arrives on 02-10, after the window. The lists sample
+      tile-hours by intensity stratum, so dry hours are thinned (15 of 96 kept). The scan has an isolated 100.1 mm
+      hour at 2020-02-10 00 UTC between 4.0 and 3.7 mm: no day-boundary bug (00 UTC hours have 4 frames and the
+      lowest >= 50 mm share of the day; isolated >= 50 mm spikes are 2% of >= 50 mm tile-hours, at all hours), so it
+      goes to the B5 gallery as a likely artefact.
 - [ ] B5. Look at every held-out tile above u_c (test and NIMBUS) and the 2022-08-19 179 mm tile, for clear errors
       only (§17) -> verify: a gallery and a rejection count by intensity bin.
 
