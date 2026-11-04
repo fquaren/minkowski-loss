@@ -44,6 +44,7 @@ from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss
 from src.evaluation.training_metrics import compute_radial_power_spectrum
 from src.evaluation.extreme_metrics import sal, crps_ensemble
+from src.evaluation.conditioning import case_scores, twcrps_ensemble
 from src.evaluation.day_block import DayRecord, parse_leave_out, processing_days
 from src.evaluation.tail_metrics import (
     FSSAccumulator, POTAccumulator, gpd_comparison, directional_anisotropy, peak_ratio,
@@ -172,6 +173,8 @@ def main():
     mse_i, tmax_i, S_i, A_i, L_i, aniso_i, pk_i, crps_i = [], [], [], [], [], [], [], []
     mink_sum, nb = 0.0, 0
     spec_i = []
+    # DECISIONS §43: input-conditioned selection, false alarms, twCRPS (all at the POT level)
+    cmax_i, pmax_i, pexc_i, nexc_p_i, nexc_o_i, tw_i = [], [], [], [], [], []
     rapsd_p = rapsd_o = None
 
     with torch.no_grad():
@@ -198,9 +201,19 @@ def main():
                 pred = ens[0]                          # arbitrary member for structure
                 pred_mean = ens.mean(0)
                 mse_i.append(((pred_mean - target) ** 2).mean(dim=(1, 2, 3)).cpu().numpy())
+                tw_i.append(twcrps_ensemble(ens[:, :, 0].cpu().numpy(), target[:, 0].cpu().numpy(),
+                                            pot_u).mean(axis=(1, 2)))
+                pexc_i.append((ens.amax(dim=(2, 3, 4)) >= pot_u).float().mean(0).cpu().numpy())
 
             if args.model != "fm":
                 mse_i.append(((pred - target) ** 2).mean(dim=(1, 2, 3)).cpu().numpy())
+                tw_i.append(twcrps_ensemble(pred[None, :, 0].cpu().numpy(), target[:, 0].cpu().numpy(),
+                                            pot_u).mean(axis=(1, 2)))
+                pexc_i.append((pred.amax(dim=(1, 2, 3)) >= pot_u).float().cpu().numpy())
+            cmax_i.append(decode(X[:, 0:1]).amax(dim=(1, 2, 3)).cpu().numpy())
+            pmax_i.append(pred.amax(dim=(1, 2, 3)).cpu().numpy())
+            nexc_p_i.append((pred >= pot_u).sum(dim=(1, 2, 3)).cpu().numpy())
+            nexc_o_i.append((target >= pot_u).sum(dim=(1, 2, 3)).cpu().numpy())
 
             tmax_i.append(target.amax(dim=(1, 2, 3)).cpu().numpy())
             mink_sum += geom_fn(pred, Ygamma, anneal_factor=0.05).item(); nb += 1
@@ -266,6 +279,11 @@ def main():
         if args.leave_out:
             summary["leave_out"] = {k: rec.leave_out(v) for k, v in parse_leave_out(args.leave_out).items()}
         summary["dayblock_n_days"] = int(rec.D)
+    cmax, pmax, pexc = np.concatenate(cmax_i), np.concatenate(pmax_i), np.concatenate(pexc_i)
+    nexc_p, nexc_o, tw = np.concatenate(nexc_p_i), np.concatenate(nexc_o_i), np.concatenate(tw_i)
+    summary["conditioned"] = case_scores(tmax, cmax, pmax, pexc, nexc_p, nexc_o, pot_u)
+    summary["twcrps_mean"] = float(tw.mean())
+    summary["twcrps_extreme"] = float(tw[ext].mean())
     if crps_i:
         crps = np.concatenate(crps_i)
         summary["crps_mean"] = float(crps.mean())
@@ -278,6 +296,8 @@ def main():
                         mse=mse, tmax=tmax, peak_ratio=pk,
                         S=np.array(S_i), A=np.array(A_i), L=np.array(L_i),
                         spectral_dist=spectral_dist,
+                        coarse_max=cmax, pred_max=pmax, p_max_ge_u=pexc,
+                        n_exc_pred=nexc_p, n_exc_obs=nexc_o, twcrps=tw,
                         rapsd_pred=rapsd_p, rapsd_target=rapsd_o,
                         gpd_pred=np.array([fit_p["xi"], fit_p["sigma"], fit_p["rate"]]),
                         gpd_obs=np.array([fit_o["xi"], fit_o["sigma"], fit_o["rate"]]),

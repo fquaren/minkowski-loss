@@ -286,7 +286,7 @@ class QuantileMassMinkowskiLoss(nn.Module):
                                     anneal_factor, "quantile_mass", target_phys)
         diff = W * (lg[0] - tg).abs()                                         # [B,3,Q]
         dist = torch.trapezoid(diff, self.geom.xi, dim=2) / self.geom.xi_range
-        return dist.sum(dim=1).mean()
+        return (dist * self.geom.channel_weights).sum(dim=1).mean()
 
 
 # ----------------------------------------------------------------------------------
@@ -343,6 +343,7 @@ def build_structural_loss(name: str, config: dict, device) -> StructuralLoss:
             area_mode="ste",
             persistence_thresh_b0=(load_persistence_thresholds(config)[0]
                                    if topo == "b0" else 0.0),
+            channel_weights=config.get("MINKOWSKI_CHANNEL_WEIGHTS", [1.0, 1.0, 1.0]),
         )
         form = config.get("MINKOWSKI_FORM", "threshold")
         if form == "quantile_mass":

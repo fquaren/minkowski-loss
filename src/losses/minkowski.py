@@ -171,8 +171,12 @@ class AnalyticalMinkowskiLoss(nn.Module):
         crofton_w_diag: float = 0.217716,
         persistence_thresh_b0: float = 0.0,
         tau_persistence: float = 0.1,
+        channel_weights=(1.0, 1.0, 1.0),
     ):
         super().__init__()
+        # [area, perimeter, topology]; (1, 0, 0) is the area-only ablation (DECISIONS §43, §13):
+        # area depends only on the marginal intensity distribution, not on geometry.
+        self.register_buffer("channel_weights", torch.tensor(channel_weights, dtype=torch.float32))
         if area_mode not in ("ste", "soft"):
             raise ValueError(f"area_mode must be 'ste' or 'soft', got {area_mode!r}")
         if topology_mode not in ("euler", "b0"):
@@ -289,4 +293,4 @@ class AnalyticalMinkowskiLoss(nn.Module):
 
         abs_diff = torch.abs(pred_log - target_log)               # [B,3,Q]
         dist = torch.trapezoid(abs_diff, self.xi, dim=2) / self.xi_range  # log-intensity measure -> [B,3]
-        return dist.sum(dim=1).mean()
+        return (dist * self.channel_weights).sum(dim=1).mean()
