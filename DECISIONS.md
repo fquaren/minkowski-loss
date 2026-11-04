@@ -3186,3 +3186,14 @@ stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the ti
   (`quality_v4/heldout_tail_check/`) goes into the paper as a limitation.
 - *Area-only ablation weight:* gradient-norm parity, its Adam share at the vanilla checkpoint matched to the chosen
   full Minkowski loss at its weight (`tools/gradient_audit.py`), so only the channels differ.
+- *Study-1 Minkowski loss (researcher, 2026-11-04): the §16 rule is applied* (best exceedance ratio with
+  ΔMAE <= +5% and anisotropy <= 1.2x vanilla): **threshold form at 6.0e-5** (`UNet_Ana_20261025_042024`,
+  +4.7% MAE, exceedance 0.113 -> 0.192), the only bracket row under the cap. The quantile form is reported as a
+  bracket, not as the Study-1 model.
+- *Competitors (researcher): every competing loss, one at a time* — spectral, SSIM (fixed today), wet area and
+  optical flow (fallback now counted and warned) — each against Minkowski in both arms, at gradient-norm parity
+  with Minkowski at 6.0e-5 (Adam share 5.30 at the vanilla checkpoint).
+- *Seeds (researcher):* 3 for MSE and Minkowski in both arms (full-data seed 42 exists for both), 1 for area-only,
+  the four competitors and the MSE random-drop control; more seeds only for a loss whose effect comes within the
+  seed spread of Minkowski's. 21 runs, ~17.5 GPU-days. Queue: `scripts/hpc/run_r4_queue.sh`
+  (`logs/r4_queue.log`, done list `logs/r4_queue_done.txt`), evaluated on validation after each run.

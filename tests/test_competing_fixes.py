@@ -25,3 +25,18 @@ def test_missing_rain_is_penalised_and_ordered():
     loss = ImageSSIMLoss()
     zero, half = float(loss(torch.zeros_like(y), y)), float(loss(0.5 * y, y))
     assert 0.0 < half < zero
+
+
+def test_opticalflow_fallback_is_counted_and_warned(monkeypatch):
+    import pytest
+    from src.losses.competing import OpticalFlowConsistencyLoss
+    fn = OpticalFlowConsistencyLoss(x_dim=32, y_dim=32, rain_threshold=0.1, mask_threshold=0.1)
+    y = torch.rand(2, 1, 32, 32)
+
+    def boom(*a, **k):
+        raise RuntimeError("no flow")
+    monkeypatch.setattr(fn, "_estimate_dense_flow", boom)
+    with pytest.warns(UserWarning, match="teacher = target"):
+        fn(y * 0.5, y, reference=y)
+    fn(y * 0.5, y, reference=y)
+    assert fn.n_fallback == 2

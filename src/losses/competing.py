@@ -23,6 +23,7 @@ setting -- the kernel-CRPS interpretation only applies when several members are 
 from __future__ import annotations
 
 import math
+import warnings
 
 import torch
 import torch.nn as nn
@@ -252,7 +253,13 @@ class OpticalFlowConsistencyLoss(nn.Module):
             try:
                 fx, fy = self._estimate_dense_flow(reference.float(), target.float())
                 teacher = self._advect(reference.float(), fx, fy).to(pred.dtype)
-            except Exception:
+            except Exception as e:
+                # The fallback turns the loss into plain L1 against the target, so it is counted
+                # and reported (roadmap M4), never silent.
+                self.n_fallback = getattr(self, "n_fallback", 0) + 1
+                if self.n_fallback == 1:
+                    warnings.warn(f"opticalflow: flow estimation failed ({e!r}); teacher = target "
+                                  f"for this batch. Further fallbacks are counted in n_fallback.")
                 teacher = target.to(pred.dtype)
         if self.loss_type == "l1":
             out = torch.abs(pred - teacher)

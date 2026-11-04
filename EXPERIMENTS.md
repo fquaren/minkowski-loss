@@ -684,7 +684,8 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       both catalogues with split, rung, tile max -> verify: committed before any R2-R5 output exists.
 
 **B. Data for R2 and the independent truth**
-- [ ] B1. Paired store: run the v4 hourly pipeline (screen, hourly sum, advection correction, store, gamma) on the
+- [ ] B1. *Running 2026-11-04: ODYSSEY scan of the 101 days (`quality_v4/hourly_odyssey_paired/`, ~4 h), then
+      `scripts/hpc/run_paired_build.sh` (meta, store, target, gamma -> `patches_v4_paired`).* Paired store: run the v4 hourly pipeline (screen, hourly sum, advection correction, store, gamma) on the
       ODYSSEY originals 2024-07-05..10-30 (`raw/OPERA_orig_postswitch/`) for the same tile-hours as NIMBUS -> verify:
       tile-hour counts per product; Boris and MCH 36 present in both; check how the 150 mm/h cap on the ODYSSEY
       copies interacts with the v4 screen.
@@ -729,16 +730,19 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       verify: zero for a training case scored against the training set.
 
 **D. Models (inputs to R4)**
-- [ ] D1. Study-1 choice (form and weight) by the §16 rule, after the qm 7.7e-3 eval.
+- [x] D1. *Done 2026-11-04: threshold 6.0e-5 by the §16 rule.* Study-1 choice (form and weight) by the §16 rule, after the qm 7.7e-3 eval.
 - [x] D2. *Done 2026-11-04: `MINKOWSKI_CHANNEL_WEIGHTS` (default [1,1,1]); tests `tests/test_minkowski_channels.py`
       (unit weights reproduce both forms; area-only invariant to shuffling the prediction's pixels, full loss not).
       Its weight still needs a rule (decision pending).* Area-only Minkowski variant (perimeter and Euler weights 0); not in the code yet -> verify: unit weights
       reproduce the current loss; area-only equals the W1-type form of DECISIONS §13 on a synthetic pair.
-- [ ] D3. One competing loss at a verified-active weight (M4; fix SSIM or take spectral at its parity weight).
+- [x] D3. *Changed 2026-11-04: all four competitors, each at parity with Minkowski 6.0e-5. SSIM floor fixed and
+      optical-flow fallback made visible (`tests/test_competing_fixes.py`); weights from the parity audits in the
+      R4 queue.* One competing loss at a verified-active weight (M4; fix SSIM or take spectral at its parity weight).
 - [ ] D4. Study 2: dist_qm_ret result (running), then energy_qm 3 seeds.
 
 **E. Training for R4** (after A1-A2, D1-D3)
-- [ ] E1. Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
+- [ ] E1. *Queued 2026-11-04 (`scripts/hpc/run_r4_queue.sh`, starts after tonight's chain): parity audits, then 21
+      runs (seed-42 pair MSE/Minkowski cut first). See DECISIONS §43 amendments for the list.* Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
       GPU-days) -> verify: startup lines (loss, weight, train list = cut list, GPU).
 - [ ] E2. FM base model on the cut list, sigma_r recomputed for its backbone, then energy_qm on top -> verify: the
       `config FM_RESIDUAL_SCALE` line. Cost of the FM base run to be measured.
