@@ -648,7 +648,15 @@ isoperimetric scatter.
 Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
 
 **A. Fix the rules before any result (nothing here needs training)**
-- [ ] A1. Fix u_c: count test days above 50 / 60 / 80 / 100 mm (tile max, screened v4), and the gauge agreement at
+- [x] A1. *Done 2026-11-04 (u_c = 50.1 by the researcher; gauge check `scripts/data_quality/gauge_levels.py`,
+      `quality_v4/gauge_levels/`, SwissMetNet on the two Swiss tiles, 6.4 M pairs, 281 stations). Both conditional
+      ratios fall smoothly with level (radar >= u: median gauge/radar 0.75 / 0.60 / 0.36 / 0.21 / 0.15 at 5 / 10 / 20.2 /
+      31.7 / 50.1 mm; gauge >= u: radar 3x3 / gauge 0.49 -> 0.33), as point-vs-pixel representativeness under selection
+      predicts; no break at 50.1, so u_c stands. They are symmetric at 20 mm (0.36 vs 0.37) and diverge above (0.21 vs
+      0.34 at 31.7, 0.15 vs 0.29 at 50.1), with radar >= u hours unconfirmed by the gauge (< u/4) rising 12% -> 57% while
+      misses stay ~10% to 31.7 mm: the radar target reads somewhat heavy above ~30 mm (inference; hail is the usual
+      cause). ODYSSEY and NIMBUS alike over CH. Weak at the level that matters: 23 pairs at 50.1 mm.
+      Follow-up: the same analysis on the DWD gauges already on disk (many more tiles).* Fix u_c: count test days above 50 / 60 / 80 / 100 mm (tile max, screened v4), and the gauge agreement at
       each level on ODYSSEY hourly sums. Write the value and the counts into DECISIONS §43 -> verify: >= ~100 test
       days above u_c, written down before A2 runs.
       *Counts 2026-11-04 (screened v4 lists; tile-hours / days with tile max >= u):*
