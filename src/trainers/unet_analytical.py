@@ -29,6 +29,7 @@ from src.models.unet import LogSpaceResidualUNet
 from src.trainers.base import (
     EarlyStopping,
     cosine_warmup_weight,
+    load_checkpoint,
     save_checkpoint,
     save_sample_images,
 )
@@ -82,6 +83,11 @@ def run_training(config, args, trial=None):
     trial_s = f"_T{trial.number}" if trial else ""
     run_name = f"UNet_Ana{trial_s}_{ts}"
     out_dir = os.path.join("runs", "sr_analytical", run_name)
+    resume = getattr(args, "resume", None) if trial is None else None
+    if resume:
+        # Continue in the interrupted run's directory; train.log is appended to.
+        out_dir = os.path.dirname(resume)
+        run_name = os.path.basename(out_dir)
     os.makedirs(out_dir, exist_ok=True)
 
     with managed_logger(run_name, out_dir) as logger:
@@ -150,8 +156,20 @@ def run_training(config, args, trial=None):
         max_val_t = torch.tensor(scaler_val, device=device, dtype=torch.float32)
 
         best_val_loss = float("inf")
+        start_epoch = 0
+        if resume:
+            # w_geom and anneal are functions of the epoch index, so restoring it plus
+            # optimizer/scaler/scheduler/early-stop state continues the same schedule.
+            start_epoch, _ = load_checkpoint(
+                resume, model, optimizer,
+                scaler=grad_scaler if amp_enabled else None,
+                scheduler=sched, early_stopper=early_stopper, device=device)
+            if early_stopper.best_score is not None:
+                best_val_loss = -early_stopper.best_score
+            logger.info(f"resumed from {resume} after epoch {start_epoch} "
+                        f"(best val_monitor {best_val_loss:.4f})")
 
-        for epoch in range(epochs):
+        for epoch in range(start_epoch, epochs):
             w_geom = cosine_warmup_weight(epoch, epochs, w_max, warmup)
             # Anneal sigmoid temperature: sharp when weight is high
             anneal = max(0.05, np.exp(-3.0 * epoch / max(epochs, 1)))

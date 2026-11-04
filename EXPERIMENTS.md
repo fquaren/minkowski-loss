@@ -26,7 +26,11 @@ level and is re-derived for hourly data.
 
 ## 0. Compute node
 
-All runs are on **node34**, which is **shared with other users**.
+Our group is assigned **one GPU, identified by its UUID** (`GPU-9e0aab27-…`, below), not a node.
+Runs go wherever that card is. It was in **node34** until the reboot of 2026-11-03 and is in
+**node32** since (same two cards, same PCI slots, same CPU layout); the move may be temporary.
+node34 now holds one unrelated card (`GPU-1765684b-…`). The node is **shared with other users**.
+To find the card: `grep -l 9e0aab27 /proc/driver/nvidia/gpus/*/information` on each node.
 
 | | |
 |---|---|
@@ -53,9 +57,13 @@ others.
   - *GPU:* if nothing is set, it sets GPU 1 in PCI order. It raises `NodeLimitError` for any
     other `CUDA_VISIBLE_DEVICES` (including `0`, `0,1`, or GPU 0's UUID). If CUDA is already
     initialised, it checks the visible device's UUID.
-  - It is a no-op on other hosts. Tests: `tests/test_node_limits.py`.
-- `scripts/hpc/env.sh` exports GPU 1 in PCI order (it previously exported
-  `CUDA_VISIBLE_DEVICES=0`), and pins the launching shell to cores 4–11.
+  - It is a no-op on hosts without our card. *Since 2026-11-04 it detects the node by our GPU's UUID*
+    (read from `/proc/driver/nvidia/gpus`, without starting CUDA), not by hostname. The hostname check
+    (`node34`) silently switched every guard off when the card moved to node32. The default index is our
+    card's position in PCI order, so it follows the card. If the card lands on a node without cores
+    4-11, `import src` raises instead of pinning wrongly. Tests: `tests/test_node_limits.py`.
+- `scripts/hpc/env.sh` exports our card's PCI-order index (1 on node32; it previously exported
+  `CUDA_VISIBLE_DEVICES=0`), and pins the launching shell to cores 4–11 when the card is on the node.
 - The launchers with a `GPU` override (`run_full_eval`, `eval_losses`, `launch_eval_losses`,
   `sweep_reward`, `check_sampler`) refuse anything but `GPU=1`. `run_diagnosis.sh` used
   GPU 0 and now uses 1.
