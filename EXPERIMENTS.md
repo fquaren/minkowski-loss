@@ -656,7 +656,15 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       0.34 at 31.7, 0.15 vs 0.29 at 50.1), with radar >= u hours unconfirmed by the gauge (< u/4) rising 12% -> 57% while
       misses stay ~10% to 31.7 mm: the radar target reads somewhat heavy above ~30 mm (inference; hail is the usual
       cause). ODYSSEY and NIMBUS alike over CH. Weak at the level that matters: 23 pairs at 50.1 mm.
-      Follow-up: the same analysis on the DWD gauges already on disk (many more tiles).* Fix u_c: count test days above 50 / 60 / 80 / 100 mm (tile max, screened v4), and the gauge agreement at
+      *DWD (German gauges, 2026-11-04; `quality_v4/gauge_levels_dwd/`, 8.9 M pairs, 1,452 stations, tile-hours with
+      max >= 10 mm), shifted window:* ODYSSEY radar >= u: gauge/radar 0.89 / 0.82 / 0.72 / 0.63 / 0.58 at 5 / 10 /
+      20.2 / 31.7 / 50.1 mm, unconfirmed (gauge < u/4) 7% -> 16% at 50.1 (n = 56); gauge >= u: radar 3x3 / gauge
+      0.79 -> 0.53, misses 1% -> 10%. Smooth and nearly symmetric: **over Germany the ODYSSEY tail holds to 50 mm**, so
+      u_c = 50.1 is supported on 2.4x the Swiss sample; the Swiss heaviness above 30 mm (n = 23) is regional (Alps).
+      NIMBUS reads heavy at the top: radar >= u gauge/radar 0.70 -> 0.26 at 50.1, unconfirmed 5% -> 33% (58% at 80,
+      n = 12), while it misses no heavy gauge hour (radar 3x3 / gauge ~0.7, misses 0%), and it has 3.5x more >= 50 mm
+      hours than the gauges at the same points (70 vs 20; ODYSSEY 56 vs 125). This is the quantitative support for
+      the gauge-anchored NIMBUS tail scoring (§43).* Fix u_c: count test days above 50 / 60 / 80 / 100 mm (tile max, screened v4), and the gauge agreement at
       each level on ODYSSEY hourly sums. Write the value and the counts into DECISIONS §43 -> verify: >= ~100 test
       days above u_c, written down before A2 runs.
       *Counts 2026-11-04 (screened v4 lists; tile-hours / days with tile max >= u):*
@@ -737,7 +745,12 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       Smoke test pending a free core.* Gauge verification: pixel containing the gauge and its 3x3 maximum, against the gauge hour -> verify:
       on the radar target itself it reproduces the §22 radar-gauge agreement.
 - [x] C4. *Code done 2026-11-04 (`scripts/evaluate/analogue_distance.py`; self-distance 0 checked); test-split run
-      in `quality_v4/analogue/`.* Analogue distance (O7) per test case: distance to the nearest training case in coarse-input space ->
+      in `quality_v4/analogue/`. Result: removing the above-cut training rows leaves the nearest-analogue distance
+      in coarse-input space unchanged (median cut/full ratio 1.00 in every intensity bin, 16,938 test cases >= 20.2),
+      because above-cut inputs look like below-cut ones (A3). The distance grows with intensity (q50 1.78 at 20-50 mm,
+      2.36 at >= 100) whatever the reference. So coarse-input space cannot grade how unseen a case is for R4; that
+      needs a target-space distance (normalised gamma, RESEARCH_NOTES §3 Q5), an evaluation-only diagnostic.*
+      Analogue distance (O7) per test case: distance to the nearest training case in coarse-input space ->
       verify: zero for a training case scored against the training set.
 
 **D. Models (inputs to R4)**

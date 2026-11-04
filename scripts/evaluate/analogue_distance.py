@@ -62,8 +62,8 @@ if __name__ == "__main__":
         q[f"dist_{name}"], q[f"analogue_row_{name}"] = d[:, 0], tr.r.values[keep][i[:, 0]]
         print(f"{name}: reference n={keep.sum()}, query n={len(q)}, distance q50/q90 = "
               f"{np.median(d):.3f} / {np.quantile(d, .9):.3f}", flush=True)
-    q.rename(columns={"r": "store_row", "mx": "target_max"}).to_csv(
-        os.path.join(a.out, f"analogue_{a.split}.csv.gz"), index=False)
+    q = q.rename(columns={"r": "store_row", "mx": "target_max"})
+    q.to_csv(os.path.join(a.out, f"analogue_{a.split}.csv.gz"), index=False)
     hi = q.target_max >= a.u_c
     print(f"above u_c={a.u_c}: n={hi.sum()}, dist_cut q50 {q.dist_cut[hi].median():.3f} vs dist_full "
           f"{q.dist_full[hi].median():.3f}; below: dist_cut q50 {q.dist_cut[~hi].median():.3f}")
