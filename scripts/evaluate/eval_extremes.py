@@ -51,7 +51,8 @@ from src.evaluation.tail_metrics import (
 )
 
 _META = {"test": "TEST_METADATA_FILE", "validation": "VAL_METADATA_FILE",
-         "val": "VAL_METADATA_FILE", "train": "TRAIN_METADATA_FILE"}
+         "val": "VAL_METADATA_FILE", "train": "TRAIN_METADATA_FILE",
+         "nimbus": "NIMBUS_METADATA_FILE"}         # R3 / R5 (DECISIONS §43); store group `nimbus`
 
 
 def _load_sigma(config, device):
@@ -97,6 +98,9 @@ def main():
                          "(DECISIONS §32); 0 = off")
     ap.add_argument("--leave_out", nargs="*", default=None,
                     help="leave-period-out variants: YYYYMMDD-YYYYMMDD ranges or @file of days")
+    ap.add_argument("--gauge_pixels", default=None,
+                    help="CSV station,row,col (radar-grid pixel): write prediction and target at every station "
+                         "inside an evaluated tile to gauge_pixels.csv.gz (DECISIONS §43, C3)")
     ap.add_argument("--tag", default=None, help="row label; defaults to --model")
     ap.add_argument("--output_dir", default="eval_results/extremes")
     args = ap.parse_args()
@@ -175,6 +179,15 @@ def main():
     spec_i = []
     # DECISIONS §43: input-conditioned selection, false alarms, twCRPS (all at the POT level)
     cmax_i, pmax_i, pexc_i, nexc_p_i, nexc_o_i, tw_i = [], [], [], [], [], []
+    gauge_rows, stations_by_tile, n_seen = [], {}, 0
+    if args.gauge_pixels:
+        import pandas as pd
+        gp = pd.read_csv(args.gauge_pixels)
+        P = int(config.get("PATCH_SIZE", 128))
+        for (ty, tx) in {(m[1], m[2]) for m in ds.metadata}:
+            s = gp[(gp.row >= ty) & (gp.row < ty + P) & (gp.col >= tx) & (gp.col < tx + P)]
+            if len(s):
+                stations_by_tile[(ty, tx)] = list(zip(s.station, s.row - ty, s.col - tx))
     rapsd_p = rapsd_o = None
 
     with torch.no_grad():
@@ -232,6 +245,20 @@ def main():
 
             pp = pred.squeeze(1).cpu().numpy()
             tt = target.squeeze(1).cpu().numpy()
+            if stations_by_tile:                  # loader is not shuffled: sample i <-> ds row i
+                ens_np = ens[:, :, 0].cpu().numpy() if args.model == "fm" else None
+                for i in range(pp.shape[0]):
+                    ts, ty, tx = ds.metadata[ds.valid_indices[n_seen + i]][:3]
+                    for st, py, px in stations_by_tile.get((ty, tx), []):
+                        win = (slice(max(py - 1, 0), py + 2), slice(max(px - 1, 0), px + 2))
+                        rec_g = {"timestamp": ts, "station": st, "tile_row": ty, "tile_col": tx,
+                                 "pred": pp[i, py, px], "pred3": pp[i][win].max(),
+                                 "target": tt[i, py, px], "target3": tt[i][win].max()}
+                        if ens_np is not None:
+                            rec_g["ens_mean"] = ens_np[:, i, py, px].mean()
+                            rec_g["ens_p_ge_u"] = float((ens_np[:, i, py, px] >= pot_u).mean())
+                        gauge_rows.append(rec_g)
+            n_seen += pp.shape[0]
             per = fss.update(pp, tt, per_sample=rec is not None)
             if rec is not None:
                 rec.update(per, mse_i[-1], tmax_i[-1], pp, tt)
@@ -290,6 +317,10 @@ def main():
         summary["crps_extreme"] = float(crps[ext].mean())
         summary["ensemble_size"] = args.ensemble
 
+    if args.gauge_pixels:
+        import pandas as pd
+        pd.DataFrame(gauge_rows).to_csv(os.path.join(out_dir, "gauge_pixels.csv.gz"), index=False)
+        summary["gauge_pixels_rows"] = len(gauge_rows)
     with open(os.path.join(out_dir, "extremes_summary.yaml"), "w") as f:
         yaml.safe_dump(summary, f, sort_keys=False)
     np.savez_compressed(os.path.join(out_dir, "extremes_arrays.npz"),
