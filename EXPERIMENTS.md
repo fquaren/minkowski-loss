@@ -723,7 +723,10 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       input- and observation-conditioned scores are perfect.
 - [x] C2. *Done 2026-11-04 (`twcrps_mean`, `twcrps_extreme`).* Threshold-weighted CRPS for the FM ensembles (and the weighted MAE for deterministic models) -> verify:
       reduces to CRPS with a unit weight; matches a closed form for a Gaussian ensemble.
-- [ ] C3. Gauge verification: pixel containing the gauge and its 3x3 maximum, against the gauge hour -> verify:
+- [x] C3. *Done 2026-11-04: `eval_extremes.py --gauge_pixels /home/fquareng/work/data/extremes/MCH/gauge_pixels.csv`
+      (1,827 SMN + DWD stations; DWD pixels match `src.data.geo` exactly) writes prediction / target at each station
+      pixel; NIMBUS evaluable with `--split nimbus`. DWD 10-min data 2010-2025 is already in `validation/gauges/raw`.
+      Smoke test pending a free core.* Gauge verification: pixel containing the gauge and its 3x3 maximum, against the gauge hour -> verify:
       on the radar target itself it reproduces the §22 radar-gauge agreement.
 - [x] C4. *Code done 2026-11-04 (`scripts/evaluate/analogue_distance.py`; self-distance 0 checked); test-split run
       in `quality_v4/analogue/`.* Analogue distance (O7) per test case: distance to the nearest training case in coarse-input space ->
