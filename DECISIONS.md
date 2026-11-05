@@ -3101,3 +3101,216 @@ gpd_xi_obs = 0.183 in every row. Both runs are above the §16 MAE cap (+5%); 2.3
   cross-hatched "x" spots of a few pixels at local maxima inside rain areas (visible at 220 dpi, faint at 7.7e-4).
   *Inference, untested:* the rank reading gives its gradient to one pixel per threshold, so concentrated hot spots are
   the cheap way to match the target's upper quantiles; this is the quantile form's version of gaming the loss.
+
+---
+
+## 43. The extreme-evaluation setup: a ladder of shifts, one at a time (2026-11-04)
+
+**Decision (researcher, 2026-11-04).** The paper's extreme evaluation is a ladder of test sets. Each rung adds
+**one** shift to the rung before it, so that a drop in skill can be attributed. The models are scored on every
+rung; the reported quantity is each model's **degradation from the rung before**, against a baseline on the same
+patches, with day-block intervals (§32). Differences smaller than the interval are not claimed.
+
+| Rung | Test set | Shift added | Role |
+|---|---|---|---|
+| R0 | ODYSSEY test, all tiles | none | bulk reference |
+| R1 | ODYSSEY test above u, and the catalogued events in test (`configs/prominent_events.yaml`, `configs/mch_events.csv`) | conditioning on intensity, in range | in-distribution extremes |
+| R2 | the 101 paired days 2024-07-05..10-30, scored against ODYSSEY and against NIMBUS of the same hours | **product only** | separates product from everything else |
+| R3 | NIMBUS 2024-11 .. 2026-09 (the `nimbus` split minus the paired days) | **new period and events**, at fixed product | product + time |
+| R4 | ODYSSEY test above u_c, scored by models **retrained without any block >= u_c** | **intensity beyond training** | the central hypothesis H3 |
+| R5 | the R4 models on NIMBUS above u_c; MCH events checked against gauges | all of the above | compound robustness |
+| R6 | DPC Italy (roadmap M6) | region and network | only if R4 is positive |
+
+**Why a ladder, and why the paired days.** NIMBUS changes product, period and the truth at once: on the same
+days it has 1.44x the pixels >= 31 mm/h, 2.4x the Euler characteristic and 6x the power at 4 km (§18,
+EXPERIMENTS era gap). A model trained on ODYSSEY geometry is scored against a rougher field, so a NIMBUS score
+alone cannot be read as robustness. The paired days give the product effect on identical weather.
+
+**R4, the hypothesis test.**
+- *Unit:* absolute hourly accumulation, by the target tile's maximum (E1, RESEARCH_NOTES §2). The network
+  extrapolates in absolute values (log1p scaler); a local-quantile cut (E3) would keep 60 mm Mediterranean
+  hours in training while removing 30 mm North-Sea ones. E3 is a sensitivity row only.
+- *Cut by block:* every (day x tile and its 8 neighbours) block of train with a tile maximum >= u_c is removed.
+  ODYSSEY test does not change, so full-data and cut models are scored on the same patches. The result the paper
+  needs is an interaction: the Minkowski model degrades less from R1 to R4 than MSE (RESEARCH_NOTES §1, prediction 2).
+- *u_c is fixed by a rule before any cut training:* the highest level that leaves >= ~100 test days above it
+  (day-block intervals) and at which the radar agrees with gauges. Counts on v4 (tile-hours, train / test):
+  >= 50.1 mm 14,067 / 2,383 (305 test days); >= 80 mm 4,156 / 559; >= 100 mm 2,090 / 249 (109 test days).
+  If the removed fraction exceeds ~1%, a size-matched random-drop control is added.
+- *Input:* at 12.5x coarsening, a 100 mm peak is a ~10-20 mm coarse value (inference, to be checked), so R4
+  asks for an unfamiliar fine peak from a familiar coarse field. Report how far out of range input and target are.
+- *Models:* MSE; MSE + Minkowski (Study-1 choice); MSE + Minkowski **area channel only** (geometry vs the
+  intensity distribution, prediction 3); one competing loss at a verified-active weight; FM; FM + energy_qm.
+  Three seeds for the deterministic cut runs.
+
+**Scoring rules that hold on every rung.**
+- *The forecaster's dilemma.* Both catalogues select events by observed impact, and scoring only cases chosen
+  by the observation rewards over-prediction (energy_qm's known weakness). Every observation-conditioned score is
+  paired with: the same score on cases selected by the **coarse input** (available at inference, independent of
+  the model); false-alarm rates (predicted >= u where observed < u); and a proper score over all cases weighted on
+  the tail (threshold-weighted CRPS). [CITE?: forecaster's dilemma; threshold-weighted CRPS]
+- *Independent truth for held-out extremes:* SwissMetNet gauges (open, 10-min, UTC; 72 of the 92 MCH rain-event
+  stations) and CombiPrecip (archive on request). The radar tail is the least trustworthy part of the data
+  (NIMBUS too heavy from ~31 mm/h against gauges).
+- *Test is scored once per final model*; development stays on validation.
+
+**Showcase cases, fixed now, before any output is seen.** Criteria: in an independent catalogue, documented
+impact, gauges available, one per rung. All events of both catalogues go in an appendix table.
+- C1 (R1): Misox, 2024-06-21 (both catalogues, test, 63.7 mm in 60 min at Grono).
+- C2 (R2): Storm Boris (paired days, European accumulation flagship); MCH `_id` 36, Ticino 2024-07-06 (paired, rate-type).
+- C3 (R5): MCH `_id` 64, Level-4 ex-hurricane, Ticino 2025-08-27/28 (NIMBUS, gauges CEV, SBO, MSG, ORO, VEV).
+  Tile maximum 65.9 mm, so under a cut near 80 mm it is a near-edge case; R5 events are shown ordered by their
+  distance above the training maximum (RESEARCH_NOTES §7.4, O7).
+
+**Dropped:** a held-out storm type (E2; the MCH types label 73 Swiss events, too few to hold one out; used to
+stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the time shift).
+
+**§43 amendments (researcher, 2026-11-04, after todo A1-A4 and B5's first pass).**
+- *u_c = 50.1 mm*, the POT level kept on 2026-10-24 (§37 area), so R1 and R4 share one level. 305 test days
+  above it; above-cut inputs are not out of range (A3: 0.5% exceed the cut-train input maximum), so R4 tests an
+  unfamiliar fine peak from a familiar coarse field. Degradation is reported by distance above the cut
+  (50-80, 80-100, >= 100 mm), which gives prediction 4 from the same runs. Radar-gauge agreement at the level: A1.
+- *Cut = the tile-hours >= u_c only*, not day x 3x3-tile blocks. The splits are week-blocked, so no held-out storm
+  has training data from its week; H3 needs only that no training target holds a pixel >= u_c. Removed: 1.08% of
+  train (the blocks would remove 17.5%). One size-matched random-drop control, for MSE only.
+- *NIMBUS tail (revised the same day, researcher):* the 48 largest held-out tile-hours contain clear errors the
+  screen misses (radial rays, wedge sectors, stationary pixel spikes over consecutive hours; about a third, nearly
+  all NIMBUS). A NIMBUS rule was chosen first, then dropped as infeasible: the only signal that marks them, the
+  persistence-repair count `n_persist`, also acts on 36% of the ODYSSEY test tail (55% >= 150 mm), so a threshold
+  on it would reject real storms at a rate rising with intensity (§17); the ray detector (`n_ray`) is silent on
+  these rays; and the NIMBUS tail >= 150 mm is spread over 37 lead radars (top 3 = 35%), about 5x the per-day
+  rate of ODYSSEY test, i.e. mostly the product reading heavy, not a few broken radars. Gauges could validate a
+  rule only for Swiss and German radars. **Decision: gauge-anchored tail scoring.** The `nimbus` lists stay as they
+  are; bulk metrics on all of NIMBUS; R3/R5 tail claims only on cases checked against gauges (Swiss and German
+  radars, the MCH events, the showcases); the product effect itself from R2. The gallery
+  (`quality_v4/heldout_tail_check/`) goes into the paper as a limitation.
+- *Area-only ablation weight:* gradient-norm parity, its Adam share at the vanilla checkpoint matched to the chosen
+  full Minkowski loss at its weight (`tools/gradient_audit.py`), so only the channels differ.
+- *Study-1 Minkowski loss (researcher, 2026-11-04): the §16 rule is applied* (best exceedance ratio with
+  ΔMAE <= +5% and anisotropy <= 1.2x vanilla): **threshold form at 6.0e-5** (`UNet_Ana_20261025_042024`,
+  +4.7% MAE, exceedance 0.113 -> 0.192), the only bracket row under the cap. The quantile form is reported as a
+  bracket, not as the Study-1 model.
+- *Competitors (researcher): every competing loss, one at a time* — spectral, SSIM (fixed today), wet area and
+  optical flow (fallback now counted and warned) — each against Minkowski in both arms, at gradient-norm parity
+  with Minkowski at 6.0e-5 (Adam share 5.30 at the vanilla checkpoint).
+- *Seeds (researcher):* 3 for MSE and Minkowski in both arms (full-data seed 42 exists for both), 1 for area-only,
+  the four competitors and the MSE random-drop control; more seeds only for a loss whose effect comes within the
+  seed spread of Minkowski's. 21 runs, ~17.5 GPU-days. Queue: `scripts/hpc/run_r4_queue.sh`
+  (`logs/r4_queue.log`, done list `logs/r4_queue_done.txt`), evaluated on validation after each run.
+- *R4 uses the Minkowski grid truncated below the cut, in both arms (researcher, 2026-11-04).*
+  `MINKOWSKI_MAX_THRESHOLD: 50.1` keeps the 13 thresholds below u_c (0.1-31.7 mm) and drops 50.1 and 79 mm.
+  **Why.** The threshold-form loss compares area, perimeter and Euler characteristic at fixed physical
+  thresholds. In the cut training set no target reaches 50.1 mm, so at the 50.1 and 79 mm thresholds every
+  target has zero area, perimeter and Euler characteristic, and any predicted pixel above 50.1 mm adds a penalty:
+  the cut-trained Minkowski model would be taught, explicitly, never to exceed the cut. MSE never sees targets
+  above the cut either, but has no term aimed at those thresholds. If that penalty dominated, Minkowski would
+  degrade more than MSE from R1 to R4 for a mechanical reason, and R4 would reject H3 without testing it. H2/H3
+  (RESEARCH_NOTES §1) claim that geometry learned at *lower* thresholds carries upward; a loss that is silent above
+  the cut tests that claim, a loss that penalises everything above it does not. This is the "fixed physical
+  thresholds cannot express same geometry, higher intensity" limitation of RESEARCH_NOTES §1, where it bites.
+  **Why both arms.** With the truncated grid in the full-data arm too, the loss is identical in the two arms and
+  the only difference between them is the data above the cut, so the R1 -> R4 degradation is attributable to
+  the data alone. The full-grid 6.0e-5 run (`UNet_Ana_20261025_042024`) stays the Study-1 model for R1; R4 compares
+  truncated with truncated. Cost: one more run (truncated, full data, seed 42): 22 runs in all.
+  **Weight.** Integrating over fewer decades changes the loss's scale, so the 6.0e-5 weight is not reused: the
+  truncated loss (and the truncated area-only one) get their own parity audits, Adam share = 5.30 like the
+  competitors. **What it does not fix:** the area-only ablation is truncated the same way; the FM energy_qm reward
+  has the same issue (its perimeter and Euler terms give empty thresholds the largest weight) and needs the same
+  treatment before the FM arm of R4 (E2).
+  Code: `MINKOWSKI_MAX_THRESHOLD` in `build_structural_loss` (targets sliced to the matching prefix, only when set);
+  tests `tests/test_minkowski_channels.py` (equals a loss built on the prefix grid; cannot tell a 60 mm pixel from
+  a 200 mm one, while the full grid can). The startup line reads `minkowski [13 thresholds < 50.1]`.
+- *H1 check at the shape level, criterion fixed before the result (researcher, 2026-11-04).* H1 (RESEARCH_NOTES §1):
+  extreme storms have the geometry of ordinary ones. Tested with the peak-normalised shape features
+  (`src/evaluation/analogue.py`; scale-invariant area, perimeter, Euler at fractions of the patch peak) on the
+  test cases with target max >= u_c = 50.1, against the train rows >= 5 mm (417,331), of which 14,067 are >= u_c.
+  1. *Excess distance:* median(d_cut / d_full) - median(d_rand / d_full), where d_cut is the distance to the nearest
+     analogue without the >= u_c rows and d_rand without 14,067 rows dropped at random from the same pool (seeded);
+     95% day-block bootstrap interval (test processing days).
+  2. *Analogue preference:* share of these cases whose nearest analogue in the full pool is itself >= u_c, against
+     the base rate 14,067 / 417,331 = 3.4%.
+  **Supported** if the excess interval's upper bound is <= 0.05 and the share is <= 2x the base rate; **not
+  supported** if the excess interval's lower bound is > 0.05 or the share is > 5x the base rate; otherwise
+  **inconclusive**. The same numbers on the 20.2-50.1 mm band are reported as a control. Not a test of H3: it says
+  whether the data offer the transferable geometry H3 needs, not whether a model uses it.
+  - *Result (2026-11-05; `quality_v4/analogue/log_test_shape_h1.txt`, script `logs/h1_check_run_20261105.sh`,
+    code 6402caf; first run of the pre-registered check, which `logs/h1_check_chain.sh` never started).*
+    | test cases | n (days) | median d_cut/d_full | median d_rand/d_full | excess [95% day-block] | nearest analogue >= u_c |
+    |---|---|---|---|---|---|
+    | >= 50.1 mm | 2,383 (305) | 1.000 | 1.000 | +0.000 [+0.000, +0.000] | 7.0% (2.1x base 3.4%) |
+    | 20.2-50.1 mm (control) | 14,555 (469) | 1.000 | 1.000 | +0.000 [+0.000, +0.000] | 5.0% (1.5x base) |
+
+    **Verdict by the rule: inconclusive.** The excess bound holds; the share, 2.08x base, misses the 2x bound for
+    "supported" and is far below the 5x bound for "not supported".
+    *Caveat on criterion 1 (found after the result, so it does not change the verdict):* removing rows changes a
+    case's nearest-neighbour distance only if its nearest neighbour was removed, i.e. for the 7.0% (cut) or ~3.4%
+    (random) of cases; the other ratios are exactly 1, so a median ratio cannot move unless more than half the cases
+    lose their analogue. The excess was 0 by construction and carries no information; the verdict rests on criterion 2.
+    *Reading (inference):* 93% of above-cut hours have their closest peak-normalised shape among below-cut hours, so
+    the geometry H3 needs is mostly present in the cut training set; the preference for extreme analogues rises with
+    intensity (1.5x base at 20-50 mm, 2.1x above 50.1), so shape is not intensity-independent even after peak
+    normalisation: closer to "the tail of one geometric distribution" than to "a separate regime", which this check
+    cannot separate. Any sharper statistic (mean log ratio; distance change on the affected 7%) is exploratory,
+    not a revision of this test.
+  - *Open caveat, tile-edge truncation (researcher, 2026-11-05).* A tile is 128 x 128 px (~256 km). If heavier hours
+    are systematically larger storms, more of them are cut by the tile edge, which changes peak-normalised area,
+    perimeter and Euler characteristic. Part of the intensity drift in shape (1.5x -> 2.1x base above) may then be
+    tile-edge truncation, not meteorology. Check before reading any drift as physical: repeat the drift / coverage
+    measurements on hours whose wet area does not touch the tile edge (at each threshold fraction), and report the
+    edge-touching share by intensity bin.
+- *Trend test, pre-registered before any number (researcher, 2026-11-05).* Follows the H1 result above: does the
+  geometry of extremes need **re-weighting** of seen shapes or **extrapolation** of a trend? Four worlds for the
+  peak-normalised shape features (21, standardised with the reference set's mean and sd):
+  W1 reuse (no drift with intensity), W2 re-weighting (drift, extremes inside the seen support), W3 trend (extremes
+  outside the support, along the in-range drift), W4 break (outside, not along it).
+  Script `scripts/evaluate/shape_trend_test.py`. Main run: reference = cut training (train, 5 <= peak < 50.1),
+  target = test >= 50.1 (n = 2,383, 305 days). Backtest: same procedure at a pseudo-cut of 20.2 mm (reference
+  train 5-20.2, target test 20.2-50.1). Bins: 4 log-uniform bins of the reference peak range (main 5/8.9/15.8/28.2/
+  50.1; backtest 5/7.1/10/14.2/20.2). Intervals: 95%, 1,000 day-block bootstrap resamples (processing days).
+  1. **Coverage (M1).** For each query, r = d1 / s: d1 its distance to the nearest reference hour, s the median
+     nearest-neighbour distance (within the reference) of its k = 10 nearest reference hours (local spacing).
+     Compared with test hours of the last in-range bin (main 28.2-50.1, backtest 14.2-20.2) via ratios of median and
+     q90 of r. **Covered** if both ratios' upper bounds <= 1.10; **not covered** if either lower bound > 1.25;
+     otherwise inconclusive.
+  2. **Drift (M2).** Bin means m1..m4 (reference hours). Size D = ||m4 - m1|| / RMS within-bin spread; consistency
+     = min cos between consecutive shifts (m2-m1, m3-m2, m4-m3); bootstrap over training days. **Drift present** if
+     D's lower bound > 0.1; **smooth** if the min cosine's lower bound >= 0.5.
+  3. **Extrapolation vs reuse (M3).** Reuse predictor: the reference hours of the last bin. Trend predictor: the
+     same hours shifted by beta * delta, beta = per-feature OLS slope on log10 peak over all reference hours, delta =
+     mean log10 peak of the target minus that of the last bin. Score: energy distance to the target (predictor
+     subsample 5,000, target subsample <= 4,000, seeded); dED = ED_reuse - ED_trend, bootstrap over target days.
+     **Trend wins** if dED's lower bound > 0; **reuse wins** if its upper bound < 0; otherwise tie. Noise floor
+     reported: ED between two day-halves of the target.
+  **World:** covered and not trend-wins -> W1 (no drift) or W2 (drift); covered and trend wins -> W2 with a
+  predictive drift (W2/W3 boundary); not covered and trend wins -> W3; not covered otherwise -> W4; coverage
+  inconclusive -> the three results are reported without a world.
+  **Validity gate (known answers), else no verdict:** S-reuse (target = test hours of the last in-range bin):
+  covered, trend does not win. S-trend (the same hours shifted by beta * delta of the main run): trend wins. S-out
+  (the same hours shifted by +3 sd on every feature): not covered.
+  **Backtest:** reported beside the main world; if the worlds differ, the main result is flagged, not changed.
+  **Secondary, does not change the verdict (tile-edge caveat above):** share of hours whose {x >= 0.1 peak} touches
+  the tile border, by bin; M2 and M3 repeated on non-edge hours (subsamples of 5,000 per bin).
+  - *Trend test result (2026-11-05; `quality_v4/analogue/trend_test/trend_test.json`, log `logs/shape_trend_test.log`,
+    code 5b86169).* **Verdict by the rule: none (validity gate failed).** S-reuse passed (covered, tie), S-out passed
+    (not covered), **S-trend failed (tie)**. Read by the rule the main arm would be "W2 with predictive drift", the
+    backtest "W2", so it would also have been flagged.
+
+    | | main (ref 5-50.1, target >= 50.1, n 2,383) | backtest (ref 5-20.2, target 20.2-50.1, n 4,000) |
+    |---|---|---|
+    | M1 median / q90 ratio | 1.006 [0.994, 1.016] / 1.016 [0.998, 1.035]: covered | 0.991 [0.982, 1.001] / 0.992 [0.976, 1.007]: covered |
+    | M2 D, min cos (all) | 0.305 [0.287, 0.326], -0.570 [-0.698, -0.314]: drift, not smooth | 0.307 [0.291, 0.323], 0.877 [0.833, 0.909]: drift, smooth |
+    | M2 D, min cos (non-edge) | 0.200 [0.145, 0.262], -0.608: drift, not smooth | 0.080 [0.053, 0.127], -0.706: no drift |
+    | M3 dED (all) | +0.085 [+0.039, +0.136]: trend wins (floor 0.009) | -0.197 [-0.240, -0.155]: reuse wins |
+    | M3 dED (non-edge) | -0.067 [-0.089, -0.043]: reuse wins | -0.051 [-0.061, -0.041]: reuse wins |
+    | edge share (bins / target) | 0.70-0.77 / 0.65 | 0.70-0.78 / 0.75 |
+
+    *Why S-trend could not pass (found after the result; does not change the verdict):* for a target lying exactly on
+    the trend at distance beta*delta from the predictor, dED is second order in |beta*delta|, whereas for a target
+    farther away it is first order; with |beta*delta| ~ 0.1 of the within-bin spread the on-trend case is below the
+    test's resolution. A future gate should place S-trend several deltas out. This is a new test, not a re-reading.
+    *What stands on its own checks:* M1, whose two gate cases passed: in 21-D the held-out extremes are as close to
+    cut-training shapes as in-range hours are (median ratio 1.006, interval within +-2%). *Reading (inference,
+    exploratory):* the drift with intensity is real but not a consistent direction (it reverses between the last two
+    bins), most of the 5-20 mm drift disappears on edge-free hours (tile-edge truncation, caveat above), and a linear
+    trend beats reuse in one of four M3 rows only, the one that includes edge hours. Together: closest to W2
+    (extreme shapes are seen shapes, re-weighted with intensity); no support for "extrapolate a trend".

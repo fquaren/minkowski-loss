@@ -39,13 +39,15 @@ python scripts/evaluate/diagnose_coupling.py config.yaml \
 
 ## Operational traps — these have all cost days at least once
 
-**Shared node: GPU 1 only, at most 8 of 12 cores** (EXPERIMENTS.md §0). GPU 0 belongs to
-someone else and must never be used. At least 4 cores must always stay free. Both limits are
-enforced in two places:
+**Shared node: GPU 1 only, at most 8 of 12 cores** (EXPERIMENTS.md §0). Our GPU is assigned by
+UUID (`GPU-9e0aab27-…`), not by node: it was on node34 until 2026-11-03 and is on node32 since,
+possibly temporarily, so run wherever that card is. GPU 0 belongs to someone else and must never
+be used. At least 4 cores must always stay free. Both limits are enforced in two places, on
+whichever node holds our card (detected by UUID, not hostname):
 - `src/node_limits.py`, run on `import src`: pins the process to cores 4–11, refuses any
-  `CUDA_VISIBLE_DEVICES` other than 1 or GPU 1's UUID, and checks the UUID if CUDA is
-  already up.
-- `scripts/hpc/env.sh`: pins the launcher shell to cores 4–11 and exports GPU 1.
+  `CUDA_VISIBLE_DEVICES` other than our card's PCI-order index or its UUID, and checks the UUID
+  if CUDA is already up.
+- `scripts/hpc/env.sh`: pins the launcher shell to cores 4–11 and exports our card's index.
 
 Don't work around either. Size worker pools so that everything running at once (training,
 DataLoader workers, the fetcher, audits) fits in 8 cores; they all share cores 4–11.

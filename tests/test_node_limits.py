@@ -1,5 +1,6 @@
 """
-Tests for src/node_limits.py: GPU 1 only, cores 4-11, on node34; nothing elsewhere.
+Tests for src/node_limits.py: our GPU only (by UUID), cores 4-11, on whichever node holds our
+card; nothing elsewhere.
 """
 
 import os
@@ -11,7 +12,8 @@ from src import node_limits as nl
 
 @pytest.fixture
 def on_node(monkeypatch):
-    monkeypatch.setattr(nl.socket, "gethostname", lambda: "node34.octopoda")
+    # node32/node34 layout: the other group's card at PCI index 0, ours at 1
+    monkeypatch.setattr(nl, "node_gpu_uuids", lambda: [nl.FORBIDDEN_GPU_UUID, nl.ALLOWED_GPU_UUID])
     monkeypatch.delenv("MINK_NODE_LIMITS", raising=False)
 
 
@@ -47,8 +49,20 @@ class TestGPU:
             monkeypatch.setenv("CUDA_VISIBLE_DEVICES", ok)
             nl.enforce_gpu()
 
+    def test_card_elsewhere_in_pci_order(self, monkeypatch):
+        # Another node where our card sits at PCI index 0: the index follows the card.
+        other = "GPU-00000000-0000-0000-0000-000000000000"
+        monkeypatch.setattr(nl, "node_gpu_uuids", lambda: [nl.ALLOWED_GPU_UUID, other])
+        monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+        nl.enforce_gpu()
+        assert os.environ["CUDA_VISIBLE_DEVICES"] == "0"
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")   # a launcher's hard-coded 1 is refused there
+        with pytest.raises(nl.NodeLimitError):
+            nl.enforce_gpu()
+
     def test_off_node_is_noop(self, monkeypatch):
-        monkeypatch.setattr(nl.socket, "gethostname", lambda: "laptop")
+        # A host without our card (node34 since 2026-11-03, a laptop): nothing is touched.
+        monkeypatch.setattr(nl, "node_gpu_uuids", lambda: ["GPU-1765684b-5b60-4027-4bda-04b926a7bcdb"])
         monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
         nl.enforce()                      # must not raise
         assert os.environ["CUDA_VISIBLE_DEVICES"] == "0"

@@ -17,6 +17,7 @@ STATIC_DEM_PATH: /home/fquareng/work/data/extremes/OPERA/europe_dem_laea.tif
 TRAIN_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4_adv/meta/full_train.txt
 VAL_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4_adv/meta/full_val.txt
 TEST_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4_adv/meta/full_test.txt
+NIMBUS_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4_adv/meta/full_nimbus.txt
 PRECIP_VAR_NAME: TOT_PREC
 PATCH_SIZE: 128
 DOWNSCALING_FACTOR: 12.5

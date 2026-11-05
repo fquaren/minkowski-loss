@@ -1,0 +1,7 @@
+LOG logs/unet_ana_20261104_082811_resume.log
+2026-11-04 08:28:28,955 - INFO - auxiliary structural loss: minkowski (quantile_mass) (space=phys)
+2026-11-04 08:28:28,955 - INFO - structural weight w_max=0.0077 (from command line)
+2026-11-04 08:28:29,235 - INFO - resumed from runs/sr_analytical/UNet_Ana_20261103_041030/unet_latest.pth after epoch 14 (best val_monitor 0.0035)
+Epoch 15/25 [w=0.0077]:   0%|          | 0/10154 [00:00<?, ?it/s]
+
+[exited with code 0]

@@ -171,8 +171,17 @@ class AnalyticalMinkowskiLoss(nn.Module):
         crofton_w_diag: float = 0.217716,
         persistence_thresh_b0: float = 0.0,
         tau_persistence: float = 0.1,
+        channel_weights=(1.0, 1.0, 1.0),
+        target_prefix: bool = False,
     ):
         super().__init__()
+        # target_prefix: the grid is the first Q thresholds of the grid the gamma targets were computed on
+        # (MINKOWSKI_MAX_THRESHOLD, DECISIONS §43), so targets are cut to their first Q columns. Off by
+        # default, so a mismatched grid still fails on shape instead of being sliced silently.
+        self.target_prefix = bool(target_prefix)
+        # [area, perimeter, topology]; (1, 0, 0) is the area-only ablation (DECISIONS §43, §13):
+        # area depends only on the marginal intensity distribution, not on geometry.
+        self.register_buffer("channel_weights", torch.tensor(channel_weights, dtype=torch.float32))
         if area_mode not in ("ste", "soft"):
             raise ValueError(f"area_mode must be 'ste' or 'soft', got {area_mode!r}")
         if topology_mode not in ("euler", "b0"):
@@ -275,6 +284,8 @@ class AnalyticalMinkowskiLoss(nn.Module):
         """
         from src.utils import signed_log1p, signed_expm1
 
+        if self.target_prefix:
+            target_gamma_log = target_gamma_log[..., :self.xi.numel()]
         area, perimeter, topo = self._functionals(pred_phys, anneal_factor)
         pred_log = signed_log1p(torch.stack([area, perimeter, topo], dim=1))  # [B,3,Q]
 
@@ -289,4 +300,4 @@ class AnalyticalMinkowskiLoss(nn.Module):
 
         abs_diff = torch.abs(pred_log - target_log)               # [B,3,Q]
         dist = torch.trapezoid(abs_diff, self.xi, dim=2) / self.xi_range  # log-intensity measure -> [B,3]
-        return dist.sum(dim=1).mean()
+        return (dist * self.channel_weights).sum(dim=1).mean()

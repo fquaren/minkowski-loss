@@ -23,6 +23,7 @@ setting -- the kernel-CRPS interpretation only applies when several members are 
 from __future__ import annotations
 
 import math
+import warnings
 
 import torch
 import torch.nn as nn
@@ -73,15 +74,21 @@ class FFT2DKernelCRPSLoss(nn.Module):
 
 
 class ImageSSIMLoss(nn.Module):
-    """Structural similarity loss on [B, C, H, W] tensors, with a per-sample data range."""
+    """Structural similarity loss on [B, C, H, W] tensors with a fixed data range.
+
+    The data range L is that of the space the loss runs in (1.0 for the log-normalised [0, 1]
+    fields), as in standard SSIM. A per-sample range made c1, c2 tiny on mostly dry patches, and
+    with eps = 1e-6 in the denominator a dry window scored SSIM ~ 0 even for a perfect prediction
+    (a 0.465 floor, DECISIONS §16). c1, c2 > 0 keep the denominator positive, so no eps is needed.
+    """
 
     def __init__(self, window_size: int = 11, k1: float = 0.01, k2: float = 0.03,
-                 eps: float = 1.0e-6) -> None:
+                 data_range: float = 1.0) -> None:
         super().__init__()
         if window_size <= 0 or window_size % 2 == 0:
             raise ValueError("window_size must be a positive odd integer")
         self.window_size = int(window_size)
-        self.k1, self.k2, self.eps = float(k1), float(k2), float(eps)
+        self.k1, self.k2, self.data_range = float(k1), float(k2), float(data_range)
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if pred.shape != target.shape:
@@ -98,15 +105,12 @@ class ImageSSIMLoss(nn.Module):
         var_p = torch.clamp(var_p, min=0.0)
         var_t = torch.clamp(var_t, min=0.0)
 
-        hi = torch.maximum(pred, target).amax(dim=(-2, -1), keepdim=True)
-        lo = torch.minimum(pred, target).amin(dim=(-2, -1), keepdim=True)
-        data_range = (hi - lo).clamp_min(self.eps)
-        c1 = (self.k1 * data_range).square()
-        c2 = (self.k2 * data_range).square()
+        c1 = (self.k1 * self.data_range) ** 2
+        c2 = (self.k2 * self.data_range) ** 2
 
         num = (2.0 * mu_p * mu_t + c1) * (2.0 * cov + c2)
         den = (mu_p.square() + mu_t.square() + c1) * (var_p + var_t + c2)
-        ssim = num / (den + self.eps)
+        ssim = num / den
         return torch.clamp((1.0 - ssim) * 0.5, min=0.0).mean()
 
 
@@ -249,7 +253,13 @@ class OpticalFlowConsistencyLoss(nn.Module):
             try:
                 fx, fy = self._estimate_dense_flow(reference.float(), target.float())
                 teacher = self._advect(reference.float(), fx, fy).to(pred.dtype)
-            except Exception:
+            except Exception as e:
+                # The fallback turns the loss into plain L1 against the target, so it is counted
+                # and reported (roadmap M4), never silent.
+                self.n_fallback = getattr(self, "n_fallback", 0) + 1
+                if self.n_fallback == 1:
+                    warnings.warn(f"opticalflow: flow estimation failed ({e!r}); teacher = target "
+                                  f"for this batch. Further fallbacks are counted in n_fallback.")
                 teacher = target.to(pred.dtype)
         if self.loss_type == "l1":
             out = torch.abs(pred - teacher)
@@ -282,11 +292,13 @@ class QuantileMassMinkowskiLoss(nn.Module):
         from src.trainers.reward_finetune import reward_features
         if target_gamma_log.shape[1] != 3:
             raise ValueError("quantile_mass needs the 3-channel gamma target")
+        if self.geom.target_prefix:
+            target_gamma_log = target_gamma_log[..., :self.geom.xi.numel()]
         lg, tg, W = reward_features(self.geom, pred_phys.unsqueeze(0), target_gamma_log.float(),
                                     anneal_factor, "quantile_mass", target_phys)
         diff = W * (lg[0] - tg).abs()                                         # [B,3,Q]
         dist = torch.trapezoid(diff, self.geom.xi, dim=2) / self.geom.xi_range
-        return dist.sum(dim=1).mean()
+        return (dist * self.geom.channel_weights).sum(dim=1).mean()
 
 
 # ----------------------------------------------------------------------------------
@@ -335,22 +347,31 @@ def build_structural_loss(name: str, config: dict, device) -> StructuralLoss:
         from src.losses.minkowski import AnalyticalMinkowskiLoss
         from src.utils import load_physical_thresholds, load_persistence_thresholds
         topo = config.get("TOPOLOGY_MODE", "euler")
+        u = load_physical_thresholds(config)
+        u_max = config.get("MINKOWSKI_MAX_THRESHOLD")       # R4: no threshold at or above the cut (§43)
+        if u_max is not None:
+            u = u[u < float(u_max)]
         fn = AnalyticalMinkowskiLoss(
-            physical_thresholds=load_physical_thresholds(config),
+            physical_thresholds=u,
+            target_prefix=u_max is not None,
             quantile_levels=config.get("QUANTILE_LEVELS"),
             pixel_size_km=config.get("PIXEL_SIZE_KM", 2.0),
             topology_mode=topo,
             area_mode="ste",
             persistence_thresh_b0=(load_persistence_thresholds(config)[0]
                                    if topo == "b0" else 0.0),
+            channel_weights=config.get("MINKOWSKI_CHANNEL_WEIGHTS", [1.0, 1.0, 1.0]),
         )
         form = config.get("MINKOWSKI_FORM", "threshold")
+        tag = "" if u_max is None else f" [{len(u)} thresholds < {float(u_max):g}]"
+        cw = config.get("MINKOWSKI_CHANNEL_WEIGHTS")
+        tag += "" if cw is None or list(map(float, cw)) == [1.0, 1.0, 1.0] else f" [channels {list(map(float, cw))}]"
         if form == "quantile_mass":
-            return StructuralLoss(QuantileMassMinkowskiLoss(fn), "minkowski (quantile_mass)", "phys",
+            return StructuralLoss(QuantileMassMinkowskiLoss(fn), "minkowski (quantile_mass)" + tag, "phys",
                                   needs_gamma=True, needs_target_field=True).to(device)
         if form != "threshold":
             raise ValueError(f"unknown MINKOWSKI_FORM {form!r}")
-        return StructuralLoss(fn, "minkowski", "phys", needs_gamma=True).to(device)
+        return StructuralLoss(fn, "minkowski" + tag, "phys", needs_gamma=True).to(device)
 
     if name == "spectral":
         fn = FFT2DKernelCRPSLoss(alpha=float(config.get("SPECTRAL_ALPHA", 1.0)))

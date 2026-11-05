@@ -210,3 +210,38 @@ makes it into the paper.
   before quoting a per-event peak.
 - Options B and C (blind-spot repair, masked partial tiles) remain future work; the paper
   paragraph in §6 still applies to the training data.
+
+## 8. The MeteoSwiss event list (received 2026-11-04)
+
+Source: Lionel Moret (MCH), `events_database.xlsx`, kept as delivered in
+`/home/fquareng/work/data/extremes/MCH/events_database_2026-11-04.xlsx`. Cleaned list:
+`configs/mch_events.csv`, built by `scripts/dataset_v2/import_mch_events.py`, which records every
+change in `cleaning_note` and maps each event onto the v4 splits.
+
+- 73 Swiss high-impact events, 2020-02-04 .. 2026-08-25, of every kind (wind, foehn, heat, snow,
+  stratus, rain). By warning: rain 23 (incl. thunderstorms), snow 10, mixed 1, TOT_PREC without
+  a warning 3, none 36. Built for NWP verification, by the look of the ICON variable names and the
+  SwissMetNet station codes per event (our inference). A selection of notable cases, not a
+  climatology: 26 of the 73 are in 2026.
+- **Timezone: Zurich local time** (CET/CEST; Lionel Moret, 2026-11-04). `start` / `end` in the CSV are
+  converted to UTC, our convention; `start_local` / `end_local` keep the sheet's values.
+- Independent truth (checked online 2026-11-04): SwissMetNet station data is Open Government Data
+  with a historical archive, in UTC (`rre150z0` 10-min, `rre150h0` hourly; STAC collections
+  `ch.meteoschweiz.ogd-smn` and `ogd-smn-precip`). 72 of the 92 stations named for MCH rain events are
+  in it, all with 10-min precipitation since 2015 or earlier; the 20 missing are mostly `TI*` codes,
+  probably a cantonal Ticino network. CombiPrecip is open only as a rolling 14-day window
+  (`ch.meteoschweiz.ogd-radar-precip`); its archive is "available on request" from MeteoSwiss. The
+  Swiss Data Cube (GRID-Geneva) indexes hourly CombiPrecip GeoTIFFs back to 2011; licence not checked.
+- Fixed: one year typo (2923 -> 2023, `_id` 34), whitespace in names and times, HH:MM times, the
+  spelling "thuderstorms". `_id` 7 and 8 are one window with two station groups; 24 and 25 have
+  no name.
+- Rain events by v4 split: nimbus 15, test 5, train 2, val 1 (+ snow and mixed: nimbus 9).
+  The test ones are Brigitte (2020-10-02; the same cyclone as our Storm Alex, by our identification
+  from the dates and the German naming of lows, not checked against a source), the July 2021 flood
+  (same dates as our low "Bernd"; same system not checked), 2022-08-19 (in the ISO week of our Mediterranean
+  derecho), Misox and Maggia (both in our catalogue). The bbox match in `prominent_event` only
+  finds the last two, because our Alex and Bernd boxes do not reach Switzerland.
+- Switzerland lies in two tiles, (640, 768) and (640, 896). Each is 256 km wide and covers parts
+  of FR/DE/IT/AT, so `v4_tile_max_mm` is not the event's own maximum.
+- Storm Sabine (`_id` 1) has 14 of 96 possible tile-hours and a tile maximum of 0.012 mm. Check
+  the screen and the timezone before using it.

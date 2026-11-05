@@ -1,6 +1,6 @@
 # Experiment tracker
 
-Last updated: 2026-10-08
+Last updated: 2026-11-04
 
 **Read first:** `DECISIONS.md` (why things are the way they are, and what is already ruled
 out), then `CLAUDE.md` (operational traps), then this file (the compute node in §0, what exists and what's next).
@@ -26,7 +26,11 @@ level and is re-derived for hourly data.
 
 ## 0. Compute node
 
-All runs are on **node34**, which is **shared with other users**.
+Our group is assigned **one GPU, identified by its UUID** (`GPU-9e0aab27-…`, below), not a node.
+Runs go wherever that card is. It was in **node34** until the reboot of 2026-11-03 and is in
+**node32** since (same two cards, same PCI slots, same CPU layout); the move may be temporary.
+node34 now holds one unrelated card (`GPU-1765684b-…`). The node is **shared with other users**.
+To find the card: `grep -l 9e0aab27 /proc/driver/nvidia/gpus/*/information` on each node.
 
 | | |
 |---|---|
@@ -53,9 +57,13 @@ others.
   - *GPU:* if nothing is set, it sets GPU 1 in PCI order. It raises `NodeLimitError` for any
     other `CUDA_VISIBLE_DEVICES` (including `0`, `0,1`, or GPU 0's UUID). If CUDA is already
     initialised, it checks the visible device's UUID.
-  - It is a no-op on other hosts. Tests: `tests/test_node_limits.py`.
-- `scripts/hpc/env.sh` exports GPU 1 in PCI order (it previously exported
-  `CUDA_VISIBLE_DEVICES=0`), and pins the launching shell to cores 4–11.
+  - It is a no-op on hosts without our card. *Since 2026-11-04 it detects the node by our GPU's UUID*
+    (read from `/proc/driver/nvidia/gpus`, without starting CUDA), not by hostname. The hostname check
+    (`node34`) silently switched every guard off when the card moved to node32. The default index is our
+    card's position in PCI order, so it follows the card. If the card lands on a node without cores
+    4-11, `import src` raises instead of pinning wrongly. Tests: `tests/test_node_limits.py`.
+- `scripts/hpc/env.sh` exports our card's PCI-order index (1 on node32; it previously exported
+  `CUDA_VISIBLE_DEVICES=0`), and pins the launching shell to cores 4–11 when the card is on the node.
 - The launchers with a `GPU` override (`run_full_eval`, `eval_losses`, `launch_eval_losses`,
   `sweep_reward`, `check_sampler`) refuse anything but `GPU=1`. `run_diagnosis.sh` used
   GPU 0 and now uses 1.
@@ -258,6 +266,8 @@ isoperimetric scatter.
 ## 5. TODO
 
 ### Highest value
+- [ ] **Current plan (2026-11-04): the extreme-evaluation todo list,** section "Extreme evaluation: the
+      robustness ladder" below (DECISIONS §43). It supersedes the o.o.d. items scattered in this file.
 - [x] **Switch to hourly targets and finish the screen before Phase 3 (decided 2026-10-08).**
       The target is the 1-h accumulation (DECISIONS §21). A rule is kept only if it raises
       agreement with independent data (DECISIONS §22). The rule-by-rule review, the MLCast /
@@ -633,6 +643,141 @@ isoperimetric scatter.
       `reward_threshold_share.py` pattern) and (ii) share of members/predictions out of reach; prediction: at
       matched gradient norm, tail columns rank as (i)-(ii). Include an inverse-mass-weighted FM loss as the
       non-proper baseline.
+
+### Extreme evaluation: the robustness ladder (added 2026-11-04, DECISIONS §43)
+Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
+
+**A. Fix the rules before any result (nothing here needs training)**
+- [x] A1. *Done 2026-11-04 (u_c = 50.1 by the researcher; gauge check `scripts/data_quality/gauge_levels.py`,
+      `quality_v4/gauge_levels/`, SwissMetNet on the two Swiss tiles, 6.4 M pairs, 281 stations). Both conditional
+      ratios fall smoothly with level (radar >= u: median gauge/radar 0.75 / 0.60 / 0.36 / 0.21 / 0.15 at 5 / 10 / 20.2 /
+      31.7 / 50.1 mm; gauge >= u: radar 3x3 / gauge 0.49 -> 0.33), as point-vs-pixel representativeness under selection
+      predicts; no break at 50.1, so u_c stands. They are symmetric at 20 mm (0.36 vs 0.37) and diverge above (0.21 vs
+      0.34 at 31.7, 0.15 vs 0.29 at 50.1), with radar >= u hours unconfirmed by the gauge (< u/4) rising 12% -> 57% while
+      misses stay ~10% to 31.7 mm: the radar target reads somewhat heavy above ~30 mm (inference; hail is the usual
+      cause). ODYSSEY and NIMBUS alike over CH. Weak at the level that matters: 23 pairs at 50.1 mm.
+      *DWD (German gauges, 2026-11-04; `quality_v4/gauge_levels_dwd/`, 8.9 M pairs, 1,452 stations, tile-hours with
+      max >= 10 mm), shifted window:* ODYSSEY radar >= u: gauge/radar 0.89 / 0.82 / 0.72 / 0.63 / 0.58 at 5 / 10 /
+      20.2 / 31.7 / 50.1 mm, unconfirmed (gauge < u/4) 7% -> 16% at 50.1 (n = 56); gauge >= u: radar 3x3 / gauge
+      0.79 -> 0.53, misses 1% -> 10%. Smooth and nearly symmetric: **over Germany the ODYSSEY tail holds to 50 mm**, so
+      u_c = 50.1 is supported on 2.4x the Swiss sample; the Swiss heaviness above 30 mm (n = 23) is regional (Alps).
+      NIMBUS reads heavy at the top: radar >= u gauge/radar 0.70 -> 0.26 at 50.1, unconfirmed 5% -> 33% (58% at 80,
+      n = 12), while it misses no heavy gauge hour (radar 3x3 / gauge ~0.7, misses 0%), and it has 3.5x more >= 50 mm
+      hours than the gauges at the same points (70 vs 20; ODYSSEY 56 vs 125). This is the quantitative support for
+      the gauge-anchored NIMBUS tail scoring (§43).* Fix u_c: count test days above 50 / 60 / 80 / 100 mm (tile max, screened v4), and the gauge agreement at
+      each level on ODYSSEY hourly sums. Write the value and the counts into DECISIONS §43 -> verify: >= ~100 test
+      days above u_c, written down before A2 runs.
+      *Counts 2026-11-04 (screened v4 lists; tile-hours / days with tile max >= u):*
+
+      | u (mm) | test | test days | nimbus days | val days | train tile-h | removed: day x 3x3 tiles | tile-hour only |
+      |---|---|---|---|---|---|---|---|
+      | 50.1 | 2,383 | 305 | 569 | 205 | 14,067 | 17.5% | 1.08% |
+      | 60 | 1,458 | 258 | 521 | 173 | 8,974 | 13.5% | 0.69% |
+      | 80 | 559 | 171 | 389 | 131 | 4,156 | 8.1% | 0.32% |
+      | 100 | 249 | 109 | 303 | 94 | 2,090 | 4.8% | 0.16% |
+      | 125 | 98 | 60 | 197 | 53 | 884 | 2.6% | 0.07% |
+
+      By the day rule, u_c <= 100 mm. Gauge agreement per level still open (needs B2).
+      **Proposed amendment to §43 (pending the researcher):** remove only the tile-hours >= u_c, not day x 3x3
+      blocks. The v4 splits are blocked by ISO week, so no held-out storm has training data from its week, and
+      H3 needs only that no training target holds a pixel >= u_c, which removing those tile-hours guarantees.
+      The 3x3-day block would remove 8.1% of train at 80 mm (5.9% at +-6 h), forcing a random-drop control;
+      tile-hours alone remove 0.32% and need none.
+- [x] A2. *Done 2026-11-04 (tile-hours only, DECISIONS §43 amendment): `full_train_cut50.1.txt` (no row >= 50.1,
+      1.08% removed) and the control `full_train_randdrop50.1.txt` (same count, random) in `patches_v4_adv/meta/`.*
+      Cut lists: drop every (day x tile + 8 neighbours) block of train with tile max >= u_c, write
+      `full_train_cut<u_c>.txt` -> verify: no train tile-hour >= u_c remains; report the removed fraction; add a
+      size-matched random-drop control if it is > ~1%.
+- [x] A3. *Done 2026-11-04 (`scripts/data_quality/cut_input_range.py`, `quality_v4/cut_input_range/`), u_c = 50.1:*
+      held-out test inputs have coarse max q50 6.6 mm (NIMBUS 6.9); only 0.5% exceed the largest cut-train input
+      (29.4 mm) and 4.2% its q99.9 (20.1 mm); target / coarse max q50 10.3. So R4 asks for an unfamiliar fine peak
+      from a familiar coarse field, not for input extrapolation. One train input has a 191 mm coarse max (artefact).
+      Input check: coarse-input maximum of the above-u_c test patches against the training distribution of
+      coarse maxima -> verify: one histogram, and the share of above-cut inputs that are themselves out of range.
+- [x] A4. *Done 2026-11-04: `notes/event_table.csv` (`scripts/dataset_v2/event_table.py 50.1`): 18 events in
+      R1|R4, 10 in R1 only, R2 3 (Boris R2|R5), R3 8, R3|R5 8, 5 MCH events not scored (train/val); showcases marked.*
+      Showcases and appendix table frozen: C1 Misox, C2 Boris + MCH 36, C3 MCH 64 (§43); table of every event in
+      both catalogues with split, rung, tile max -> verify: committed before any R2-R5 output exists.
+
+**B. Data for R2 and the independent truth**
+- [ ] B1. *Running 2026-11-04: ODYSSEY scan of the 101 days (`quality_v4/hourly_odyssey_paired/`, ~4 h), then
+      `scripts/hpc/run_paired_build.sh` (meta, store, target, gamma -> `patches_v4_paired`).* Paired store: run the v4 hourly pipeline (screen, hourly sum, advection correction, store, gamma) on the
+      ODYSSEY originals 2024-07-05..10-30 (`raw/OPERA_orig_postswitch/`) for the same tile-hours as NIMBUS -> verify:
+      tile-hour counts per product; Boris and MCH 36 present in both; check how the 150 mm/h cap on the ODYSSEY
+      copies interacts with the v4 screen.
+- [ ] B2. *(Running 2026-11-04: `scripts/data_quality/fetch_smn.py` -> `/home/fquareng/work/data/extremes/MCH/smn/`,
+      all ~300 stations of both open networks, 2010 -> now, log `.../MCH/fetch_smn.log`. Checked on LUG: the
+      hourly value at T equals the sum of the 10-min values stamped T-50..T exactly, so both are end-of-interval
+      stamps and gauge hour T matches radar hour T.)* Gauges: fetch SwissMetNet `rre150z0` / `rre150h0` (STAC `ch.meteoschweiz.ogd-smn`, `ogd-smn-precip`) for
+      the 72 listed stations, event windows +-1 day, plus the Swiss events of our catalogue; map stations to radar
+      pixels with `src.data.geo` -> verify: hourly gauge sums equal the sum of the 10-min values; the gauge-hour
+      convention matches ACRR (H-45..H vs the gauge's end-of-interval).
+- [ ] B3. CombiPrecip: request the hourly reanalysis (CPCH) archive for the event days 2020-2026 via the MeteoSwiss
+      contact form; meanwhile check the licence of the Swiss Data Cube copy. Ask about the `TI*` stations
+      (20 of 92 not in open data).
+- [x] B4. Storm Sabine (`_id` 1): 15 of 96 tile-hours, max 0.015 mm. *Explained 2026-11-04: not a screen failure.*
+      The MCH window (2020-02-07 23:00 .. 02-09 23:00 UTC) is the wind phase; the CH tiles are dry in the hourly
+      scan (mostly < 1 mm, at most 6.3 mm). The front's rain arrives on 02-10, after the window. The lists sample
+      tile-hours by intensity stratum, so dry hours are thinned (15 of 96 kept). The scan has an isolated 100.1 mm
+      hour at 2020-02-10 00 UTC between 4.0 and 3.7 mm: no day-boundary bug (00 UTC hours have 4 frames and the
+      lowest >= 50 mm share of the day; isolated >= 50 mm spikes are 2% of >= 50 mm tile-hours, at all hours), so it
+      goes to the B5 gallery as a likely artefact.
+- [ ] B5. *First pass 2026-11-04 (`scripts/data_quality/heldout_tail_check.py`, `quality_v4/heldout_tail_check/`):
+      isolated single-hour spikes are 1.8% of test and 0.4% of NIMBUS tile-hours >= 50.1, none >= 150. But among the
+      48 largest held-out tile-hours (all but one NIMBUS) about a third are clear errors the screen misses: radial rays
+      and wedge sectors (e.g. (768,1280) 2025-07-09 05-07 UTC, (128,384) 2025-01-06) and stationary single-pixel
+      spikes persisting over hours ((768,1280) 2026-03-31/04-01, 314-358 mm). Random sample: ~4-5 of 48 suspect.
+      Decision (DECISIONS §43 amendments): gauge-anchored tail scoring for R3/R5; no NIMBUS rule (a threshold on
+      `n_persist` would reject real storms; `n_ray` is silent; the tail is spread over 37 radars).* Look at every held-out tile above u_c (test and NIMBUS) and the 2022-08-19 179 mm tile, for clear errors
+      only (§17) -> verify: a gallery and a rejection count by intensity bin.
+
+**C. Evaluation code**
+- [x] C1. *Done 2026-11-04 (`src/evaluation/conditioning.py`, keys `conditioned`, arrays in `eval_extremes.py`;
+      tests `tests/test_conditioning.py`). Smoke test on 2,560 `extremes_val` patches, bicubic: the observation- and
+      the input-selected sets (127 each) share only 27% of their cases.* Input-conditioned selection in `eval_extremes.py` (cases chosen by the coarse-input maximum), and
+      false-alarm rates -> verify: on the identity model (prediction = target) false alarms are 0 and the
+      input- and observation-conditioned scores are perfect.
+- [x] C2. *Done 2026-11-04 (`twcrps_mean`, `twcrps_extreme`).* Threshold-weighted CRPS for the FM ensembles (and the weighted MAE for deterministic models) -> verify:
+      reduces to CRPS with a unit weight; matches a closed form for a Gaussian ensemble.
+- [x] C3. *Done 2026-11-04: `eval_extremes.py --gauge_pixels /home/fquareng/work/data/extremes/MCH/gauge_pixels.csv`
+      (1,827 SMN + DWD stations; DWD pixels match `src.data.geo` exactly) writes prediction / target at each station
+      pixel; NIMBUS evaluable with `--split nimbus`. DWD 10-min data 2010-2025 is already in `validation/gauges/raw`.
+      Smoke test pending a free core.* Gauge verification: pixel containing the gauge and its 3x3 maximum, against the gauge hour -> verify:
+      on the radar target itself it reproduces the §22 radar-gauge agreement.
+- [x] C4. *Code done 2026-11-04 (`scripts/evaluate/analogue_distance.py`; self-distance 0 checked); test-split run
+      in `quality_v4/analogue/`. Result: removing the above-cut training rows leaves the nearest-analogue distance
+      in coarse-input space unchanged (median cut/full ratio 1.00 in every intensity bin, 16,938 test cases >= 20.2),
+      because above-cut inputs look like below-cut ones (A3). The distance grows with intensity (q50 1.78 at 20-50 mm,
+      2.36 at >= 100) whatever the reference. So coarse-input space cannot grade how unseen a case is for R4; that
+      needs a target-space distance (normalised gamma, RESEARCH_NOTES §3 Q5), an evaluation-only diagnostic.*
+      Analogue distance (O7) per test case: distance to the nearest training case in coarse-input space ->
+      verify: zero for a training case scored against the training set.
+
+**D. Models (inputs to R4)**
+- [x] D1. *Done 2026-11-04: threshold 6.0e-5 by the §16 rule.* Study-1 choice (form and weight) by the §16 rule, after the qm 7.7e-3 eval.
+- [x] D2. *Done 2026-11-04: `MINKOWSKI_CHANNEL_WEIGHTS` (default [1,1,1]); tests `tests/test_minkowski_channels.py`
+      (unit weights reproduce both forms; area-only invariant to shuffling the prediction's pixels, full loss not).
+      Its weight still needs a rule (decision pending).* Area-only Minkowski variant (perimeter and Euler weights 0); not in the code yet -> verify: unit weights
+      reproduce the current loss; area-only equals the W1-type form of DECISIONS §13 on a synthetic pair.
+- [x] D3. *Changed 2026-11-04: all four competitors, each at parity with Minkowski 6.0e-5. SSIM floor fixed and
+      optical-flow fallback made visible (`tests/test_competing_fixes.py`); weights from the parity audits in the
+      R4 queue.* One competing loss at a verified-active weight (M4; fix SSIM or take spectral at its parity weight).
+- [ ] D4. Study 2: dist_qm_ret result (running), then energy_qm 3 seeds.
+
+**E. Training for R4** (after A1-A2, D1-D3)
+- [ ] E1. *Queued 2026-11-04 (`scripts/hpc/run_r4_queue.sh`, starts after tonight's chain): parity audits, then 21
+      runs (seed-42 pair MSE/Minkowski cut first). See DECISIONS §43 amendments for the list.* Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
+      GPU-days) -> verify: startup lines (loss, weight, train list = cut list, GPU).
+- [ ] E2. FM base model on the cut list, sigma_r recomputed for its backbone, then energy_qm on top -> verify: the
+      `config FM_RESIDUAL_SCALE` line. Cost of the FM base run to be measured.
+
+**F. Scoring (test touched once per final model)**
+- [ ] F1. R0, R1, R3 for every final model; R2 on the paired store.
+- [ ] F2. R4 and R5 for the full and cut models; degradation per rung with day-block intervals and the
+      leave-period-out variant; observation- and input-conditioned scores side by side.
+- [ ] F3. Gauge verification for the showcases and every MCH rain event outside train.
+- [ ] F4. Figures: one panel set per showcase (input, target, each model, gauges); the appendix event table.
+- [ ] (R6, DPC Italy: only if R4 is positive.)
 
 ### Validation: every stage passes its checks before the next starts (added 2026-10-19)
 `scripts/validate/validate_stage.py <stage>` writes `validation/<stage>/<date>_<commit>.md`
