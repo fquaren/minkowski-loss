@@ -36,3 +36,5 @@ above u_c=50.1: n=2383, dist_cut q50 0.576 vs dist_full 0.570; below: dist_cut q
 
 This is **not** the pre-registered H1 verdict (DECISIONS §43, commit 6402caf). That verdict needs the random-drop
 control and the day-block bootstrap from `logs/h1_check_chain.sh`, which never started.
+It was run on 2026-11-05 (`logs/h1_check_run_20261105.sh`): **inconclusive**, recorded in DECISIONS §43.
+The first run's outputs are kept as `quality_v4/analogue/*_20261104.*`.

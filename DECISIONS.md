@@ -3233,3 +3233,22 @@ stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the ti
   supported** if the excess interval's lower bound is > 0.05 or the share is > 5x the base rate; otherwise
   **inconclusive**. The same numbers on the 20.2-50.1 mm band are reported as a control. Not a test of H3: it says
   whether the data offer the transferable geometry H3 needs, not whether a model uses it.
+  - *Result (2026-11-05; `quality_v4/analogue/log_test_shape_h1.txt`, script `logs/h1_check_run_20261105.sh`,
+    code 6402caf; first run of the pre-registered check, which `logs/h1_check_chain.sh` never started).*
+    | test cases | n (days) | median d_cut/d_full | median d_rand/d_full | excess [95% day-block] | nearest analogue >= u_c |
+    |---|---|---|---|---|---|
+    | >= 50.1 mm | 2,383 (305) | 1.000 | 1.000 | +0.000 [+0.000, +0.000] | 7.0% (2.1x base 3.4%) |
+    | 20.2-50.1 mm (control) | 14,555 (469) | 1.000 | 1.000 | +0.000 [+0.000, +0.000] | 5.0% (1.5x base) |
+
+    **Verdict by the rule: inconclusive.** The excess bound holds; the share, 2.08x base, misses the 2x bound for
+    "supported" and is far below the 5x bound for "not supported".
+    *Caveat on criterion 1 (found after the result, so it does not change the verdict):* removing rows changes a
+    case's nearest-neighbour distance only if its nearest neighbour was removed, i.e. for the 7.0% (cut) or ~3.4%
+    (random) of cases; the other ratios are exactly 1, so a median ratio cannot move unless more than half the cases
+    lose their analogue. The excess was 0 by construction and carries no information; the verdict rests on criterion 2.
+    *Reading (inference):* 93% of above-cut hours have their closest peak-normalised shape among below-cut hours, so
+    the geometry H3 needs is mostly present in the cut training set; the preference for extreme analogues rises with
+    intensity (1.5x base at 20-50 mm, 2.1x above 50.1), so shape is not intensity-independent even after peak
+    normalisation: closer to "the tail of one geometric distribution" than to "a separate regime", which this check
+    cannot separate. Any sharper statistic (mean log ratio; distance change on the affected 7%) is exploratory,
+    not a revision of this test.
