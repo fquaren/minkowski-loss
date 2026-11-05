@@ -1,0 +1,11 @@
+{
+ "target_adam_share": 5.299870043184358,
+ "weights": {
+  "spectral": 0.15,
+  "ssim": 0.016,
+  "wetarea": 0.016,
+  "opticalflow": 0.014,
+  "mink_trunc": 5.2e-05,
+  "area_trunc": 0.00013
+ }
+}

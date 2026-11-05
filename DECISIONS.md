@@ -568,6 +568,13 @@ buffered from the rest like any other split.
 - *Reversible:* the era is stored per patch (`era` in `full_*_info.csv.gz`), and the split
   is metadata only (`--nimbus_start ''` disables it).
 
+**Status note (researcher with Tom, 2026-11-05).** Extremes are evaluated within ODYSSEY only for now. Do not
+evaluate or report the NIMBUS extremes (`extremes_nimbus`, `events_nimbus`, the `nimbus` split): the models never
+trained on NIMBUS, so a score there mixes product shift with extremeness, and the problem we are solving (reaching
+the right intensities and structure in heavy rain) does not need the product-shift test. The R4 cut ladder (§43) is
+consistent with this: its held-out above-cut tile-hours are ODYSSEY, i.e. new intensity from the same product, not a
+distribution shift in product. The NIMBUS split stays on disk unchanged; this defers the test, it does not drop it.
+
 ---
 
 ## 19. v4 screen: radar ceilings, radar-wide failures, and a guarded repair
@@ -3101,6 +3108,69 @@ gpd_xi_obs = 0.183 in every row. Both runs are above the §16 MAE cap (+5%); 2.3
   cross-hatched "x" spots of a few pixels at local maxima inside rain areas (visible at 220 dpi, faint at 7.7e-4).
   *Inference, untested:* the rank reading gives its gradient to one pixel per threshold, so concentrated hot spots are
   the cheap way to match the target's upper quantiles; this is the quantile form's version of gaming the loss.
+
+**dist_qm with retention (2026-11-05; the follow-up above).** Run `FMdistqmret_v4adv_20261105_163457`, from
+`fm_mink_latest.pth`; log: "config FM_RESIDUAL_SCALE=0.01267", "reward mode=distributional form=quantile_mass K=1 M=4
+w_reward=1 w_prox=1 w_retain=1 w_spread=0.5". Parity check before training (`logs/grad_norm_terms_v4adv_dist_qm_ret.txt`):
+reward 70% of the total gradient norm, cos(reward, total) +0.70. Evals `eval_results/extremes/v4adv_val{ext,sub}/fm_dist_qm_ret`,
+same patches, u = 50.1 mm, 16 members; gpd_xi_obs equal to the other rows (+0.155 valext, -0.032 valsub).
+
+| Row | valext exc. ratio | valext RL bias | valext FSS@50.1 w5 | valsub exc. ratio | valsub FSS@50.1 w5 | Anisot. ext / sub | Peak ratio ext. (ext / sub) | RMSE ext / sub |
+|---|---|---|---|---|---|---|---|---|
+| FM clean | 0.298 | 0.367 | 0.285 | 0.272 | 0.337 | 1.31 / 1.40 | 0.33 / 0.55 | 1.153 / 0.336 |
+| dist_qm (w_retain 0, w 1e-3) | 0.273 | 0.340 | 0.267 | 0.248 | 0.310 | 1.32 / 1.33 | 0.29 / 0.42 | 1.152 / 0.335 |
+| **dist_qm_ret** | 0.465 | 0.185 | 0.304 | 0.672 | **0.448** | **1.47 / 1.48** | 0.37 / 0.69 | 1.154 / 0.337 |
+| energy_qm | **0.665** | **0.089** | **0.348** | **0.914** | 0.246 | 1.36 / 1.34 | 0.34 / 0.60 | 1.160 / 0.339 |
+
+- *Retention plus parity weight turns dist_qm from no effect into a clear tail effect.* Exceedance ratio 0.27 -> 0.47
+  (valext) and 0.25 -> 0.67 (valsub), RL bias 0.340 -> 0.185, at unchanged RMSE. Two settings changed at once
+  (w_retain 0 -> 1, w_reward 1e-3 -> 1), so the gain is not attributed to either. Single seed.
+- *Against energy_qm at matched settings except M (4 vs 16) and the spread term:* energy_qm still moves the tail more
+  (valext exceedance 0.67 vs 0.47, RL bias 0.09 vs 0.19); dist_qm_ret has the best FSS@50.1 on valsub (0.448) and
+  is second on valext. The two modes are now comparable, and energy is ahead on the tail columns.
+- *Anisotropy is the highest of any FM row (1.47-1.48, vs 1.31-1.40 FM and 1.34-1.36 energy_qm).* Field panels
+  (`figures/v4adv_valext_fields_qmret/`, bundle `eval_results/fields/v4adv_valext_qmret.npz`; the six §38 patches,
+  rows vanilla, FM, dist_qm, dist_qm_ret, energy_qm, one member each) show no grid-aligned striping or blocks at
+  panel resolution; cores are compact and placed like FM's. The anisotropy rise is therefore not visible on these six
+  patches; a per-patch anisotropy ranking over valsub is the check before calling it an artefact or clearing it.
+- Patch maxima (target / dist_qm_ret / energy_qm, mm): 354 191 / 79 / 249; 519 143 / 30 / 32; 979 87 / 57 / 97;
+  257 63 / 71 / 43; 393 44 / 15 / 38; 764 30 / 27 / 21. Single draws: the member drawn depends on the model order in
+  the dump, so these energy_qm values differ from the §42 panel values above and are not comparable with them.
+
+*Summary plots for dist_qm_ret (2026-11-05; `figures/v4adv_val{ext,sub}_summary_qmret/`, rows vanilla, mink 6e-5, FM,
+FM + dist, dist_qm, dist_qm_ret, energy_qm).*
+- *Return levels, two readings that differ.* The summary yaml evaluates every row at the observed series' m, with the
+  row's own exceedance rate, so a rate deficit lowers the level: valext lambda = 10 / 100 / 1000 gives 74 / 120 / 183 mm
+  against 90 / 147 / 228 observed (-18 / -18 / -20%; energy_qm 84 / 151 / 267). The `tail_survival.png` curves put each
+  row at its *own* expected exceedance count (`plotting.py`, `_return_level_curve`), so they show the shape of the
+  exceedances alone. In that view dist_qm_ret lies just under the target at every lambda (fitted xi 0.13 vs 0.155,
+  sigma 14.1 vs 14.4) and energy_qm overshoots (xi 0.23). Both views are right; the plot hides the rate deficit, and
+  §42's earlier "overshoot" reading of energy_qm used the yaml numbers.
+- *Ranked patch maxima (no fit; peak_ratio x tmax), ranks 1 / 2 / 3 / 5 / 10 / 20 / 30, mm:*
+  - valext target 202 191 175 160 143 123 107; dist_qm_ret 221 192 176 146 117 92 85; energy_qm 377 316 225 189 150
+    129 110; dist_qm 189 186 117 108 85 75 66.
+  - valsub target 152 151 144 128 101 76 59; dist_qm_ret 206 165 164 129 101 68 54; energy_qm 257 201 181 165 112 89
+    72; dist_qm 135 110 80 70 57 48 43.
+  - Reading: dist_qm_ret has no top-rank overshoot of energy_qm's kind (its top 3 are within 10% on valext and
+    1.1-1.4x on valsub, vs 1.3-1.9x for energy_qm). It is 15-25% short from rank 10 down on valext, where energy_qm
+    is within ~5%. So energy_qm makes more extremes and makes the largest too large; dist_qm_ret makes fewer, and
+    the largest are the right size.
+- *Spectrum (valext):* dist_qm_ret's ratio to the target is ~0.45 below 30 km, the same as FM + dist and between FM
+  (~0.3) and energy_qm (0.5-0.8). RAPSD distance 0.74 against 0.41 for energy_qm.
+- *SAL (valext):* amplitude A ≈ 0 (+0.01, as energy_qm), structure S 0.51 (FM 0.64, dist 0.54, energy_qm 0.40).
+- *Perception-distortion (valext):* dist_qm_ret sits on the Pareto front between dist_qm (lowest rmse_extreme) and
+  energy_qm (lowest spectral distance). The rmse_extreme spread across FM rows is 2.88-2.93, which is small (CLAUDE.md, reading
+  results, item 5).
+
+**Decision (researcher, 2026-11-05): FM + energy_qm is the FM model.** Future FM evals and plots keep FM clean and
+FM + energy_qm (`FMenergyqm_v4adv_20261031_022957`, `fm_mink_latest.pth`) as the FM rows, and FM + energy_qm is the
+model compared against the other losses. The dist rows above stay as recorded. Known weak point to report alongside
+it: its largest patch maxima overshoot (1.3-1.9x at ranks 1-3), where dist_qm_ret does not.
+*Kept in reserve: FM + dist_qm_ret* (`runs/sr_fm_minkowski/FMdistqmret_v4adv_20261105_163457/fm_mink_latest.pth`;
+evals `eval_results/extremes/v4adv_val{ext,sub}/fm_dist_qm_ret`, figures `figures/v4adv_val{ext,sub}_summary_qmret/`,
+`figures/v4adv_valext_fields_qmret/`). Use it if the energy_qm top-rank overshoot becomes the issue: its largest
+patch maxima are the right size and its valsub FSS@50.1 is the best FM row, at a smaller exceedance ratio (0.47 vs
+0.67 valext) and the highest FM anisotropy (1.47, unexplained).
 
 ---
 

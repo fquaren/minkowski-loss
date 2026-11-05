@@ -1,0 +1,32 @@
+{
+ "config": "/work/fquareng/ch2/minkowski-loss/.claude/worktrees/rtx6000-node-detection-750d7c/logs/r4_configs/audit_area_trunc.yaml",
+ "out_dir": "/work/fquareng/ch2/minkowski-loss/.claude/worktrees/radar-day-exclusion/eval_results/gradient_audit/2026-11-04_r4_parity/area_trunc",
+ "n_batches": 512,
+ "batch_size": 128,
+ "groups": 8,
+ "grad_at": [
+  "vanilla_v4"
+ ],
+ "losses": [
+  "minkowski"
+ ],
+ "runs": [
+  "vanilla",
+  "minkowski",
+  "spectral",
+  "ssim",
+  "wetarea",
+  "opticalflow",
+  "vanilla_34ep"
+ ],
+ "which": "best",
+ "anneal": 0.1,
+ "data_percentage": 10.0,
+ "num_workers": 2,
+ "seed": 0,
+ "adam": true,
+ "skip_eval": true,
+ "run": [
+  "vanilla_v4=UNet_Ana_20261021_211732"
+ ]
+}
