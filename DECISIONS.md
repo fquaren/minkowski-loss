@@ -3290,3 +3290,27 @@ stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the ti
   **Backtest:** reported beside the main world; if the worlds differ, the main result is flagged, not changed.
   **Secondary, does not change the verdict (tile-edge caveat above):** share of hours whose {x >= 0.1 peak} touches
   the tile border, by bin; M2 and M3 repeated on non-edge hours (subsamples of 5,000 per bin).
+  - *Trend test result (2026-11-05; `quality_v4/analogue/trend_test/trend_test.json`, log `logs/shape_trend_test.log`,
+    code 5b86169).* **Verdict by the rule: none (validity gate failed).** S-reuse passed (covered, tie), S-out passed
+    (not covered), **S-trend failed (tie)**. Read by the rule the main arm would be "W2 with predictive drift", the
+    backtest "W2", so it would also have been flagged.
+
+    | | main (ref 5-50.1, target >= 50.1, n 2,383) | backtest (ref 5-20.2, target 20.2-50.1, n 4,000) |
+    |---|---|---|
+    | M1 median / q90 ratio | 1.006 [0.994, 1.016] / 1.016 [0.998, 1.035]: covered | 0.991 [0.982, 1.001] / 0.992 [0.976, 1.007]: covered |
+    | M2 D, min cos (all) | 0.305 [0.287, 0.326], -0.570 [-0.698, -0.314]: drift, not smooth | 0.307 [0.291, 0.323], 0.877 [0.833, 0.909]: drift, smooth |
+    | M2 D, min cos (non-edge) | 0.200 [0.145, 0.262], -0.608: drift, not smooth | 0.080 [0.053, 0.127], -0.706: no drift |
+    | M3 dED (all) | +0.085 [+0.039, +0.136]: trend wins (floor 0.009) | -0.197 [-0.240, -0.155]: reuse wins |
+    | M3 dED (non-edge) | -0.067 [-0.089, -0.043]: reuse wins | -0.051 [-0.061, -0.041]: reuse wins |
+    | edge share (bins / target) | 0.70-0.77 / 0.65 | 0.70-0.78 / 0.75 |
+
+    *Why S-trend could not pass (found after the result; does not change the verdict):* for a target lying exactly on
+    the trend at distance beta*delta from the predictor, dED is second order in |beta*delta|, whereas for a target
+    farther away it is first order; with |beta*delta| ~ 0.1 of the within-bin spread the on-trend case is below the
+    test's resolution. A future gate should place S-trend several deltas out. This is a new test, not a re-reading.
+    *What stands on its own checks:* M1, whose two gate cases passed: in 21-D the held-out extremes are as close to
+    cut-training shapes as in-range hours are (median ratio 1.006, interval within +-2%). *Reading (inference,
+    exploratory):* the drift with intensity is real but not a consistent direction (it reverses between the last two
+    bins), most of the 5-20 mm drift disappears on edge-free hours (tile-edge truncation, caveat above), and a linear
+    trend beats reuse in one of four M3 rows only, the one that includes edge hours. Together: closest to W2
+    (extreme shapes are seen shapes, re-weighted with intensity); no support for "extrapolate a trend".
