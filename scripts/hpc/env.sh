@@ -2,15 +2,19 @@
 # Shared environment for all HPC launch scripts.
 # Source this from each launcher: source "${SCRIPT_DIR}/env.sh"
 
-# Shared node (node34): GPU 1 ONLY, never GPU 0, and at most 8 of 12 cores (0-3 stay free
-# for other users). PCI_BUS_ID makes index 1 mean the card at 83:00.0, as in nvidia-smi;
-# CUDA's default order can differ. Launchers may pass GPU=1 explicitly; nothing may use 0.
-# src/node_limits.py enforces the same limits again inside Python.
+# Our group is assigned one GPU, by UUID, not a node: it was on node34 until 2026-11-03 and is
+# on node32 since. On whichever node holds it: that GPU only, and at most 8 of 12 cores (0-3 stay
+# free for other users). PCI_BUS_ID makes the index follow nvidia-smi's order (1 = 83:00.0 on
+# node32); CUDA's default order can differ. Launchers may pass GPU=1 explicitly, which is right
+# only where our card is index 1. src/node_limits.py enforces the same limits again inside Python.
+export GPU_UUID=GPU-9e0aab27-00b0-8d7e-df63-922075bf41b4
+GPU_INDEX=$(i=0; for d in /proc/driver/nvidia/gpus/*; do
+    grep -qi "${GPU_UUID}" "$d/information" 2>/dev/null && { echo $i; break; }; i=$((i+1)); done)
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=${GPU_INDEX:-1}
 export NODE_CPUS="4-11"
 export NODE_MAX_CORES=8
-if [[ "$(hostname)" == node34* ]]; then
+if [[ -n "${GPU_INDEX}" ]]; then
     # Pin the launching shell; every child (micromamba run, python, DataLoader workers)
     # inherits the affinity, so a job can never spread beyond these 8 cores.
     taskset -cp "${NODE_CPUS}" $$ > /dev/null
