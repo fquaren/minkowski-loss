@@ -568,6 +568,13 @@ buffered from the rest like any other split.
 - *Reversible:* the era is stored per patch (`era` in `full_*_info.csv.gz`), and the split
   is metadata only (`--nimbus_start ''` disables it).
 
+**Status note (researcher with Tom, 2026-11-05).** Extremes are evaluated within ODYSSEY only for now. Do not
+evaluate or report the NIMBUS extremes (`extremes_nimbus`, `events_nimbus`, the `nimbus` split): the models never
+trained on NIMBUS, so a score there mixes product shift with extremeness, and the problem we are solving (reaching
+the right intensities and structure in heavy rain) does not need the product-shift test. The R4 cut ladder (§43) is
+consistent with this: its held-out above-cut tile-hours are ODYSSEY, i.e. new intensity from the same product, not a
+distribution shift in product. The NIMBUS split stays on disk unchanged; this defers the test, it does not drop it.
+
 ---
 
 ## 19. v4 screen: radar ceilings, radar-wide failures, and a guarded repair
@@ -3129,3 +3136,28 @@ same patches, u = 50.1 mm, 16 members; gpd_xi_obs equal to the other rows (+0.15
 - Patch maxima (target / dist_qm_ret / energy_qm, mm): 354 191 / 79 / 249; 519 143 / 30 / 32; 979 87 / 57 / 97;
   257 63 / 71 / 43; 393 44 / 15 / 38; 764 30 / 27 / 21. Single draws: the member drawn depends on the model order in
   the dump, so these energy_qm values differ from the §42 panel values above and are not comparable with them.
+
+*Summary plots for dist_qm_ret (2026-11-05; `figures/v4adv_val{ext,sub}_summary_qmret/`, rows vanilla, mink 6e-5, FM,
+FM + dist, dist_qm, dist_qm_ret, energy_qm).*
+- *Return levels, two readings that differ.* The summary yaml evaluates every row at the observed series' m, with the
+  row's own exceedance rate, so a rate deficit lowers the level: valext lambda = 10 / 100 / 1000 gives 74 / 120 / 183 mm
+  against 90 / 147 / 228 observed (-18 / -18 / -20%; energy_qm 84 / 151 / 267). The `tail_survival.png` curves put each
+  row at its *own* expected exceedance count (`plotting.py`, `_return_level_curve`), so they show the shape of the
+  exceedances alone. In that view dist_qm_ret lies just under the target at every lambda (fitted xi 0.13 vs 0.155,
+  sigma 14.1 vs 14.4) and energy_qm overshoots (xi 0.23). Both views are right; the plot hides the rate deficit, and
+  §42's earlier "overshoot" reading of energy_qm used the yaml numbers.
+- *Ranked patch maxima (no fit; peak_ratio x tmax), ranks 1 / 2 / 3 / 5 / 10 / 20 / 30, mm:*
+  - valext target 202 191 175 160 143 123 107; dist_qm_ret 221 192 176 146 117 92 85; energy_qm 377 316 225 189 150
+    129 110; dist_qm 189 186 117 108 85 75 66.
+  - valsub target 152 151 144 128 101 76 59; dist_qm_ret 206 165 164 129 101 68 54; energy_qm 257 201 181 165 112 89
+    72; dist_qm 135 110 80 70 57 48 43.
+  - Reading: dist_qm_ret has no top-rank overshoot of energy_qm's kind (its top 3 are within 10% on valext and
+    1.1-1.4x on valsub, vs 1.3-1.9x for energy_qm). It is 15-25% short from rank 10 down on valext, where energy_qm
+    is within ~5%. So energy_qm makes more extremes and makes the largest too large; dist_qm_ret makes fewer, and
+    the largest are the right size.
+- *Spectrum (valext):* dist_qm_ret's ratio to the target is ~0.45 below 30 km, the same as FM + dist and between FM
+  (~0.3) and energy_qm (0.5-0.8). RAPSD distance 0.74 against 0.41 for energy_qm.
+- *SAL (valext):* amplitude A ≈ 0 (+0.01, as energy_qm), structure S 0.51 (FM 0.64, dist 0.54, energy_qm 0.40).
+- *Perception-distortion (valext):* dist_qm_ret sits on the Pareto front between dist_qm (lowest rmse_extreme) and
+  energy_qm (lowest spectral distance). The rmse_extreme spread across FM rows is 2.88-2.93, which is small (§ reading
+  rule 5).
