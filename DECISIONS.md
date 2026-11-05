@@ -3161,3 +3161,8 @@ FM + dist, dist_qm, dist_qm_ret, energy_qm).*
 - *Perception-distortion (valext):* dist_qm_ret sits on the Pareto front between dist_qm (lowest rmse_extreme) and
   energy_qm (lowest spectral distance). The rmse_extreme spread across FM rows is 2.88-2.93, which is small (CLAUDE.md, reading
   results, item 5).
+
+**Decision (researcher, 2026-11-05): FM + energy_qm is the FM model.** Future FM evals and plots keep FM clean and
+FM + energy_qm (`FMenergyqm_v4adv_20261031_022957`, `fm_mink_latest.pth`) as the FM rows, and FM + energy_qm is the
+model compared against the other losses. The dist rows above stay as recorded. Known weak point to report alongside
+it: its largest patch maxima overshoot (1.3-1.9x at ranks 1-3), where dist_qm_ret does not.
