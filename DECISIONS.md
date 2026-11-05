@@ -3159,5 +3159,5 @@ FM + dist, dist_qm, dist_qm_ret, energy_qm).*
   (~0.3) and energy_qm (0.5-0.8). RAPSD distance 0.74 against 0.41 for energy_qm.
 - *SAL (valext):* amplitude A ≈ 0 (+0.01, as energy_qm), structure S 0.51 (FM 0.64, dist 0.54, energy_qm 0.40).
 - *Perception-distortion (valext):* dist_qm_ret sits on the Pareto front between dist_qm (lowest rmse_extreme) and
-  energy_qm (lowest spectral distance). The rmse_extreme spread across FM rows is 2.88-2.93, which is small (§ reading
-  rule 5).
+  energy_qm (lowest spectral distance). The rmse_extreme spread across FM rows is 2.88-2.93, which is small (CLAUDE.md, reading
+  results, item 5).
