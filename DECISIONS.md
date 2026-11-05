@@ -3258,3 +3258,35 @@ stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the ti
     tile-edge truncation, not meteorology. Check before reading any drift as physical: repeat the drift / coverage
     measurements on hours whose wet area does not touch the tile edge (at each threshold fraction), and report the
     edge-touching share by intensity bin.
+- *Trend test, pre-registered before any number (researcher, 2026-11-05).* Follows the H1 result above: does the
+  geometry of extremes need **re-weighting** of seen shapes or **extrapolation** of a trend? Four worlds for the
+  peak-normalised shape features (21, standardised with the reference set's mean and sd):
+  W1 reuse (no drift with intensity), W2 re-weighting (drift, extremes inside the seen support), W3 trend (extremes
+  outside the support, along the in-range drift), W4 break (outside, not along it).
+  Script `scripts/evaluate/shape_trend_test.py`. Main run: reference = cut training (train, 5 <= peak < 50.1),
+  target = test >= 50.1 (n = 2,383, 305 days). Backtest: same procedure at a pseudo-cut of 20.2 mm (reference
+  train 5-20.2, target test 20.2-50.1). Bins: 4 log-uniform bins of the reference peak range (main 5/8.9/15.8/28.2/
+  50.1; backtest 5/7.1/10/14.2/20.2). Intervals: 95%, 1,000 day-block bootstrap resamples (processing days).
+  1. **Coverage (M1).** For each query, r = d1 / s: d1 its distance to the nearest reference hour, s the median
+     nearest-neighbour distance (within the reference) of its k = 10 nearest reference hours (local spacing).
+     Compared with test hours of the last in-range bin (main 28.2-50.1, backtest 14.2-20.2) via ratios of median and
+     q90 of r. **Covered** if both ratios' upper bounds <= 1.10; **not covered** if either lower bound > 1.25;
+     otherwise inconclusive.
+  2. **Drift (M2).** Bin means m1..m4 (reference hours). Size D = ||m4 - m1|| / RMS within-bin spread; consistency
+     = min cos between consecutive shifts (m2-m1, m3-m2, m4-m3); bootstrap over training days. **Drift present** if
+     D's lower bound > 0.1; **smooth** if the min cosine's lower bound >= 0.5.
+  3. **Extrapolation vs reuse (M3).** Reuse predictor: the reference hours of the last bin. Trend predictor: the
+     same hours shifted by beta * delta, beta = per-feature OLS slope on log10 peak over all reference hours, delta =
+     mean log10 peak of the target minus that of the last bin. Score: energy distance to the target (predictor
+     subsample 5,000, target subsample <= 4,000, seeded); dED = ED_reuse - ED_trend, bootstrap over target days.
+     **Trend wins** if dED's lower bound > 0; **reuse wins** if its upper bound < 0; otherwise tie. Noise floor
+     reported: ED between two day-halves of the target.
+  **World:** covered and not trend-wins -> W1 (no drift) or W2 (drift); covered and trend wins -> W2 with a
+  predictive drift (W2/W3 boundary); not covered and trend wins -> W3; not covered otherwise -> W4; coverage
+  inconclusive -> the three results are reported without a world.
+  **Validity gate (known answers), else no verdict:** S-reuse (target = test hours of the last in-range bin):
+  covered, trend does not win. S-trend (the same hours shifted by beta * delta of the main run): trend wins. S-out
+  (the same hours shifted by +3 sd on every feature): not covered.
+  **Backtest:** reported beside the main world; if the worlds differ, the main result is flagged, not changed.
+  **Secondary, does not change the verdict (tile-edge caveat above):** share of hours whose {x >= 0.1 peak} touches
+  the tile border, by bin; M2 and M3 repeated on non-edge hours (subsamples of 5,000 per bin).
