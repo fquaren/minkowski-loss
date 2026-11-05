@@ -3101,3 +3101,31 @@ gpd_xi_obs = 0.183 in every row. Both runs are above the §16 MAE cap (+5%); 2.3
   cross-hatched "x" spots of a few pixels at local maxima inside rain areas (visible at 220 dpi, faint at 7.7e-4).
   *Inference, untested:* the rank reading gives its gradient to one pixel per threshold, so concentrated hot spots are
   the cheap way to match the target's upper quantiles; this is the quantile form's version of gaming the loss.
+
+**dist_qm with retention (2026-11-05; the follow-up above).** Run `FMdistqmret_v4adv_20261105_163457`, from
+`fm_mink_latest.pth`; log: "config FM_RESIDUAL_SCALE=0.01267", "reward mode=distributional form=quantile_mass K=1 M=4
+w_reward=1 w_prox=1 w_retain=1 w_spread=0.5". Parity check before training (`logs/grad_norm_terms_v4adv_dist_qm_ret.txt`):
+reward 70% of the total gradient norm, cos(reward, total) +0.70. Evals `eval_results/extremes/v4adv_val{ext,sub}/fm_dist_qm_ret`,
+same patches, u = 50.1 mm, 16 members; gpd_xi_obs equal to the other rows (+0.155 valext, -0.032 valsub).
+
+| Row | valext exc. ratio | valext RL bias | valext FSS@50.1 w5 | valsub exc. ratio | valsub FSS@50.1 w5 | Anisot. ext / sub | Peak ratio ext. (ext / sub) | RMSE ext / sub |
+|---|---|---|---|---|---|---|---|---|
+| FM clean | 0.298 | 0.367 | 0.285 | 0.272 | 0.337 | 1.31 / 1.40 | 0.33 / 0.55 | 1.153 / 0.336 |
+| dist_qm (w_retain 0, w 1e-3) | 0.273 | 0.340 | 0.267 | 0.248 | 0.310 | 1.32 / 1.33 | 0.29 / 0.42 | 1.152 / 0.335 |
+| **dist_qm_ret** | 0.465 | 0.185 | 0.304 | 0.672 | **0.448** | **1.47 / 1.48** | 0.37 / 0.69 | 1.154 / 0.337 |
+| energy_qm | **0.665** | **0.089** | **0.348** | **0.914** | 0.246 | 1.36 / 1.34 | 0.34 / 0.60 | 1.160 / 0.339 |
+
+- *Retention plus parity weight turns dist_qm from no effect into a clear tail effect.* Exceedance ratio 0.27 -> 0.47
+  (valext) and 0.25 -> 0.67 (valsub), RL bias 0.340 -> 0.185, at unchanged RMSE. Two settings changed at once
+  (w_retain 0 -> 1, w_reward 1e-3 -> 1), so the gain is not attributed to either. Single seed.
+- *Against energy_qm at matched settings except M (4 vs 16) and the spread term:* energy_qm still moves the tail more
+  (valext exceedance 0.67 vs 0.47, RL bias 0.09 vs 0.19); dist_qm_ret has the best FSS@50.1 on valsub (0.448) and
+  is second on valext. The two modes are now comparable, and energy is ahead on the tail columns.
+- *Anisotropy is the highest of any FM row (1.47-1.48, vs 1.31-1.40 FM and 1.34-1.36 energy_qm).* Field panels
+  (`figures/v4adv_valext_fields_qmret/`, bundle `eval_results/fields/v4adv_valext_qmret.npz`; the six §38 patches,
+  rows vanilla, FM, dist_qm, dist_qm_ret, energy_qm, one member each) show no grid-aligned striping or blocks at
+  panel resolution; cores are compact and placed like FM's. The anisotropy rise is therefore not visible on these six
+  patches; a per-patch anisotropy ranking over valsub is the check before calling it an artefact or clearing it.
+- Patch maxima (target / dist_qm_ret / energy_qm, mm): 354 191 / 79 / 249; 519 143 / 30 / 32; 979 87 / 57 / 97;
+  257 63 / 71 / 43; 393 44 / 15 / 38; 764 30 / 27 / 21. Single draws: the member drawn depends on the model order in
+  the dump, so these energy_qm values differ from the §42 panel values above and are not comparable with them.
