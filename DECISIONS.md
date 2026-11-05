@@ -3252,3 +3252,9 @@ stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the ti
     normalisation: closer to "the tail of one geometric distribution" than to "a separate regime", which this check
     cannot separate. Any sharper statistic (mean log ratio; distance change on the affected 7%) is exploratory,
     not a revision of this test.
+  - *Open caveat, tile-edge truncation (researcher, 2026-11-05).* A tile is 128 x 128 px (~256 km). If heavier hours
+    are systematically larger storms, more of them are cut by the tile edge, which changes peak-normalised area,
+    perimeter and Euler characteristic. Part of the intensity drift in shape (1.5x -> 2.1x base above) may then be
+    tile-edge truncation, not meteorology. Check before reading any drift as physical: repeat the drift / coverage
+    measurements on hours whose wet area does not touch the tile edge (at each threshold fraction), and report the
+    edge-touching share by intensity bin.
