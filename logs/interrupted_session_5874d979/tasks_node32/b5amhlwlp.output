@@ -1,0 +1,12 @@
+server1i:/export/data1   98T   81T   18T  83% /work
+11:RAW_OPERA_DATA_DIR: /home/fquareng/work/data/extremes/OPERA/raw/OPERA
+12:METADATA_DIR: /home/fquareng/work/data/extremes/OPERA
+13:PREPROCESSED_DATA_DIR: /home/fquareng/work/data/extremes/OPERA/patches_v4_adv
+14:DEM_DATA_DIR: /home/fquareng/work/data/extremes/OPERA/patches/dem
+16:STATIC_DEM_PATH: /home/fquareng/work/data/extremes/OPERA/europe_dem_laea.tif
+17:TRAIN_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4_adv/meta/full_train.txt
+18:VAL_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4_adv/meta/full_val.txt
+19:TEST_METADATA_FILE: /home/fquareng/work/data/extremes/OPERA/patches_v4_adv/meta/full_test.txt
+---
+
+[killed]

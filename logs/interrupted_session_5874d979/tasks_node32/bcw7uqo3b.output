@@ -1,0 +1,4 @@
+2026-11-04 09:42:07,020 - INFO - Epoch 15 | train_mse=0.0002 val_mse=0.0002 geom=0.4287 val_monitor=0.0035 w=0.0077 anneal=0.186
+RUNNING
+
+[exited with code 0]
