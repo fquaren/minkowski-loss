@@ -3166,3 +3166,8 @@ FM + dist, dist_qm, dist_qm_ret, energy_qm).*
 FM + energy_qm (`FMenergyqm_v4adv_20261031_022957`, `fm_mink_latest.pth`) as the FM rows, and FM + energy_qm is the
 model compared against the other losses. The dist rows above stay as recorded. Known weak point to report alongside
 it: its largest patch maxima overshoot (1.3-1.9x at ranks 1-3), where dist_qm_ret does not.
+*Kept in reserve: FM + dist_qm_ret* (`runs/sr_fm_minkowski/FMdistqmret_v4adv_20261105_163457/fm_mink_latest.pth`;
+evals `eval_results/extremes/v4adv_val{ext,sub}/fm_dist_qm_ret`, figures `figures/v4adv_val{ext,sub}_summary_qmret/`,
+`figures/v4adv_valext_fields_qmret/`). Use it if the energy_qm top-rank overshoot becomes the issue: its largest
+patch maxima are the right size and its valsub FSS@50.1 is the best FM row, at a smaller exceedance ratio (0.47 vs
+0.67 valext) and the highest FM anisotropy (1.47, unexplained).
