@@ -1,7 +1,7 @@
 #!/bin/bash
 # One R4 cell on node40 (DECISIONS §43): train 25 epochs, then the §37 validation evals (full_val, unet_latest.pth,
 # u = 50.1), then record "<label> <run>" in logs/r4_queue_done.txt so run_r4_queue.sh skips it.
-#   node40_r4_cell.sh <gpu 0-3> <label> <arm cut|full> <weight|mink_trunc|area_trunc> <seed> [channels] [u_max]
+#   node40_r4_cell.sh <gpu 0-3> <label> <arm cut|full|randdrop> <weight|mink_trunc|area_trunc> <seed> [channels] [u_max]
 # A named weight is read from the R4 parity audit's weights.json, waiting for it if the audits are still running.
 # Run detached:  setsid nohup scripts/hpc/node40_r4_cell.sh ... > logs/node40/cell_<label>.log 2>&1 < /dev/null &
 set -uo pipefail
@@ -32,6 +32,7 @@ esac
 sleep $((GPU * 30))
 while [ -f /tmp/fquareng_node40_gpu$GPU.pid ] && kill -0 "$(lockpid)" 2>/dev/null; do sleep 60; done
 LIST=$META/full_train.txt; [ $ARM = cut ] && LIST=$META/full_train_cut50.1.txt
+[ $ARM = randdrop ] && LIST=$META/full_train_randdrop50.1.txt   # size-matched random-drop control (§43)
 CFG=$CD/$LAB.yaml
 $E/bin/python - "$CFG" "$LIST" "$CW" "$UMAX" <<'PY' || { echo "CONFIG FAILED"; exit 1; }
 import sys, yaml                      # same fields as mkcfg in run_r4_queue.sh
