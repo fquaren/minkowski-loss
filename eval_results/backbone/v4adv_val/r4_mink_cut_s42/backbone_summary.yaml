@@ -1,0 +1,46 @@
+checkpoint: runs/sr_analytical/UNet_Ana_20261105_150429/unet_latest.pth
+split: val
+n_samples: 172050
+topology_mode: euler
+mae_overall: 0.0465451143682003
+rmse_overall: 0.1733342856168747
+mae_extreme: 0.3706868886947632
+rmse_extreme: 1.9372361898422241
+extreme_threshold_mmph: 54.92082492828377
+minkowski_distance: 0.850750263339968
+isoperimetric_violation_pct: 3.148193354644967
+rapsd_log_distance: 1.0993478298187256
+SAL_median:
+- 0.18555717475246866
+- 0.015652993119348327
+- 0.036539583954012335
+SAL_mean:
+- 0.2994403004951729
+- 0.03935845357053138
+- 0.10764547431446282
+groups_mae_rmse:
+  all:
+    n: 172050
+    mae: 0.0465451143682003
+    rmse: 0.1733342856168747
+  q1_low:
+    n: 43013
+    mae: 0.0004833025741390884
+    rmse: 0.00571000762283802
+  q2:
+    n: 43012
+    mae: 0.008002988994121552
+    rmse: 0.06356443464756012
+  q3:
+    n: 43012
+    mae: 0.03255806118249893
+    rmse: 0.15946103632450104
+  q4_high:
+    n: 43013
+    mae: 0.14513491094112396
+    rmse: 0.46459877490997314
+  extreme_top1pct:
+    n: 1721
+    mae: 0.3706868886947632
+    rmse: 1.9372361898422241
+note_crps: 'omitted: deterministic CRPS == MAE; CRPS enters with the Phase-2 ensemble'

@@ -1,0 +1,71 @@
+model: backbone
+tag: r4_mse_cut_s42
+split: val
+n_samples: 172050
+topology_mode: euler
+rmse_extreme: 2.07171368598938
+rmse_overall: 0.34703436493873596
+rapsd_log_distance: 3.7061944007873535
+minkowski_distance: 2.0436726416797
+fss_thr20.2_win1: 0.21953029283360082
+fss_thr20.2_win5: 0.45324077293095666
+fss_thr20.2_win11: 0.5947926503611259
+fss_thr20.2_win21: 0.6536115944988674
+fss_thr31.7_win1: 0.13729640195086046
+fss_thr31.7_win5: 0.32550529314226895
+fss_thr31.7_win11: 0.4398654001722292
+fss_thr31.7_win21: 0.4843385524436217
+fss_thr50.1_win1: 0.08575448039635447
+fss_thr50.1_win5: 0.2133399551023124
+fss_thr50.1_win11: 0.2755284504441501
+fss_thr50.1_win21: 0.3134525306800162
+gpd_xi_pred: 0.2869653197902885
+gpd_xi_obs: 0.18346272303488134
+gpd_sigma_pred: 14.099227715068388
+gpd_sigma_obs: 14.927621745189205
+gpd_xi_abs_err: 0.10350259675540716
+gpd_n_exc_pred: 1115
+gpd_n_exc_obs: 15234
+gpd_exc_count_ratio: 0.07319154522777997
+gpd_upper_endpoint_pred: .inf
+gpd_upper_endpoint_obs: .inf
+rl_pred_lam10: .nan
+rl_obs_lam10: 92.87225248698863
+rl_pred_lam100: 87.95120080099232
+rl_obs_lam100: 158.12891295606028
+rl_relbias_lam100: -0.4438006360959961
+rl_pred_lam1000: 169.39088611472465
+rl_obs_lam1000: 257.6895273256476
+rl_relbias_lam1000: -0.34265514057673796
+rl_bias_mean_abs: 0.393227888336367
+anisotropy_axis_over_diag: 2.3220600138727776
+peak_ratio_median: 0.3509065180774602
+peak_ratio_extreme_median: 0.17235910508367824
+SAL_median:
+- 1.0579304397428897
+- -0.02723606870576472
+- 0.04938310575567262
+extreme_threshold_mmph: 54.92082492828377
+pot_threshold_mmph: 50.1
+note: minkowski_distance is the training objective for Minkowski-trained models and
+  is not independent evidence there; anisotropy ~1 is isotropic, >1 means grid-aligned
+  structure; peak_ratio is predicted/observed patch maximum.
+conditioned:
+  u: 50.1
+  n_cases: 172050
+  n_obs_selected: 2083
+  hit_rate: 0.02160345655304849
+  false_alarm_rate: 1.765048509416534e-05
+  brier_max_ge_u: 0.011862830258905888
+  obs_selected:
+    share_obs_events: 1.0
+    exceedance_ratio: 0.07246947617172116
+    peak_ratio_median: 0.17978331446647644
+    pred_max_ge_u_share: 0.02160345655304849
+  input_selected:
+    share_obs_events: 0.385501680268843
+    exceedance_ratio: 0.09950650515926425
+    peak_ratio_median: 0.463441401720047
+    pred_max_ge_u_share: 0.02160345655304849
+twcrps_mean: 9.749349296678684e-05
+twcrps_extreme: 0.009706296786889954
