@@ -414,6 +414,74 @@ def gamma_curves(models: Sequence[Model], out_dir: str, name: str = "gamma_curve
     return _save(fig, out_dir, name)
 
 
+def functionals_bulk_vs_extremes(models: Sequence[Model], out_dir: str,
+                                 name: str = "functionals_bulk_vs_extremes.png"):
+    """Mean Minkowski curves and residuals, split by the target tile max at the POT level u_c.
+
+    bulk = target max in [0.1, u_c), extremes = target max >= u_c, with u_c the eval's
+    ``pot_threshold_mmph`` (50.1 mm on v4, the level removed from the R4 cut lists). The residual
+    is prediction - target in signed-log space, per patch, then averaged, so each model is
+    compared with its own patches. The target line in the curve rows is drawn only when every
+    model was scored on the same patches.
+    """
+    rows = []
+    for m in models:
+        g, t, tmax = _gamma_pred_log(m), m.arr("gamma_target"), m.arr("tmax")
+        u_c = m.get("pot_threshold_mmph")
+        if g is None or t is None or tmax is None or u_c is None:
+            continue
+        if not (len(g) == len(t) == len(tmax)):   # merged dirs can mix sample sets
+            print(f"  [skip] {name}: {m.label}: gamma ({len(g)}) and tmax ({len(tmax)}) "
+                  f"cover different patches")
+            continue
+        rows.append((m, g, np.asarray(t, np.float64), np.asarray(tmax), float(u_c)))
+    if not rows:
+        print(f"  [skip] {name}: no model with gamma_hat, gamma_target, tmax and a POT level")
+        return None
+    if len({r[4] for r in rows}) > 1:
+        print(f"  [skip] {name}: models use different POT levels {sorted({r[4] for r in rows})}")
+        return None
+    u_c = rows[0][4]
+    m0 = rows[0][0]
+    u = np.asarray(m0.arr("thresholds"), float) if m0.arr("thresholds") is not None \
+        else np.arange(1, rows[0][1].shape[-1] + 1, dtype=float)
+    # tmax of the same patches differs by float noise (~1e-4 mm) between eval runs
+    same = all(len(r[3]) == len(rows[0][3]) and np.allclose(r[3], rows[0][3], atol=1e-2) for r in rows)
+
+    subsets = [("bulk", lambda x: (x >= 0.1) & (x < u_c)), ("extremes", lambda x: x >= u_c)]
+    fig, axes = plt.subplots(4, 3, figsize=(15, 15), sharex=True)
+    for r, (k, sel) in enumerate(subsets):
+        ac, ar = axes[2 * r], axes[2 * r + 1]
+        for c in range(3):
+            for m, g, t, tmax, _ in rows:
+                s = sel(tmax)
+                if not s.any():
+                    continue
+                ac[c].plot(u, g[s].mean(0)[c], color=m.color, lw=1.7, label=m.label)
+                ar[c].plot(u, (g[s] - t[s]).mean(0)[c], color=m.color, lw=1.7, label=m.label)
+            if same:
+                s = sel(rows[0][3])
+                ac[c].plot(u, rows[0][2][s].mean(0)[c], marker="s", markersize=3,
+                           label="target", **TARGET_STYLE)
+            ar[c].axhline(0, color="k", lw=1)
+            for ax in (ac[c], ar[c]):
+                ax.axvline(u_c, color="grey", lw=1, ls="-.")
+                ax.set_xscale("log")
+                ax.grid(alpha=0.3, which="both", linestyle="--")
+            n = sel(rows[0][3]).sum()
+            ac[c].set_title(f"{k} (n = {n:,}{'' if same else ', first model'}): {CHANNELS[c]}")
+            ar[c].set_title(f"{k}: {CHANNELS[c]}, prediction - target")
+        ac[0].set_ylabel(r"mean signed $\log(1+\cdot)$")
+        ar[0].set_ylabel("mean residual (signed log)")
+    for ax in axes[-1]:
+        ax.set_xlabel("threshold $u$")
+    axes[0, 0].legend(frameon=False, fontsize=8)
+    fig.suptitle(f"Minkowski functionals: bulk (target max 0.1-{u_c:g}) vs extremes (>= {u_c:g}); "
+                 f"dash-dot = u_c", y=0.995)
+    fig.tight_layout()
+    return _save(fig, out_dir, name)
+
+
 def gamma_residual_by_threshold(models: Sequence[Model], out_dir: str,
                                 name: str = "gamma_residual.png"):
     """Where along the threshold axis the Minkowski discrepancy actually sits.
@@ -934,5 +1002,6 @@ def make_all(models: Sequence[Model], out_dir: str, pixel_km: float = 2.0,
     tail_summary(models, out_dir)
     sal_plane(models, out_dir)
     gamma_curves(models, out_dir)
+    functionals_bulk_vs_extremes(models, out_dir)
     gamma_residual_by_threshold(models, out_dir)
     isoperimetric(models, out_dir)
