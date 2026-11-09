@@ -90,6 +90,8 @@ ev() {   # label run_dir
 run() {   # label loss arm(cut|full|randdrop) weight seed channel_weights u_max
   local lab=$1 loss=$2 arm=$3 w=$4 seed=$5 cw=${6:-1,1,1} umax=${7:-none}
   grep -q "^$lab " $DONE && { echo "done already: $lab"; return; }
+  # runs handed to node40 cells (logs/r4_node40_claimed.txt, one label per line) are not duplicated here
+  grep -qx "$lab" $PWD/logs/r4_node40_claimed.txt 2>/dev/null && { echo "claimed by node40: $lab"; return; }
   local list=$META/full_train.txt
   [ $arm = cut ] && list=$META/full_train_cut50.1.txt
   [ $arm = randdrop ] && list=$META/full_train_randdrop50.1.txt

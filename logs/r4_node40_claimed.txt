@@ -1,0 +1,8 @@
+r4_area_cut_s42
+r4_area_full_s42
+r4_mse_full_s43
+r4_mink_full_s43
+r4_mse_cut_s44
+r4_mink_cut_s44
+r4_mse_full_s44
+r4_mink_full_s44
