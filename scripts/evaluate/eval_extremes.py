@@ -188,6 +188,7 @@ def main():
             s = gp[(gp.row >= ty) & (gp.row < ty + P) & (gp.col >= tx) & (gp.col < tx + P)]
             if len(s):
                 stations_by_tile[(ty, tx)] = list(zip(s.station, s.row - ty, s.col - tx))
+    gamma_hat, gamma_tgt = [], []   # per-patch functionals, as eval_backbone.py saves them
     rapsd_p = rapsd_o = None
 
     with torch.no_grad():
@@ -230,6 +231,9 @@ def main():
 
             tmax_i.append(target.amax(dim=(1, 2, 3)).cpu().numpy())
             mink_sum += geom_fn(pred, Ygamma, anneal_factor=0.05).item(); nb += 1
+            a_, p_, t_ = geom_fn._functionals(pred, anneal_factor=0.05)   # fm: the same single member
+            gamma_hat.append(torch.stack([a_, p_, t_], dim=1).cpu().numpy())   # raw [B,3,Q]
+            gamma_tgt.append(Ygamma.cpu().numpy())                             # signed-log [B,3,Q]
             rp_b = compute_radial_power_spectrum(pred)          # [B,K]
             ro_b = compute_radial_power_spectrum(target)
             # Per-sample log-spectral distance, kept for the perception-distortion cloud.
@@ -332,7 +336,9 @@ def main():
                         rapsd_pred=rapsd_p, rapsd_target=rapsd_o,
                         gpd_pred=np.array([fit_p["xi"], fit_p["sigma"], fit_p["rate"]]),
                         gpd_obs=np.array([fit_o["xi"], fit_o["sigma"], fit_o["rate"]]),
-                        pot_threshold=np.float32(pot_u))
+                        pot_threshold=np.float32(pot_u),
+                        gamma_hat=np.concatenate(gamma_hat), gamma_target=np.concatenate(gamma_tgt),
+                        thresholds=np.asarray(u_phys, dtype=np.float32))
     print(yaml.safe_dump(summary, sort_keys=False))
 
 
