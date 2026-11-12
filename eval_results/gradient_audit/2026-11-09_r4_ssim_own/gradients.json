@@ -1,0 +1,146 @@
+[
+ {
+  "checkpoint": "ssim_full",
+  "which": "latest",
+  "epoch": 25,
+  "n_batches": 256,
+  "batch_size": 128,
+  "anneal": 0.1,
+  "adam_state": true,
+  "terms": {
+   "mse": {
+    "value_mean": 9.292333510302342e-05,
+    "per_batch_norm_median": 0.0004787685556325645,
+    "per_batch_norm_iqr": [
+     0.0004156344566668348,
+     0.0006263576982899313
+    ],
+    "mean_grad_norm": 0.0003819522004479511,
+    "signal_norm": 0.00038103828670510773,
+    "signal_norm_se": 5.435031509078172e-06,
+    "noise_fraction": 0.3665884285489228
+   },
+   "ssim": {
+    "value_mean": 0.013244679736089893,
+    "per_batch_norm_median": 0.9757696644574696,
+    "per_batch_norm_iqr": [
+     0.8808750060113757,
+     1.0487408696178144
+    ],
+    "mean_grad_norm": 0.9702997732018909,
+    "signal_norm": 0.9702655491882854,
+    "signal_norm_se": 0.005414815226605903,
+    "noise_fraction": 0.0112497686288896,
+    "lambda_used": 0.00016,
+    "parity_lambda": 0.00039271546539386106,
+    "parity_lambda_se": 5.938517877883089e-06,
+    "share_r": 0.4074196564668857,
+    "share_r_rel_se": 0.015121680710809918,
+    "mse_signal_below_noise": false,
+    "cos_mean_grads": 0.857869029045105,
+    "cos_se": 0.0037761553920207572,
+    "cos_noise_corrected": 0.8598026577598061,
+    "cos_noise_corrected_se": 0.00371591994396827,
+    "parity_lambda_per_batch_median": 0.0005043724287549575,
+    "clip_engaged_frac": 0.0,
+    "adam_share": 0.08632121856385316
+   }
+  }
+ },
+ {
+  "checkpoint": "ssim_cut",
+  "which": "latest",
+  "epoch": 25,
+  "n_batches": 256,
+  "batch_size": 128,
+  "anneal": 0.1,
+  "adam_state": true,
+  "terms": {
+   "mse": {
+    "value_mean": 9.434932435681276e-05,
+    "per_batch_norm_median": 0.0003418603788443098,
+    "per_batch_norm_iqr": [
+     0.0002450595289088247,
+     0.0004368435851008612
+    ],
+    "mean_grad_norm": 0.0001985271634153484,
+    "signal_norm": 0.00019744919145877956,
+    "signal_norm_se": 1.4309276129381679e-05,
+    "noise_fraction": 0.6664098795219828
+   },
+   "ssim": {
+    "value_mean": 0.013210984900069889,
+    "per_batch_norm_median": 0.5243697607264282,
+    "per_batch_norm_iqr": [
+     0.47591537001745043,
+     0.5721395347832425
+    ],
+    "mean_grad_norm": 0.5236844007157013,
+    "signal_norm": 0.5236557201132236,
+    "signal_norm_se": 0.005945139873640423,
+    "noise_fraction": 0.0027215698074134487,
+    "lambda_used": 0.00016,
+    "parity_lambda": 0.0003770591705101351,
+    "parity_lambda_se": 2.4076229661470273e-05,
+    "share_r": 0.42433658299181803,
+    "share_r_rel_se": 0.06385265641171595,
+    "mse_signal_below_noise": false,
+    "cos_mean_grads": 0.013451209291815758,
+    "cos_se": 0.02450988910907565,
+    "cos_noise_corrected": 0.013297739144053258,
+    "cos_noise_corrected_se": 0.02465876131366216,
+    "parity_lambda_per_batch_median": 0.0006501120397014871,
+    "clip_engaged_frac": 0.0,
+    "adam_share": 0.04570698790203695
+   }
+  }
+ },
+ {
+  "checkpoint": "vanilla",
+  "which": "latest",
+  "epoch": 25,
+  "n_batches": 256,
+  "batch_size": 128,
+  "anneal": 0.1,
+  "adam_state": true,
+  "terms": {
+   "mse": {
+    "value_mean": 9.512849909754095e-05,
+    "per_batch_norm_median": 0.00036267525218586835,
+    "per_batch_norm_iqr": [
+     0.0002703433946186167,
+     0.00048090773185089557
+    ],
+    "mean_grad_norm": 0.0002854055872285935,
+    "signal_norm": 0.00028466697133216925,
+    "signal_norm_se": 1.4888585067151013e-05,
+    "noise_fraction": 0.38391828671020234
+   },
+   "ssim": {
+    "value_mean": 0.013534690428059548,
+    "per_batch_norm_median": 0.06880906169035536,
+    "per_batch_norm_iqr": [
+     0.05491325747685509,
+     0.08480404047916375
+    ],
+    "mean_grad_norm": 0.0536457880415,
+    "signal_norm": 0.05355325743351389,
+    "signal_norm_se": 0.0014202032701803686,
+    "noise_fraction": 0.394268005575904,
+    "lambda_used": 0.00016,
+    "parity_lambda": 0.005315586482961973,
+    "parity_lambda_se": 0.0002864240227641974,
+    "share_r": 0.03010015931691589,
+    "share_r_rel_se": 0.053883804483714284,
+    "mse_signal_below_noise": false,
+    "cos_mean_grads": 0.5993239283561707,
+    "cos_se": 0.022164046224511184,
+    "cos_noise_corrected": 0.6003459976442675,
+    "cos_noise_corrected_se": 0.022241495129972838,
+    "parity_lambda_per_batch_median": 0.005252076875824324,
+    "clip_engaged_frac": 0.0,
+    "adam_share": 0.03834572901131675
+   }
+  }
+ }
+]
