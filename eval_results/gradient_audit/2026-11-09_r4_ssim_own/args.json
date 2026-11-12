@@ -1,0 +1,36 @@
+{
+ "config": "configs/config_v4_adv.yaml",
+ "out_dir": "/work/fquareng/ch2/minkowski-loss/.claude/worktrees/radar-day-exclusion/eval_results/gradient_audit/2026-11-09_r4_ssim_own",
+ "n_batches": 256,
+ "batch_size": 128,
+ "groups": 8,
+ "grad_at": [
+  "ssim_full",
+  "ssim_cut",
+  "vanilla"
+ ],
+ "losses": [
+  "ssim"
+ ],
+ "runs": [
+  "vanilla",
+  "mse_full",
+  "mse_cut",
+  "ssim_full",
+  "ssim_cut"
+ ],
+ "which": "latest",
+ "anneal": 0.1,
+ "data_percentage": 10.0,
+ "num_workers": 2,
+ "seed": 0,
+ "adam": true,
+ "skip_eval": false,
+ "run": [
+  "vanilla=UNet_Ana_20261021_211732",
+  "ssim_cut=UNet_Ana_20261105_203710:ssim",
+  "ssim_full=UNet_Ana_20261106_162658:ssim",
+  "mse_cut=UNet_Ana_20261105_142458:ssim",
+  "mse_full=UNet_Ana_20261105_150530:ssim"
+ ]
+}
