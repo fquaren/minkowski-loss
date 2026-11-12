@@ -15,6 +15,13 @@ Two modes are provided so the choice can be tested rather than assumed:
     per_sample     mean over members of the Minkowski distance to that condition's target
     distributional conditional-mean matching E_m[log gamma_hat] vs log gamma, plus a
                    spread term matching the pooled standard deviation of log gamma
+    spectral       energy score of the Fourier magnitude spectra, log-normalised space
+    wetarea        energy score of the soft wet mask at the drizzle level, L1 over pixels
+    ssim           energy score with 1 - SSIM as the distance, log-normalised space
+    opticalflow    energy score against the advected-input teacher, masked L1 over pixels
+                   The last four are the Study-1 competing losses as ensemble rewards; they
+                   use no Minkowski functionals. Area-only Minkowski is mode "energy" with
+                   MINKOWSKI_CHANNEL_WEIGHTS [1, 0, 0].
 
 Guardrails. A per-sample structural reward invites degenerate textures: grid-aligned
 filaments raise perimeter and component count at fixed area, improving SAL S, the
@@ -46,6 +53,7 @@ from src.models.unet import LogSpaceResidualUNet
 from src.models.flow_matching import FlowMatching
 from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss
+from src.losses.competing import ImageSSIMLoss, OpticalFlowConsistencyLoss
 from src.evaluation.tail_metrics import directional_anisotropy, peak_ratio
 
 
@@ -160,7 +168,7 @@ def _integrate_xi(geom_fn, resid, w=None):
     """
     a = resid.abs() if w is None else w * resid.abs()
     d = torch.trapezoid(a, geom_fn.xi, dim=2) / geom_fn.xi_range   # [B,3]
-    return d.mean()
+    return (d * geom_fn.channel_weights).mean()     # channel weights (1,1,1) = the plain mean
 
 
 # Exponent of the inverse-pixel-mass weight on the perimeter and Euler channels in the
@@ -224,13 +232,119 @@ def reward_features(geom_fn, fields, target_log_gamma, anneal, form="threshold",
 
 
 def minkowski_reward(geom_fn, fields, target_log_gamma, mode, anneal, w_spread,
-                     form="threshold", target_field=None):
+                     form="threshold", target_field=None, max_val=None, reference=None):
     """Structural reward. fields: [M,B,1,H,W]; target_log_gamma: [B,3,Q].
 
     form and target_field select the curves and weights (see reward_features).
+    The competing-loss modes ignore the Minkowski arguments. max_val maps mm/h back to the
+    log-normalised space (spectral, ssim); reference is the coarse input in mm/h
+    (opticalflow). All fields are in mm/h.
     """
+    if mode in PIXEL_MODES:
+        if target_field is None:
+            raise ValueError(f"{mode} reward needs target_field")
+        return PIXEL_MODES[mode](fields, target_field, max_val=max_val, reference=reference)
     lg, tg, W = reward_features(geom_fn, fields, target_log_gamma, anneal, form, target_field)
     return reward_from_features(geom_fn, lg, tg, W, mode, w_spread)
+
+
+def _energy_l1(S, T, w=None):
+    """Fair energy score with a (weighted) mean-absolute distance over the feature axis.
+
+    S [M,B,D] member features, T [B,D] observed features, w [B,D] fixed weights or None.
+        ES = (1/M) sum_m d(S_m, T) - 1/(2 M (M-1)) sum_{m != m'} d(S_m, S_m')
+    The fair M(M-1) normalisation, as in mode "energy"; the M^2 form rewards
+    under-dispersion. With M = 1 it is the plain distance, i.e. the U-Net loss.
+    """
+    def d(a, b):
+        x = (a - b).abs()
+        return (x if w is None else w * x).mean(-1)
+    M = S.shape[0]
+    term1 = d(S, T.unsqueeze(0)).mean(0)                                  # [B]
+    if M < 2:
+        return term1.mean()
+    pair = d(S.unsqueeze(1), S.unsqueeze(0))                              # [M,M,B], zero diagonal
+    return (term1 - 0.5 * pair.sum((0, 1)) / (M * (M - 1))).mean()
+
+
+def _norm(x, max_val):
+    """mm/h -> log-normalised network space (log1p(mm/h) when max_val is None)."""
+    y = torch.log1p(x.clamp_min(0.0))
+    return y if max_val is None else y / max_val
+
+
+def spectral_energy_reward(fields, target_field, max_val=None, reference=None):
+    """Energy score of the |rfft2| magnitude spectra in log-normalised space.
+
+    FFT2DKernelCRPSLoss (src/losses/competing.py, alpha=1: mean absolute difference over
+    coefficients) with the fair 1/(M(M-1)) spread normalisation; the class divides by M^2.
+    In the space of the deterministic spectral runs when max_val is given.
+    """
+    f = _norm(fields, max_val)[:, :, 0]                                   # [M,B,H,W]
+    t = _norm(target_field, max_val)[:, 0]                                # [B,H,W]
+    S = torch.abs(torch.fft.rfft2(f, norm="ortho")).flatten(2)            # [M,B,D]
+    T = torch.abs(torch.fft.rfft2(t, norm="ortho")).flatten(1)            # [B,D]
+    return _energy_l1(S, T)
+
+
+WETAREA_THRESHOLD, WETAREA_TEMPERATURE = 0.1, 0.05     # mm/h, as build_structural_loss
+
+
+def wetarea_energy_reward(fields, target_field, max_val=None, reference=None):
+    """Energy score of the soft wet mask sigmoid((x - 0.1)/0.05), x in mm/h.
+
+    L1 rather than the U-Net loss's squared difference: with a squared distance the energy
+    score only matches the ensemble mean and is not strictly proper.
+    """
+    s = lambda x: torch.sigmoid((x - WETAREA_THRESHOLD) / WETAREA_TEMPERATURE)
+    return _energy_l1(s(fields).flatten(2), s(target_field).flatten(1))
+
+
+_SSIM = ImageSSIMLoss()
+
+
+def ssim_energy_reward(fields, target_field, max_val=None, reference=None):
+    """Energy score with d = (1 - SSIM)/2, as ImageSSIMLoss, on log-normalised fields.
+
+    1 - SSIM is not a metric, so propriety is not guaranteed (unlike the L1 modes).
+    ImageSSIMLoss averages over the batch, and the score is linear in d, so the batch
+    mean of the score equals the score of the batch-mean distances.
+    """
+    if max_val is None:
+        raise ValueError("ssim reward needs max_val (SSIM's constants assume the [0,1] space)")
+    f, t = _norm(fields, max_val), _norm(target_field, max_val)
+    M = f.shape[0]
+    term1 = sum(_SSIM(f[m], t) for m in range(M)) / M
+    if M < 2:
+        return term1
+    pair = sum(_SSIM(f[m], f[k]) for m in range(M) for k in range(m + 1, M))   # each pair once
+    return term1 - pair / (M * (M - 1))      # = 0.5 * (sum over ordered pairs) / (M(M-1))
+
+
+_OF = {}
+
+
+def opticalflow_energy_reward(fields, target_field, max_val=None, reference=None):
+    """Energy score against the optical-flow teacher, masked L1 over pixels, mm/h.
+
+    The teacher (the coarse input advected onto the target) and the mask are those of
+    OpticalFlowConsistencyLoss with its defaults; they carry no gradient. L1 instead of
+    the U-Net loss's Huber, because the energy score needs a metric.
+    """
+    if reference is None:
+        raise ValueError("opticalflow reward needs the coarse reference field")
+    H, W = target_field.shape[-2:]
+    of = _OF.setdefault((H, W, str(target_field.device)),
+                        OpticalFlowConsistencyLoss(x_dim=W, y_dim=H).to(target_field.device))
+    with torch.no_grad():
+        fx, fy = of._estimate_dense_flow(reference.float(), target_field.float())
+        teacher = of._advect(reference.float(), fx, fy)
+        mask = teacher.gt(of.mask_threshold).logical_or(target_field > of.mask_threshold)
+    return _energy_l1(fields.flatten(2), teacher.flatten(1), mask.flatten(1).to(fields.dtype))
+
+
+PIXEL_MODES = {"spectral": spectral_energy_reward, "wetarea": wetarea_energy_reward,
+               "ssim": ssim_energy_reward, "opticalflow": opticalflow_energy_reward}
 
 
 def reward_from_features(geom_fn, lg, target_log_gamma, W, mode, w_spread):
@@ -358,11 +472,14 @@ def run_reward_finetune(config, args):
         logger.info(f"reward mode={mode} form={form} K={K} M={M} w_reward={w_reward:g} w_prox={w_prox:g} "
                     f"w_retain={w_retain:g} "
                     f"w_spread={w_spread:g} guards: aniso<{aniso_max} peak<{peak_max}")
+        cw = [float(c) for c in config.get("MINKOWSKI_CHANNEL_WEIGHTS", [1.0, 1.0, 1.0])]
+        logger.info(f"reward channel weights (area, perimeter, euler) = {cw}"
+                    + (" [unused by this mode]" if mode in PIXEL_MODES else ""))
 
         thresh_b0 = load_persistence_thresholds(config)[0] if topo_mode == "b0" else 0.0
         geom_fn = AnalyticalMinkowskiLoss(
             physical_thresholds=u_phys, pixel_size_km=pixel_km, topology_mode=topo_mode,
-            area_mode="ste", persistence_thresh_b0=thresh_b0,
+            area_mode="ste", persistence_thresh_b0=thresh_b0, channel_weights=cw,
         ).to(device)
 
         # ---- data ------------------------------------------------------------------
@@ -445,7 +562,7 @@ def run_reward_finetune(config, args):
                 fields = torch.stack(fields, 0)                       # [M,B,1,H,W]
 
                 reward = minkowski_reward(geom_fn, fields, Ygamma, mode, anneal, w_spread,
-                                          form, _decode(Y[:, 0:1]))
+                                          form, _decode(Y[:, 0:1]), max_val, _decode(X[:, 0:1]))
 
                 # proximal anchor: keep the velocity field near the frozen reference
                 prox = proximal_anchor(fm, fm_ref, r_gen, cond)
@@ -487,7 +604,8 @@ def run_reward_finetune(config, args):
                         for _ in range(M)], 0)
                     v_reward += float(minkowski_reward(geom_fn, fields, Ygamma, mode,
                                                        anneal, w_spread, form,
-                                                       _decode(Y[:, 0:1])))
+                                                       _decode(Y[:, 0:1]), max_val,
+                                                       _decode(X[:, 0:1])))
                     tgt = _decode(Y[:, 0:1])
                     p0 = fields[0].squeeze(1).cpu().numpy()
                     v_aniso.append(directional_anisotropy(p0))
