@@ -23,8 +23,10 @@ setting -- the kernel-CRPS interpretation only applies when several members are 
 from __future__ import annotations
 
 import math
+import os
 import warnings
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -33,6 +35,18 @@ import torch.nn.functional as F
 # ----------------------------------------------------------------------------------
 # individual losses
 # ----------------------------------------------------------------------------------
+def hann2d(h: int, w: int, like: torch.Tensor) -> torch.Tensor:
+    """Separable symmetric Hann taper, exactly zero on the four patch edges.
+
+    The unwindowed FFT treats the patch as periodic, so the jump between opposite edges is
+    broadband power; a loss on |rfft2| can then be lowered by spikes at the edges (EXPERIMENTS
+    §3b). Tapering both fields to zero at the edges removes that route.
+    """
+    wy = torch.hann_window(h, periodic=False, dtype=like.dtype, device=like.device)
+    wx = torch.hann_window(w, periodic=False, dtype=like.dtype, device=like.device)
+    return wy[:, None] * wx[None, :]
+
+
 class FFT2DKernelCRPSLoss(nn.Module):
     """Kernel-CRPS / energy-score style loss on Fourier magnitude spectra.
 
@@ -40,14 +54,19 @@ class FFT2DKernelCRPSLoss(nn.Module):
     prediction (deterministic backbone) the second term drops and it is a spectral L1.
     """
 
-    def __init__(self, alpha: float = 1.0, eps: float = 1e-8):
+    def __init__(self, alpha: float = 1.0, eps: float = 1e-8, window: str | None = None):
         super().__init__()
         self.alpha = float(alpha)
         self.eps = float(eps)
+        if window not in (None, "none", "hann"):
+            raise ValueError(f"unknown spectral window {window!r}; expected none or hann")
+        self.window = None if window == "none" else window
 
     def _to_features(self, x: torch.Tensor) -> torch.Tensor:
         if x.dim() == 4:                       # [B,C,H,W] -> [B,1,C,H,W], ensemble of one
             x = x[:, None, ...]
+        if self.window == "hann":
+            x = x * hann2d(x.shape[-2], x.shape[-1], x)
         mag = torch.abs(torch.fft.rfft2(x, dim=(-2, -1), norm="ortho"))
         return mag.flatten(start_dim=-3)
 
@@ -273,6 +292,200 @@ class OpticalFlowConsistencyLoss(nn.Module):
         return out.mean()
 
 
+class WeightedMSELoss(nn.Module):
+    """MSE in network space with weights rising with the target intensity (Baselines v2, G1).
+
+    A pixel whose target y (mm) lies in [u_k, u_{k+1}) of the threshold grid gets weight
+    1 / P(Y >= u_k), the inverse exceedance frequency of its bin floor in the training
+    sample (P = 1 below the first level, so dry pixels weigh 1). This is the "balanced MSE"
+    of radar nowcasting with the weights derived from the hourly grid instead of set by hand.
+    Constant weights give back the MSE.
+    """
+
+    def __init__(self, thresholds, exceed_frac):
+        super().__init__()
+        u = torch.as_tensor(thresholds, dtype=torch.float32)
+        p = torch.as_tensor(exceed_frac, dtype=torch.float32)
+        if u.shape != p.shape or not bool((p > 0).all()):
+            raise ValueError("need one positive exceedance fraction per threshold")
+        self.register_buffer("u", u)
+        self.register_buffer("w", torch.cat([u.new_ones(1), 1.0 / p]))
+
+    def forward(self, pred_norm, target_norm, target_phys):
+        k = torch.bucketize(target_phys.float(), self.u, right=True)    # number of levels <= y
+        return (self.w[k] * (pred_norm.float() - target_norm.float()).square()).mean()
+
+
+def train_exceedance_fractions(config: dict, thresholds) -> np.ndarray:
+    """P(Y >= u_j) per pixel, as the trainer samples the training list.
+
+    From the store's area curves (gamma channel A, which counts pixels >= u_j) at the list's
+    rows, weighted as the trainer's WeightedRandomSampler: wet patches (list p_max > 0.1)
+    and dry patches each carry half the draws (wet_dry_ratio = 1).
+    """
+    import zarr
+    rows, wet = [], []
+    with open(config["TRAIN_METADATA_FILE"]) as f:
+        for line in f:
+            parts = line.strip().split(",")
+            if len(parts) in (4, 5):
+                rows.append(int(parts[4]) if len(parts) == 5 else len(rows))
+                wet.append(float(parts[3]) > 0.1)
+    rows, wet = np.asarray(rows), np.asarray(wet)
+    z = zarr.open(os.path.join(config["PREPROCESSED_DATA_DIR"], "preprocessed_dataset.zarr"), mode="r")
+    g = z["train/gamma_targets"]
+    if g.attrs.get("channels", "A").split(",")[0] != "A":
+        raise ValueError("gamma channel 0 is not the area")
+    nq = len(thresholds)
+    A = np.empty((len(rows), nq), dtype=np.float64)
+    step = 250_000                                   # read in slabs: the full array is ~400 MB
+    order = np.argsort(rows)
+    for s in range(0, len(rows), step):
+        idx = order[s:s + step]
+        lo, hi = rows[idx].min(), rows[idx].max() + 1
+        A[idx] = g[lo:hi, 0, :nq][rows[idx] - lo]
+    px = float(config.get("PIXEL_SIZE_KM", 2.0))
+    frac = A / (int(config.get("PATCH_SIZE", 128)) ** 2 * px * px)
+    if wet.all() or not wet.any():                   # one class only: the sampler draws uniformly
+        return frac.mean(0)
+    return 0.5 * frac[wet].mean(0) + 0.5 * frac[~wet].mean(0)
+
+
+class PinballLoss(nn.Module):
+    """Pinball (quantile) loss at level tau; its minimiser is the conditional tau-quantile.
+
+    Run in network space: the quantile is equivariant under the monotone map to mm, so the
+    minimiser is the same field, and the bounded range keeps the scale comparable to the MSE.
+    """
+
+    def __init__(self, tau: float = 0.95):
+        super().__init__()
+        if not 0.0 < tau < 1.0:
+            raise ValueError("tau must lie in (0, 1)")
+        self.tau = float(tau)
+
+    def forward(self, pred, target):
+        d = target.float() - pred.float()
+        return torch.maximum(self.tau * d, (self.tau - 1.0) * d).mean()
+
+
+class SoftFSSLoss(nn.Module):
+    """Mean of (1 - FSS) over thresholds and windows, with a sigmoid exceedance for the prediction.
+
+    FSS as src/evaluation/tail_metrics.FSSAccumulator (Roberts & Lean 2008): box-filtered
+    exceedance fractions, sums pooled over the batch before the ratio. The prediction's
+    indicator 1[x >= u] becomes sigmoid((x - u) / (T u)), a relative width so every level is
+    resolved alike; the target keeps the hard indicator, so as T -> 0 the loss is exactly
+    1 - FSS of the evaluation. A threshold with no exceedance in either field scores 0.
+    """
+
+    def __init__(self, thresholds, windows=(5, 11, 21), temperature: float = 0.1, eps: float = 1e-8,
+                 hard_target: bool = True):
+        super().__init__()
+        self.hard_target = bool(hard_target)     # False: soft on both sides (member-to-member terms)
+        if temperature <= 0:
+            raise ValueError("temperature must be > 0")
+        self.register_buffer("u", torch.as_tensor(thresholds, dtype=torch.float32).view(1, -1, 1, 1))
+        self.windows = [int(w) for w in windows]
+        if any(w % 2 == 0 for w in self.windows):
+            raise ValueError("windows must be odd (centred box, as the evaluation's uniform_filter)")
+        self.temperature, self.eps = float(temperature), float(eps)
+
+    def forward(self, pred, target):
+        soft = lambda x: torch.sigmoid((x.float() - self.u) / (self.temperature * self.u))
+        sp = soft(pred)                                                              # [B,Q,H,W]
+        st = (target.float() >= self.u).float() if self.hard_target else soft(target)
+        out = []
+        for w in self.windows:
+            pf = F.avg_pool2d(sp, w, stride=1, padding=w // 2, count_include_pad=True)
+            po = F.avg_pool2d(st, w, stride=1, padding=w // 2, count_include_pad=True)
+            num = (pf - po).square().sum((0, 2, 3))
+            den = (pf.square() + po.square()).sum((0, 2, 3))
+            out.append(num / (den + self.eps))
+        return torch.stack(out).mean()
+
+
+def _diagram(f: np.ndarray, min_persistence: float):
+    """Superlevel cubical persistence of f [H,W]: per dimension (0, 1) an int array [n, 2] of
+    the (birth, death) pixels in C order, birth value >= death value. The essential H0 class
+    (the global maximum) is paired with the global minimum."""
+    import gudhi
+    cc = gudhi.CubicalComplex(top_dimensional_cells=-f)
+    cc.compute_persistence()
+    reg, ess = cc.cofaces_of_persistence_pairs()
+    h, w = f.shape
+    to_c = lambda i: (i % h) * w + (i // h)          # gudhi indexes the cells in Fortran order
+    flat = f.ravel()
+    out = []
+    for d in (0, 1):
+        pr = to_c(reg[d]) if d < len(reg) and len(reg[d]) else np.zeros((0, 2), dtype=np.int64)
+        if d == 0 and len(ess) and len(ess[0]):
+            e = to_c(np.asarray(ess[0][:1]))
+            pr = np.concatenate([pr, np.array([[e[0], int(np.argmin(flat))]])])
+        pr = pr.reshape(-1, 2)
+        keep = flat[pr[:, 0]] - flat[pr[:, 1]] > min_persistence
+        out.append(pr[keep])
+    return out
+
+
+def _w2_matching(P: np.ndarray, T: np.ndarray):
+    """Optimal partial matching for the squared 2-Wasserstein distance between diagrams.
+
+    P [n,2], T [m,2] points (birth, death). Each point is matched to a point of the other
+    diagram or to its projection on the diagonal (squared distance (b - d)^2 / 2). Returns
+    (pi, tj) of matched index pairs and the unmatched indices of P and of T.
+    """
+    from scipy.optimize import linear_sum_assignment
+    n, m = len(P), len(T)
+    dP = 0.5 * (P[:, 0] - P[:, 1]) ** 2
+    dT = 0.5 * (T[:, 0] - T[:, 1]) ** 2
+    big = 1e18
+    C = np.zeros((n + m, m + n))
+    C[:n, :m] = ((P[:, None, :] - T[None, :, :]) ** 2).sum(-1)
+    C[:n, m:] = big
+    C[np.arange(n), m + np.arange(n)] = dP
+    C[n:, :m] = big
+    C[n + np.arange(m), np.arange(m)] = dT
+    r, c = linear_sum_assignment(C)
+    real = (r < n) & (c < m)
+    return r[real], c[real], r[(r < n) & (c >= m)], c[(r >= n) & (c < m)]
+
+
+class PersistentHomologyLoss(nn.Module):
+    """Squared 2-Wasserstein distance between the H0 and H1 superlevel persistence diagrams of
+    prediction and target, log1p(mm) fields, mean over the batch.
+
+    Diagrams come from gudhi's cubical complex; the matching is fixed (no gradient) and the
+    loss is a function of the prediction's values at its critical pixels, so the gradient
+    moves only those pixels (the usual topology-loss construction). Features with
+    persistence <= min_persistence are dropped from both diagrams. Runs on the CPU, one
+    patch at a time.
+    """
+
+    def __init__(self, min_persistence: float = 0.05):
+        super().__init__()
+        self.min_persistence = float(min_persistence)
+
+    def forward(self, pred, target):
+        p = torch.log1p(pred.float().clamp_min(0.0))[:, 0]
+        t = torch.log1p(target.float().clamp_min(0.0))[:, 0]
+        pn, tn = p.detach().cpu().numpy(), t.cpu().numpy()
+        total = p.new_zeros(())
+        for b in range(p.shape[0]):
+            pf, tf = p[b].reshape(-1), tn[b].ravel()
+            for dp, dt in zip(_diagram(pn[b], self.min_persistence), _diagram(tn[b], self.min_persistence)):
+                Pv = pn[b].ravel()[dp] if len(dp) else np.zeros((0, 2))
+                Tv = tf[dt] if len(dt) else np.zeros((0, 2))
+                pi, tj, pu, tu = _w2_matching(Pv, Tv)
+                dpt = torch.as_tensor(dp, device=p.device)
+                Pt = pf[dpt] if len(dp) else p.new_zeros((0, 2))
+                Tt = torch.as_tensor(Tv, dtype=p.dtype, device=p.device)
+                total = total + (Pt[pi] - Tt[tj]).square().sum()
+                total = total + 0.5 * (Pt[pu, 0] - Pt[pu, 1]).square().sum()
+                total = total + 0.5 * float(((Tv[tu, 0] - Tv[tu, 1]) ** 2).sum())
+        return total / p.shape[0]
+
+
 class QuantileMassMinkowskiLoss(nn.Module):
     """Deterministic Minkowski loss in the reward's quantile_mass form (DECISIONS §39, §41).
 
@@ -307,7 +520,8 @@ class QuantileMassMinkowskiLoss(nn.Module):
 class StructuralLoss(nn.Module):
     """Adapter giving every structural loss one call signature.
 
-    space: "norm" (log-normalised network space) or "phys" (mm/h).
+    space: "norm" (log-normalised network space), "phys" (mm/h), or "both" (the loss takes
+    pred_norm, target_norm, target_phys: network-space errors weighted by the intensity).
     """
 
     def __init__(self, fn: nn.Module, name: str, space: str,
@@ -327,6 +541,8 @@ class StructuralLoss(nn.Module):
             if self.needs_target_field:
                 return self.fn(pred_phys, gamma_target, target_phys, anneal_factor=anneal_factor)
             return self.fn(pred_phys, gamma_target, anneal_factor=anneal_factor)
+        if self.space == "both":
+            return self.fn(pred_norm, target_norm, target_phys)
         pred = pred_phys if self.space == "phys" else pred_norm
         target = target_phys if self.space == "phys" else target_norm
         if self.needs_reference:
@@ -374,8 +590,35 @@ def build_structural_loss(name: str, config: dict, device) -> StructuralLoss:
         return StructuralLoss(fn, "minkowski" + tag, "phys", needs_gamma=True).to(device)
 
     if name == "spectral":
-        fn = FFT2DKernelCRPSLoss(alpha=float(config.get("SPECTRAL_ALPHA", 1.0)))
-        return StructuralLoss(fn, "spectral", "norm").to(device)
+        win = config.get("SPECTRAL_WINDOW") or "none"
+        fn = FFT2DKernelCRPSLoss(alpha=float(config.get("SPECTRAL_ALPHA", 1.0)), window=win)
+        return StructuralLoss(fn, "spectral" + ("" if win == "none" else f" [{win} window]"), "norm").to(device)
+
+    if name in ("wmse", "fss"):
+        # The hourly grid, truncated below the cut as the Minkowski loss is (R4, DECISIONS §43).
+        from src.utils import load_physical_thresholds
+        u = load_physical_thresholds(config)
+        u_max = config.get("MINKOWSKI_MAX_THRESHOLD")
+        if u_max is not None:
+            u = u[u < float(u_max)]
+        tag = "" if u_max is None else f" [{len(u)} thresholds < {float(u_max):g}]"
+        if name == "wmse":
+            p = train_exceedance_fractions(config, u)
+            print(f"[wmse] P(Y >= u) on {os.path.basename(config['TRAIN_METADATA_FILE'])}: "
+                  + ", ".join(f"{a:g}:{b:.3g}" for a, b in zip(u, p)), flush=True)
+            return StructuralLoss(WeightedMSELoss(u, p), "wmse" + tag, "both").to(device)
+        windows = [int(w) for w in config.get("FSS_WINDOWS", [5, 11, 21])]
+        temp = float(config.get("FSS_TEMPERATURE", 0.1))
+        return StructuralLoss(SoftFSSLoss(u, windows, temp), f"fss [windows {windows}, T {temp:g}]" + tag,
+                              "phys").to(device)
+
+    if name == "quantile":
+        tau = float(config.get("QUANTILE_TAU", 0.95))
+        return StructuralLoss(PinballLoss(tau), f"quantile [tau {tau:g}]", "norm").to(device)
+
+    if name == "ph":
+        mp = float(config.get("PH_MIN_PERSISTENCE", 0.05))
+        return StructuralLoss(PersistentHomologyLoss(mp), f"ph [min persistence {mp:g}]", "phys").to(device)
 
     if name == "ssim":
         fn = ImageSSIMLoss(window_size=int(config.get("SSIM_WINDOW", 11)))
@@ -405,7 +648,7 @@ def build_structural_loss(name: str, config: dict, device) -> StructuralLoss:
 
     raise ValueError(
         f"unknown STRUCTURAL_LOSS {name!r}; expected one of: "
-        "minkowski, spectral, ssim, wetarea, opticalflow"
+        "minkowski, spectral, ssim, wetarea, opticalflow, wmse, quantile, fss, ph"
     )
 
 

@@ -101,6 +101,12 @@ def main():
     ap.add_argument("--gauge_pixels", default=None,
                     help="CSV station,row,col (radar-grid pixel): write prediction and target at every station "
                          "inside an evaluated tile to gauge_pixels.csv.gz (DECISIONS §43, C3)")
+    ap.add_argument("--qm", default=None,
+                    help="quantile-map table (scripts/evaluate/quantile_map.py fit): applied to the "
+                         "prediction, or to every FM member, before any metric (Baselines v2)")
+    ap.add_argument("--qm_hist", default=None,
+                    help="write the pooled pixel histograms of prediction (FM: member 0) and target to "
+                         "this .npz, the input of quantile_map.py fit")
     ap.add_argument("--tag", default=None, help="row label; defaults to --model")
     ap.add_argument("--output_dir", default="eval_results/extremes")
     args = ap.parse_args()
@@ -171,6 +177,16 @@ def main():
     def decode(y):
         return torch.relu(torch.expm1(torch.clamp(y, 0.0, 1.0) * max_val))
 
+    qm = None
+    if args.qm:
+        from src.evaluation.quantile_map import QuantileMap
+        qm = QuantileMap.load(args.qm)
+        print(f"[eval] quantile mapping: {args.qm} (top ratio {qm.ratio:.3f})")
+    if args.qm_hist:
+        from src.evaluation.quantile_map import LogHistogram
+        qh_pred, qh_obs = LogHistogram(), LogHistogram()
+    post = qm if qm is not None else (lambda x: x)
+
     fss = FSSAccumulator(fss_thr, args.fss_windows)
     pot_p, pot_o = POTAccumulator(pot_u), POTAccumulator(pot_u)
     rec = DayRecord(list(fss._num), pot_u) if (args.bootstrap or args.leave_out) else None
@@ -199,16 +215,16 @@ def main():
             target = decode(Y[:, 0:1])
 
             if args.model == "bicubic":
-                pred = decode(X[:, 0:1])              # channel 0 is the interpolated input
+                pred = post(decode(X[:, 0:1]))        # channel 0 is the interpolated input
             elif args.model == "backbone":
-                pred = decode(backbone(X)[:, 0:1])
+                pred = post(decode(backbone(X)[:, 0:1]))
             else:
                 mu = backbone(X)
                 cond = torch.cat([X, mu[:, 0:1]], dim=1) if cond_on_mean else X
                 members = []
                 for _ in range(args.ensemble):
                     r = fm.sample(cond, n_steps=steps, method=sampler, in_channels=1)
-                    members.append(decode(mu[:, 0:1] + sigma * r))
+                    members.append(post(decode(mu[:, 0:1] + sigma * r)))
                 ens = torch.stack(members, 0)          # [M,B,1,H,W]
                 crps_i.append(crps_ensemble(ens[:, :, 0].cpu().numpy(),
                                             target[:, 0].cpu().numpy()).mean(axis=(1, 2)))
@@ -249,6 +265,8 @@ def main():
 
             pp = pred.squeeze(1).cpu().numpy()
             tt = target.squeeze(1).cpu().numpy()
+            if args.qm_hist:
+                qh_pred.update(pp); qh_obs.update(tt)
             if stations_by_tile:                  # loader is not shuffled: sample i <-> ds row i
                 ens_np = ens[:, :, 0].cpu().numpy() if args.model == "fm" else None
                 for i in range(pp.shape[0]):
@@ -325,6 +343,13 @@ def main():
         import pandas as pd
         pd.DataFrame(gauge_rows).to_csv(os.path.join(out_dir, "gauge_pixels.csv.gz"), index=False)
         summary["gauge_pixels_rows"] = len(gauge_rows)
+    if args.qm:
+        summary["quantile_map"] = args.qm
+    if args.qm_hist:
+        np.savez(args.qm_hist, pred_counts=qh_pred.counts, pred_zero=qh_pred.n_zero,
+                 obs_counts=qh_obs.counts, obs_zero=qh_obs.n_zero,
+                 checkpoint=str(args.checkpoint or args.fm_checkpoint), list=config[_META[args.split]])
+        print(f"[eval] quantile-map histograms -> {args.qm_hist}")
     with open(os.path.join(out_dir, "extremes_summary.yaml"), "w") as f:
         yaml.safe_dump(summary, f, sort_keys=False)
     np.savez_compressed(os.path.join(out_dir, "extremes_arrays.npz"),

@@ -879,34 +879,61 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
       spectral row comes with G3 -> verify at step 4 (~2026-11-19): `queue.log` prints "done already" for them.
 
 **G1. Code (no GPU; each with a test in `tests/`)**
-- [ ] `wmse`: MSE with per-pixel weights rising with the target intensity, inverse exceedance frequency of the
+- [x] `wmse`: MSE with per-pixel weights rising with the target intensity, inverse exceedance frequency of the
       hourly threshold grid (the radar-nowcasting "balanced MSE" form, re-derived for hourly levels), as the
       auxiliary term. -> verify: constant weights reproduce MSE; zero at pred = target; report its gradient share by
       intensity next to Minkowski's (§40 tool) so the reader sees whether the tail emphasis is comparable.
-- [ ] `quantile`: pinball loss at tau (default 0.95) as the auxiliary term. -> verify: on a synthetic sample the
-      minimiser is the tau-quantile.
-- [ ] `SPECTRAL_WINDOW: hann` for the spectral loss and the spectral reward (default none = current behaviour).
+      *Done 2026-11-16 (code + tests; the gradient share comes with the G2 parity audit).* Weights 1/P(Y >= u_k) at
+      the bin floor, P from the list's gamma areas with the trainer's half-wet sampling, grid truncated < 50.1 in
+      both arms: full P(>=0.1) 7.9e-2 ... P(>=31.7) 1.17e-5 (weights 12.7 ... 8.5e4); cut 7.8e-2 ... 2.84e-6 (top
+      weight 3.5e5, 4x the full arm's: each arm uses its own list, as a practitioner would). The dynamic range
+      (8.5e4 vs ~30 in the hand-set nowcasting weights) is the strongest form of rival (1); watch for overshoot.
+- [x] `quantile`: pinball loss at tau (default 0.95) as the auxiliary term. -> verify: on a synthetic sample the
+      minimiser is the tau-quantile. *Done 2026-11-16 (network space; the quantile is equivariant under the map to mm).*
+- [x] `SPECTRAL_WINDOW: hann` for the spectral loss and the spectral reward (default none = current behaviour).
       -> verify: on a synthetic field, adding an edge spike lowers the unwindowed loss and not the windowed one;
-      zero at pred = target.
-- [ ] `fss`: soft multi-threshold, multi-window FSS loss, mean of (1 - FSS) over thresholds (the hourly grid, or a
+      zero at pred = target. *Loss done 2026-11-16 (symmetric Hann, zero on the edges: the edge spikes leave the
+      windowed loss exactly unchanged while lowering the unwindowed one 0.045 -> 0.040). The reward is the mode
+      `spectral_hann` (not a config key, so the log line names it).*
+- [x] `fss`: soft multi-threshold, multi-window FSS loss, mean of (1 - FSS) over thresholds (the hourly grid, or a
       subset) and windows (5, 11, 21). -> verify: zero at pred = target; tends to the evaluation FSS
-      (`src/evaluation`) as the sigmoid temperature -> 0.
-- [ ] `ph`: persistent-homology loss (gudhi cubical complex, superlevel filtration; Wasserstein distance between the
+      (`src/evaluation`) as the sigmoid temperature -> 0. *Done 2026-11-16: sigmoid((x - u)/(T u)), T = 0.1, hard
+      target indicator, grid truncated < 50.1; equals the evaluation FSS to 1e-4 at T = 1e-5.*
+- [x] `ph`: persistent-homology loss (gudhi cubical complex, superlevel filtration; Wasserstein distance between the
       H0 and H1 diagrams of prediction and target; gradient through the critical pixels). -> verify: zero for
       identical fields, finite gradients, and a timing gate: it runs only if one training batch costs < ~2x an MSE
       batch on node40's 6 CPUs (else it stays a cost argument in the text).
-- [ ] Quantile mapping post-processor (`scripts/evaluate/quantile_map.py`): global empirical QM fitted on train
+      *Code done 2026-11-16; timing gate FAILED.* gudhi takes ~54 ms per 128x128 wet field (one core), ~110 ms
+      per patch with prediction and target; a half-wet batch of 128 costs 14.5 s on one core, about the same at
+      min persistence 0, 0.05 or 0.2 (the persistence computation dominates, not the matching). Best case
+      (target diagrams precomputed, 6 cores) ~1.15 s per batch on top of the 0.43 s step = ~3.7x an MSE step
+      (~7 days per run). Dropped from G2 (researcher, 2026-11-16); moved to G6, an end-of-project option.
+- [x] Quantile mapping post-processor (`scripts/evaluate/quantile_map.py`): global empirical QM fitted on train
       predictions vs train targets (the cut list for cut models), multiplicative extrapolation above the top fitted
       quantile, applied in `eval_extremes.py`. -> verify: QM of the target is the identity; on train the mapped
       marginal equals the target marginal. Note for the text: fitted on the cut list it can only extrapolate.
-- [ ] FM rewards: `pixel` (energy score of the field in log-normalised space, = ensemble CRPS per pixel), `pixel`
+      *Done 2026-11-16 (`src/evaluation/quantile_map.py`, `tests/test_quantile_map.py`).* Marginals as log1p
+      histograms (zeros apart), levels to 1 - 1e-6 but only where >= 100 pixels lie above (the top level sets the
+      extrapolation ratio), map interpolated in log1p. Run: `quantile_map.py sample <train list> <subset> --n 16384`
+      -> `eval_extremes.py <cfg with TRAIN_METADATA_FILE=subset> --split train --qm_hist h.npz` (FM: --ensemble 1)
+      -> `quantile_map.py fit h.npz qm.json` -> any eval with `--qm qm.json` (applied to the prediction or to every
+      FM member). Smoke-tested end to end with bicubic on 512 patches.
+- [x] FM rewards: `pixel` (energy score of the field in log-normalised space, = ensemble CRPS per pixel), `pixel`
       with inverse-mass weights (threshold-weighted CRPS), `fss`, windowed `spectral`. -> verify: with M = 1 each
       equals its U-Net loss; fair normalisation; finite gradients (as `tests/test_spectral_reward.py`).
+      *Done 2026-11-16 (`reward_finetune.py`, tests in `tests/test_baselines_v2.py`).* Modes `pixel` (= pixel-mean
+      fair CRPS, checked by brute force; M = 1 is the network-space MAE), `pixel_tw` (proper threshold-weighted
+      CRPS: the pixel energy score of v(x), v the chaining function of the wmse weights 1/P(Y >= u_k) in network
+      space -- weighting by the observed value would be improper), `fss` (M = 1 is the U-Net loss exactly;
+      member pairs use the soft indicator on both sides; 1 - FSS is not a metric, so propriety is not
+      guaranteed), `spectral_hann` (M = 1 is the windowed U-Net loss). `pixel_tw` and `fss` need
+      `configure_pixel_rewards(config, mode)`, called by the trainer, `grad_norm_terms.py` and
+      `diagnose_coupling.py`; unconfigured they raise. Grid truncated below MINKOWSKI_MAX_THRESHOLD, as the U-Net.
 
 **G2. U-Net runs (node40 GPUs 0-3, ~46 h each)**
-- [ ] Parity audits at the vanilla checkpoint for wmse, quantile, fss, windowed spectral, ph -> `weights.json`.
-- [ ] Full and cut, seed 42: wmse, quantile, fss, windowed spectral (bracket if its parity weight hacks), ph (if
-      gated in): 8-10 runs, ~5 days on 4 GPUs. -> verify: startup lines (loss, weight, list, GPU UUID); bracket rule;
+- [ ] Parity audits at the vanilla checkpoint for wmse, quantile, fss, windowed spectral -> `weights.json`.
+- [ ] Full and cut, seed 42: wmse, quantile, fss, windowed spectral (bracket if its parity weight hacks):
+      8 runs, ~5 days on 4 GPUs. -> verify: startup lines (loss, weight, list, GPU UUID); bracket rule;
       val + FM-subset evals; panels.
 - [ ] QM rows (eval only): MSE + QM, both arms.
 
@@ -919,7 +946,7 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
 - [ ] Seeds 43/44 for control and Minkowski (from E3 step 5) stay; add seeds for any rival within the seed spread.
 
 **G4. Scorecard v2**
-- [ ] Rows: MSE, MSE + QM, wmse, quantile, area-only, windowed spectral, fss, ph, Minkowski | FM clean, FM + QM,
+- [ ] Rows: MSE, MSE + QM, wmse, quantile, area-only, windowed spectral, fss, Minkowski | FM clean, FM + QM,
       FM + pixel ES, FM + weighted pixel ES, FM + windowed spectral, FM + fss, FM + area-only, FM + Minkowski
       (energy_qm). SSIM, wet area, optical flow and unwindowed spectral are not reported (G0).
 
@@ -928,6 +955,12 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
       members per step, optionally plus the windowed spectral CRPS); no diffusion. Cost to be measured with a
       10%-data smoke run first (estimate several GPU-days on node32). -> verify: spread-skill ratio ~1 on
       val_subset4096, then the scorecard rows.
+
+**G6. End-of-project option: persistent-homology loss (only if time remains)**
+- [ ] `ph` is coded and tested (G1) but costs ~3.7x an MSE step (~7 days per run). Before any run: precompute the
+      target diagrams per store row (flips and rotations leave them unchanged) and spread the prediction diagrams
+      over node40's 6 cores, then re-time; full and cut, seed 42, parity weight. Until then it is a cost argument in
+      the text.
 
 ### Validation: every stage passes its checks before the next starts (added 2026-10-19)
 `scripts/validate/validate_stage.py <stage>` writes `validation/<stage>/<date>_<commit>.md`

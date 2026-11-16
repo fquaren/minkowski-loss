@@ -3393,6 +3393,9 @@ already run), spectral texture (windowed spectral loss), neighbourhood verificat
 (persistent-homology loss, if its cost allows) and post-hoc correction (quantile mapping of MSE and FM outputs).
 FM gets the reward counterparts: pixel energy score (ensemble CRPS) with and without tail weights, FSS, windowed
 spectral. No cGAN. An FGN-style CRPS-trained generator is planned as a contingency only (EXPERIMENTS G5).
+*Update 2026-11-16 (researcher):* the persistent-homology loss failed its timing gate (~3.7x an MSE step) and
+is dropped from the comparison; it is an end-of-project option if time remains (EXPERIMENTS G6), a cost argument
+in the text until then.
 
 **Why the drops.**
 - *Wet area* is a single-threshold special case of area-only Minkowski, which matches the exceedance curve at every
