@@ -1,0 +1,69 @@
+model: backbone
+tag: r4_mink_cut_s43
+split: val
+n_samples: 1024
+topology_mode: euler
+rmse_extreme: 3.0254275798797607
+rmse_overall: 1.2050039768218994
+rapsd_log_distance: 1.4938325881958008
+minkowski_distance: 1.878068596124649
+fss_thr20.2_win1: 0.24155369811055705
+fss_thr20.2_win5: 0.5274402542037268
+fss_thr20.2_win11: 0.6814633209499898
+fss_thr20.2_win21: 0.7381137634298546
+fss_thr31.7_win1: 0.14026040995230116
+fss_thr31.7_win5: 0.3604153484895931
+fss_thr31.7_win11: 0.50136631026023
+fss_thr31.7_win21: 0.5590151245551986
+fss_thr50.1_win1: 0.0540858318636096
+fss_thr50.1_win5: 0.1669780787329277
+fss_thr50.1_win11: 0.24655352900444616
+fss_thr50.1_win21: 0.28411563397561135
+gpd_xi_pred: .nan
+gpd_xi_obs: 0.15458226264386832
+gpd_sigma_pred: .nan
+gpd_sigma_obs: 14.427768303034071
+gpd_xi_abs_err: .nan
+gpd_n_exc_pred: 164
+gpd_n_exc_obs: 1537
+gpd_exc_count_ratio: 0.10670136629798309
+gpd_upper_endpoint_pred: .inf
+gpd_upper_endpoint_obs: .inf
+rl_pred_lam10: .nan
+rl_obs_lam10: 90.0021355760936
+rl_pred_lam100: .nan
+rl_obs_lam100: 146.9632401651036
+rl_pred_lam1000: .nan
+rl_obs_lam1000: 228.27636762447813
+rl_bias_mean_abs: .nan
+anisotropy_axis_over_diag: 0.3570243504158529
+peak_ratio_median: 0.6193077104622515
+peak_ratio_extreme_median: 0.2811642243842167
+SAL_median:
+- 0.4443556633735777
+- -0.16089692023737695
+- 0.03301187021794526
+extreme_threshold_mmph: 142.20561981201166
+pot_threshold_mmph: 50.1
+note: minkowski_distance is the training objective for Minkowski-trained models and
+  is not independent evidence there; anisotropy ~1 is isotropic, >1 means grid-aligned
+  structure; peak_ratio is predicted/observed patch maximum.
+conditioned:
+  u: 50.1
+  n_cases: 1024
+  n_obs_selected: 187
+  hit_rate: 0.24064171122994651
+  false_alarm_rate: 0.0035842293906810036
+  brier_max_ge_u: 0.1416015625
+  obs_selected:
+    share_obs_events: 1.0
+    exceedance_ratio: 0.10474951203643461
+    peak_ratio_median: 0.5193779468536377
+    pred_max_ge_u_share: 0.24064171122994651
+  input_selected:
+    share_obs_events: 0.44919786096256686
+    exceedance_ratio: 0.13050847457627118
+    peak_ratio_median: 0.7695582509040833
+    pred_max_ge_u_share: 0.2192513368983957
+twcrps_mean: 0.0016320264460318867
+twcrps_extreme: 0.03638471948744899
