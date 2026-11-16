@@ -809,6 +809,20 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       GPU-days) -> verify: startup lines (loss, weight, train list = cut list, GPU).
 - [ ] E2. FM base model on the cut list, sigma_r recomputed for its backbone, then energy_qm on top -> verify: the
       `config FM_RESIDUAL_SCALE` line. Cost of the FM base run to be measured.
+- [ ] E3. *Queued 2026-11-12 (`scripts/hpc/run_fm_r4_queue.sh`, worktree `fm-r4`, log `logs/fm_r4/queue.log`;
+      starts when the U-Net R4 queue prints R4_QUEUE_DONE, ~2026-11-14).* FM R4: the U-Net R4 loss comparison as
+      reward fine-tunes of the FM model. Rows per arm: control (w=0), Minkowski (energy_qm), area-only (energy,
+      channels [1,0,0]), spectral, wetarea, SSIM, optical flow. The competing rewards are energy scores
+      (`REWARD_MODE` spectral / wetarea / ssim / opticalflow, `tests/test_spectral_reward.py`): L1 distances, so
+      proper, except SSIM (1-SSIM is not a metric). Weight: gradient-norm parity with retention on the full arm
+      (DECISIONS §41, as energy_qm), reused on the cut arm. Smoke parities at w=1 (2 batches): wetarea 13, SSIM 28,
+      optical flow 34, area-only 29; spectral 15 in log1p space, ~6.4x more in the log-normalised space used now.
+      Order: (1) full arm seed 42, 5 new rows; (2) U-Net R4 rows on valext/valsub; (3) sigma_r for the cut backbone
+      (r4_mse_cut_s42; `residual_stats.json` backed up and restored) and the FM base on the cut list (~2.6 d);
+      (4) cut arm seed 42, 7 rows; (5) seeds 43/44 for control and Minkowski, both arms. Each row is evaluated on
+      `val_extremes1024` and `val_subset4096` at u=50.1, M=16, from `fm_mink_latest.pth` -> verify per row: startup
+      lines (`config FM_RESIDUAL_SCALE`, reward mode, channel weights), then activity (own-reward drop vs control),
+      anisotropy, exceedance ratio, RL bias against fm_energy_ctl on the same subset.
 
 **F. Scoring (test touched once per final model)**
 - [ ] F1. R0, R1, R3 for every final model; R2 on the paired store.

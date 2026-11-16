@@ -77,6 +77,7 @@ def main():
         physical_thresholds=load_physical_thresholds(config),
         pixel_size_km=float(config.get("PIXEL_SIZE_KM", 2.0)),
         topology_mode=config.get("TOPOLOGY_MODE", "euler"), area_mode="ste",
+        channel_weights=config.get("MINKOWSKI_CHANNEL_WEIGHTS", [1.0, 1.0, 1.0]),
     ).to(device)
 
     with open(config["DEM_STATS"]) as f:
@@ -106,7 +107,7 @@ def main():
         rs = [draft_k_sample(fm, cond, n_steps, sampler, K, 1, True) for _ in range(M)]
         fields = torch.stack([decode(mu[:, 0:1] + sigma * r) for r in rs], 0)
         reward = minkowski_reward(geom_fn, fields, Ygamma, mode, anneal, w_spread,
-                                  form, decode(Y[:, 0:1]))
+                                  form, decode(Y[:, 0:1]), max_val, decode(X[:, 0:1]))
         g_rew = grad_of(w_reward * reward)
 
         # anchor, as in the trainer (on the generated residual, DECISIONS §41)

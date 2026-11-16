@@ -1,0 +1,14 @@
+# R4 scorecard, val_subset4096 (n = 4096, u = 50.1 mm, seed 42)
+
+| model | RMSE full | RMSE cut | twCRPS full | twCRPS cut | FSS full | FSS cut | Exceedance ratio full | Exceedance ratio cut | Peak ratio full | Peak ratio cut | Hit rate full | Hit rate cut | False alarms full | False alarms cut | RAPSD full | RAPSD cut | Anisotropy full | Anisotropy cut |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| MSE | 0.343 | 0.344 | 0.0090 | 0.0090 | 0.202 | 0.038 | 0.055 | 0.010 | 0.17 | 0.16 | 0.053 | 0.026 | 0.0e+00 | 0.0e+00 | 3.72 | 3.81 | 2.00 | 2.02 |
+| Minkowski | 0.353 | 0.354 | 0.0092 | 0.0093 | 0.168 | 0.308 | 0.069 | 0.141 | 0.44 | 0.50 | 0.237 | 0.421 | 1.2e-03 | 3.0e-03 | 1.27 | 1.16 | 0.50 | 0.59 |
+| Minkowski area-only | 0.350 | 0.352 | 0.0092 | 0.0094 | 0.226 | 0.223 | 0.097 | 0.124 | 0.43 | 0.45 | 0.289 | 0.289 | 2.5e-04 | 4.9e-04 | 2.48 | 2.52 | 1.55 | 1.57 |
+| SSIM | 0.338 | 0.337 | 0.0091 | 0.0090 | 0.315 | 0.165 | 0.128 | 0.048 | 0.19 | 0.18 | 0.079 | 0.053 | 0.0e+00 | 0.0e+00 | 3.46 | 3.59 | 1.80 | 1.70 |
+| wet area | 0.345 | 0.342 | 0.0092 | 0.0090 | 0.249 | 0.000 | 0.086 | 0.000 | 0.20 | 0.19 | 0.053 | 0.000 | 0.0e+00 | 0.0e+00 | 3.67 | 3.69 | 1.79 | 1.61 |
+| spectral w=0.15 | 0.992 | 0.449 | 0.0279 | 0.0103 | 0.249 | 0.212 | 0.300 | 0.134 | 3.13 | 0.41 | 0.737 | 0.237 | 1.0e-01 | 2.1e-02 | 2.93 | 1.37 | 1.47 | 1.74 |
+| spectral w=0.05 | 0.588 |  | 0.0144 |  | 0.176 |  | 0.162 |  | 0.79 |  | 0.605 |  | 4.1e-02 |  | 2.04 |  | 1.62 |  |
+| spectral w=0.015 | 0.346 |  | 0.0091 |  | 0.098 |  | 0.055 |  | 0.23 |  | 0.132 |  | 2.5e-04 |  | 1.93 |  | 1.65 |  |
+| MSE random-drop |  | 0.341 |  | 0.0089 |  | 0.109 |  | 0.055 |  | 0.21 |  | 0.079 |  | 0.0e+00 |  | 3.56 |  | 1.76 |
+| FM, clean (mean) | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
