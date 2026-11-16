@@ -58,7 +58,10 @@ RUN_DIR = next(d for d in (os.path.join(ROOT, "runs", "sr_analytical"),
 LOSSES = ["minkowski", "spectral", "ssim", "wetarea", "opticalflow"]
 # Weights the Study-1 runs were trained with (scripts/hpc/losses_wrapper.sh; Minkowski 1e-4).
 WEIGHTS = {"minkowski": 1e-4, "spectral": 5e-4, "ssim": 1.6e-4, "wetarea": 2e-2,
-           "opticalflow": 4e-5}
+           "opticalflow": 4e-5,
+           # Baselines v2 (G2): nominal, never trained at; the Adam share is linear in lambda and the
+           # parity rule rescales it (scripts/hpc/node40_v2_audits.sh).
+           "wmse": 1.0, "quantile": 1.0, "fss": 1.0}
 RUNS = {
     "vanilla": ("UNet_Ana_20260623_144958", None),
     "minkowski": ("UNet_Ana_20260731_100128", "minkowski"),
