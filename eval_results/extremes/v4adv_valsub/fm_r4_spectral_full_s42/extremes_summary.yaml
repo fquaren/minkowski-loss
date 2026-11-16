@@ -1,0 +1,72 @@
+model: fm
+tag: fm_r4_spectral_full_s42
+split: val
+n_samples: 4096
+topology_mode: euler
+rmse_extreme: 1.910627841949463
+rmse_overall: 0.33666273951530457
+rapsd_log_distance: 0.6225239038467407
+minkowski_distance: 1.0017538350075483
+fss_thr20.2_win1: 0.18931727936467269
+fss_thr20.2_win5: 0.4863666758099032
+fss_thr20.2_win11: 0.6840036791530384
+fss_thr20.2_win21: 0.76500515071713
+fss_thr31.7_win1: 0.13174946004319654
+fss_thr31.7_win5: 0.3826477156800574
+fss_thr31.7_win11: 0.5464628647662131
+fss_thr31.7_win21: 0.6005921255555027
+fss_thr50.1_win1: 0.062322946175637384
+fss_thr50.1_win5: 0.1961321008705017
+fss_thr50.1_win11: 0.3033544238840086
+fss_thr50.1_win21: 0.3348073256195847
+gpd_xi_pred: .nan
+gpd_xi_obs: -0.032209455504669596
+gpd_sigma_pred: .nan
+gpd_sigma_obs: 21.535860364854962
+gpd_xi_abs_err: .nan
+gpd_n_exc_pred: 63
+gpd_n_exc_obs: 290
+gpd_exc_count_ratio: 0.21724137931034482
+gpd_upper_endpoint_pred: .inf
+gpd_upper_endpoint_obs: 718.7191997791698
+rl_pred_lam10: .nan
+rl_obs_lam10: 97.89392711917846
+rl_pred_lam100: .nan
+rl_obs_lam100: 142.27147093642995
+rl_pred_lam1000: .nan
+rl_obs_lam1000: 183.47683977630953
+rl_bias_mean_abs: .nan
+anisotropy_axis_over_diag: 1.442526206861718
+peak_ratio_median: 0.8905105173530274
+peak_ratio_extreme_median: 0.5357208577588933
+SAL_median:
+- 0.18243162669662524
+- 0.014061751734187085
+- 0.033479600310722765
+extreme_threshold_mmph: 48.42355365753178
+pot_threshold_mmph: 50.1
+note: minkowski_distance is the training objective for Minkowski-trained models and
+  is not independent evidence there; anisotropy ~1 is isotropic, >1 means grid-aligned
+  structure; peak_ratio is predicted/observed patch maximum.
+conditioned:
+  u: 50.1
+  n_cases: 4096
+  n_obs_selected: 38
+  hit_rate: 0.23684210526315788
+  false_alarm_rate: 0.0014785608674223755
+  brier_max_ge_u: 0.005759239196777344
+  obs_selected:
+    share_obs_events: 1.0
+    exceedance_ratio: 0.1724137931034483
+    peak_ratio_median: 0.526049017906189
+    pred_max_ge_u_share: 0.23684210526315788
+  input_selected:
+    share_obs_events: 0.34210526315789475
+    exceedance_ratio: 0.24257425742574257
+    peak_ratio_median: 0.8086683750152588
+    pred_max_ge_u_share: 0.23684210526315788
+twcrps_mean: 8.383743333790033e-05
+twcrps_extreme: 0.008372878449367042
+crps_mean: 0.03178655397541065
+crps_extreme: 0.2356296026469104
+ensemble_size: 16
