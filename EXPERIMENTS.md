@@ -858,6 +858,74 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
 - [ ] F4. Figures: one panel set per showcase (input, target, each model, gauges); the appendix event table.
 - [ ] (R6, DPC Italy: only if R4 is positive.)
 
+### Baselines v2: one row per rival explanation (added 2026-11-16, DECISIONS §44)
+Each row answers one cheaper explanation of the Minkowski gain a referee will raise: (1) tail reweighting,
+(2) distribution matching, (3) spectral texture, (4) neighbourhood verification, (5) "a topology loss does it",
+(6) "post-hoc correction does it". Same protocol as R4: seed 42, full and cut lists, weights by gradient-norm parity
+(DECISIONS §9 / §41) and the bracket rule (active MAE >= 1.01x vanilla, MAE <= 1.05x, anisotropy <= 1.2x, false
+alarms <= 1e-3), Minkowski-style grids truncated below the cut in both arms (§43), evaluated on val (172k) and on
+val_extremes1024 / val_subset4096, field panels looked at before any row is believed. Each item: step -> verify.
+
+**G0. Drops and the running runs**
+- [x] Dropped from the comparison (researcher, 2026-11-16): SSIM, wet area, optical flow (U-Net and FM). Their
+      finished rows go to an appendix table; unwindowed spectral 0.15 / 0.05 / 0.015 too, as the edge-spike hacking case.
+- [ ] Unwindowed spectral w = 0.03 (full s42, cut s42, full s43, node40 GPUs 0-2, started 11-16): keep for the
+      appendix or stop and give the GPUs to G2 (researcher to decide).
+- [ ] FM queue cut arm: mark `ssim_cut_s42` and `wetarea_cut_s42` DROPPED in `logs/fm_r4/done.txt`; swap
+      `spectral_cut_s42` for the windowed version (G3). Must happen before step 4 starts (~2026-11-19, when the cut
+      FM base finishes) -> verify: `queue.log` prints "done already" for the dropped labels.
+
+**G1. Code (no GPU; each with a test in `tests/`)**
+- [ ] `wmse`: MSE with per-pixel weights rising with the target intensity, inverse exceedance frequency of the
+      hourly threshold grid (the radar-nowcasting "balanced MSE" form, re-derived for hourly levels), as the
+      auxiliary term. -> verify: constant weights reproduce MSE; zero at pred = target; report its gradient share by
+      intensity next to Minkowski's (§40 tool) so the reader sees whether the tail emphasis is comparable.
+- [ ] `quantile`: pinball loss at tau (default 0.95) as the auxiliary term. -> verify: on a synthetic sample the
+      minimiser is the tau-quantile.
+- [ ] `SPECTRAL_WINDOW: hann` for the spectral loss and the spectral reward (default none = current behaviour).
+      -> verify: on a synthetic field, adding an edge spike lowers the unwindowed loss and not the windowed one;
+      zero at pred = target.
+- [ ] `fss`: soft multi-threshold, multi-window FSS loss, mean of (1 - FSS) over thresholds (the hourly grid, or a
+      subset) and windows (5, 11, 21). -> verify: zero at pred = target; tends to the evaluation FSS
+      (`src/evaluation`) as the sigmoid temperature -> 0.
+- [ ] `ph`: persistent-homology loss (gudhi cubical complex, superlevel filtration; Wasserstein distance between the
+      H0 and H1 diagrams of prediction and target; gradient through the critical pixels). -> verify: zero for
+      identical fields, finite gradients, and a timing gate: it runs only if one training batch costs < ~2x an MSE
+      batch on node40's 6 CPUs (else it stays a cost argument in the text).
+- [ ] Quantile mapping post-processor (`scripts/evaluate/quantile_map.py`): global empirical QM fitted on train
+      predictions vs train targets (the cut list for cut models), multiplicative extrapolation above the top fitted
+      quantile, applied in `eval_extremes.py`. -> verify: QM of the target is the identity; on train the mapped
+      marginal equals the target marginal. Note for the text: fitted on the cut list it can only extrapolate.
+- [ ] FM rewards: `pixel` (energy score of the field in log-normalised space, = ensemble CRPS per pixel), `pixel`
+      with inverse-mass weights (threshold-weighted CRPS), `fss`, windowed `spectral`. -> verify: with M = 1 each
+      equals its U-Net loss; fair normalisation; finite gradients (as `tests/test_spectral_reward.py`).
+
+**G2. U-Net runs (node40 GPUs 0-3, ~46 h each)**
+- [ ] Parity audits at the vanilla checkpoint for wmse, quantile, fss, windowed spectral, ph -> `weights.json`.
+- [ ] Full and cut, seed 42: wmse, quantile, fss, windowed spectral (bracket if its parity weight hacks), ph (if
+      gated in): 8-10 runs, ~5 days on 4 GPUs. -> verify: startup lines (loss, weight, list, GPU UUID); bracket rule;
+      val + FM-subset evals; panels.
+- [ ] QM rows (eval only): MSE + QM, both arms.
+
+**G3. FM rows (node32 GPU 1; after the cut FM base)**
+- [ ] Both arms: pixel energy, weighted pixel energy, fss, windowed spectral (+ the existing control, Minkowski
+      energy_qm, area-only). Full arm needs the new rows; cut arm runs the revised list. Weights by parity with
+      retention. Run as a second queue that starts when the current one has written `fmb_cut.txt` and evaluated
+      `clean_cut`, never by editing the running script. -> verify: startup lines, activity vs control, panels.
+- [ ] FM + QM (eval only), both arms.
+- [ ] Seeds 43/44 for control and Minkowski (from E3 step 5) stay; add seeds for any rival within the seed spread.
+
+**G4. Scorecard v2**
+- [ ] Rows: MSE, MSE + QM, wmse, quantile, area-only, windowed spectral, fss, ph, Minkowski | FM clean, FM + QM,
+      FM + pixel ES, FM + weighted pixel ES, FM + windowed spectral, FM + fss, FM + area-only, FM + Minkowski
+      (energy_qm). Appendix table: SSIM, wet area, optical flow, unwindowed spectral.
+
+**G5. Contingency: an FGN-style CRPS-trained generator (only if time remains or a reviewer asks)**
+- [ ] Noise-conditioned residual U-Net on the same backbone, trained with the fair ensemble CRPS per pixel (M = 2-4
+      members per step, optionally plus the windowed spectral CRPS); no diffusion. Cost to be measured with a
+      10%-data smoke run first (estimate several GPU-days on node32). -> verify: spread-skill ratio ~1 on
+      val_subset4096, then the scorecard rows.
+
 ### Validation: every stage passes its checks before the next starts (added 2026-10-19)
 `scripts/validate/validate_stage.py <stage>` writes `validation/<stage>/<date>_<commit>.md`
 (each check: PASS / FAIL / INFO with numbers) and exits non-zero on any FAIL, so chain scripts

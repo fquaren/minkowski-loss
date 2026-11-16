@@ -3384,3 +3384,25 @@ stratify reporting only) and a held-out period within ODYSSEY (R2/R3 give the ti
     bins), most of the 5-20 mm drift disappears on edge-free hours (tile-edge truncation, caveat above), and a linear
     trend beats reuse in one of four M3 rows only, the one that includes edge hours. Together: closest to W2
     (extreme shapes are seen shapes, re-weighted with intensity); no support for "extrapolate a trend".
+
+## 44. Baselines v2: drop SSIM, wet area and optical flow; one rival per alternative explanation (2026-11-16)
+
+**Decision (researcher).** The comparison is rebuilt around the cheaper explanations of the Minkowski gain a referee
+will raise, one row each: tail reweighting (weighted MSE, pinball loss), distribution matching (area-only Minkowski,
+already run), spectral texture (windowed spectral loss), neighbourhood verification (soft FSS loss), topology
+(persistent-homology loss, if its cost allows) and post-hoc correction (quantile mapping of MSE and FM outputs).
+FM gets the reward counterparts: pixel energy score (ensemble CRPS) with and without tail weights, FSS, windowed
+spectral. No cGAN. An FGN-style CRPS-trained generator is planned as a contingency only (EXPERIMENTS G5).
+
+**Why the drops.**
+- *Wet area* is a single-threshold special case of area-only Minkowski, which matches the exceedance curve at every
+  grid threshold; it cannot test anything area-only does not.
+- *SSIM* measures perceived image similarity with no intensity thresholds; it tests no hypothesis about extremes, and
+  its R4 rows lose tail against MSE in both arms.
+- *Optical flow* is ill-posed for co-located input and target: the estimated flow is ~0 (median 0.04 px), so the
+  teacher is the block-upsampled coarse input and the loss trains the U-Net toward the input blocks (EXPERIMENTS §3b).
+- *Unwindowed spectral* hacks with spikes at the patch edge (FFT periodicity); it is replaced by the Hann-windowed
+  version and kept in the appendix as the hacking case.
+
+Finished rows of the dropped losses stay as an appendix table. Plan and verification steps: EXPERIMENTS
+"Baselines v2" (G0-G5).
