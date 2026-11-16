@@ -1,6 +1,6 @@
 # Experiment tracker
 
-Last updated: 2026-11-04
+Last updated: 2026-11-16 (R4 validation results in §3b)
 
 **Read first:** `DECISIONS.md` (why things are the way they are, and what is already ruled
 out), then `CLAUDE.md` (operational traps), then this file (the compute node in §0, what exists and what's next).
@@ -237,6 +237,39 @@ MSE gradient is 96% noise, so parity is ill-posed there.
   (`reward_finetune.py:263` hard-codes the Minkowski loss).
 
 ---
+
+## 3b. R4 cells on validation — hourly, u = 50.1 mm (evaluated 2026-11-09 / 11-12)
+
+Source: `eval_results/{extremes,backbone}/v4adv_val/r4_*` (172,050 val patches, `unet_latest`, `gpd_xi_obs` +0.183
+in every row). Figures: `figures/v4adv_val_r4_{summary,area,spectral,spectra}/`; full spectral table with RL and
+peak columns in `figures/v4adv_val_r4_spectral/table.md`. Exc. ratio and hit rate are on the patches whose observed
+max is >= u (`conditioned.obs_selected`). Vanilla v4 (`UNet_Ana_20261021_211732`): MAE 0.04390, anisotropy 2.12.
+**This is validation, not the R4 test (F2 not run).**
+
+| Cell | MAE | Aniso | Exc. ratio | Hit | FSS@50.1 w11 |
+|---|---|---|---|---|---|
+| MSE full s42 / s43 | 0.0440 / 0.0438 | 2.30 / 2.12 | 0.096 / 0.087 | 0.042 / 0.031 | 0.325 / 0.295 |
+| MSE cut s42 / s43 | 0.0445 / 0.0439 | 2.32 / 1.98 | 0.072 / 0.055 | 0.022 / 0.014 | 0.276 / 0.214 |
+| MSE random-drop s42 | 0.0441 | 2.07 | 0.111 | 0.040 | 0.329 |
+| Minkowski full s42 / s43 | 0.0457 / 0.0466 | 0.52 / 0.57 | 0.150 / 0.150 | 0.216 / 0.327 | 0.398 / 0.332 |
+| Minkowski cut s42 / s43 | 0.0466 / 0.0460 | 0.52 / 0.49 | 0.165 / 0.140 | 0.289 / 0.234 | 0.389 / 0.352 |
+| Area-only full / cut s42 | 0.0449 / 0.0456 | 1.41 / 1.51 | 0.209 / 0.213 | 0.194 / 0.210 | 0.500 / 0.493 |
+| SSIM full / cut s42 | 0.0444 / 0.0440 | 1.69 / 1.67 | 0.098 / 0.060 | 0.047 / 0.027 | 0.331 / 0.253 |
+| Wet area cut s42 | 0.0436 | 1.68 | 0.065 | 0.024 | 0.265 |
+| Spectral full s42, w 0.15 / 0.05 / 0.015 | 0.0481 / 0.0454 / 0.0443 | 2.25 / 1.92 / 1.65 | 0.318 / 0.174 / 0.051 | 0.779 / 0.561 / 0.048 | 0.312 / 0.308 / 0.198 |
+| Spectral cut s42, w 0.15 | 0.0464 | 2.29 | 0.188 | 0.348 | 0.304 |
+
+**Provisional reading (2026-11-16, not yet in DECISIONS §43):**
+- *MSE loses tail when the extremes are cut:* exc. ratio -25 to -35% and FSS@50.1 -0.05 to -0.08 in both seeds; the
+  size-matched random-drop control does not degrade, so it is the removed extremes, not the row count.
+- *Minkowski shows no cut penalty:* cut and full overlap within the seed spread, the interaction H3 predicts. The
+  spread is large (full hit rate 0.216 vs 0.327 across seeds), so with 2 seeds this is suggestive only; s44 pending.
+- *Area-only* has the highest FSS@50.1 and exc. ratio at about half Minkowski's MAE cost, but anisotropy 1.4-1.5
+  against Minkowski's 0.5: look at the panels before believing it.
+- *Spectral games the tail at 0.15 and 0.05* (false alarms 9.7% / 3.9% of cases, RL bias up to +85x). Against the
+  bracket rule of `run_r4_spectral_bracket_node32.sh`, 0.05 fails the false-alarm test and 0.015 misses the
+  activity test by a hair (MAE 1.0098 x vanilla vs >= 1.01), so no weight passes (computed from the summaries;
+  the bracket log is not in this checkout).
 
 ## 4. Tooling
 
@@ -537,7 +570,9 @@ isoperimetric scatter.
              - [x] Fine-tune `configs/config_v4_adv_fm_dist_qm.yaml`, evaluate, compare with FM + dist (threshold).
                    *Done 2026-10-31 (DECISIONS §42): no gain over clean FM, worse than threshold dist on every
                    tail column.*
-             - [ ] **Re-run dist_qm with a retention term (researcher, 2026-11-02, DECISIONS §42)** so the two
+             - [x] *Done 2026-11-05 (DECISIONS §42): `FMdistqmret_v4adv_20261105_163457`, exc. 0.27 -> 0.47 on valext,
+                   no top-rank overshoot; energy_qm stays the FM model, dist_qm_ret kept in reserve.*
+                   **Re-run dist_qm with a retention term (researcher, 2026-11-02, DECISIONS §42)** so the two
                    reward modes share the loss settings: w_retain 1 and w_reward by the same gradient-norm parity
                    rule as energy_qm (measure with `grad_norm_terms.py` first; expect ~1). M and the spread term
                    stay as in dist_qm unless decided otherwise. Evaluate on both subsets, field panels.
@@ -762,11 +797,15 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
 - [x] D3. *Changed 2026-11-04: all four competitors, each at parity with Minkowski 6.0e-5. SSIM floor fixed and
       optical-flow fallback made visible (`tests/test_competing_fixes.py`); weights from the parity audits in the
       R4 queue.* One competing loss at a verified-active weight (M4; fix SSIM or take spectral at its parity weight).
-- [ ] D4. Study 2: dist_qm_ret result (running), then energy_qm 3 seeds.
+- [ ] D4. Study 2: dist_qm_ret result (running), then energy_qm 3 seeds. *dist_qm_ret done 2026-11-05 (§42, reserve
+      model); energy_qm seeds still open.*
 
 **E. Training for R4** (after A1-A2, D1-D3)
 - [ ] E1. *Queued 2026-11-04 (`scripts/hpc/run_r4_queue.sh`, starts after tonight's chain): parity audits, then 21
-      runs (seed-42 pair MSE/Minkowski cut first). See DECISIONS §43 amendments for the list.* Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
+      runs (seed-42 pair MSE/Minkowski cut first). See DECISIONS §43 amendments for the list.*
+      *Status 2026-11-16: 18 cells trained and evaluated on val (§3b): MSE and Minkowski full/cut s42 and s43, MSE
+      random-drop, area-only full/cut, SSIM full/cut, wet area cut, spectral full/cut at 0.15 and the full-arm bracket
+      0.05 / 0.015. Still to run (`run_r4_queue.sh`): wet area full, optical-flow pair, the four s44 runs.* Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
       GPU-days) -> verify: startup lines (loss, weight, train list = cut list, GPU).
 - [ ] E2. FM base model on the cut list, sigma_r recomputed for its backbone, then energy_qm on top -> verify: the
       `config FM_RESIDUAL_SCALE` line. Cost of the FM base run to be measured.
