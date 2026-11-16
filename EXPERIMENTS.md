@@ -283,7 +283,7 @@ max is >= u (`conditioned.obs_selected`). Vanilla v4 (`UNet_Ana_20261021_211732`
 - *Spectral at 0.15 and 0.05 hacks with patch-edge spikes:* the patch maximum sits within 2 px of the edge in 5/6
   (0.15) and 4/6 (0.05) of the six panel patches (FFT boundary). The bracket log confirms the FLAG: no weight in
   {0.05, 0.015} passes. A w = 0.03 pair (full GPU 0, cut GPU 1, node40, started 2026-11-16 10:54, labels
-  `r4_spectral_{full,cut}_s42_w0.03`) tests the gap; the cut run counts only if the full run passes the bracket rule.
+  `r4_spectral_{full,cut}_s42_w0.03`) was stopped the same day: unwindowed spectral is dropped (Baselines v2, G0).
 - *MSE vs vanilla:* same config (MSE only, full list, 25 epochs, fp16 AMP); vanilla lies inside the 3-seed MSE spread.
 - *Scorecard* (`scripts/evaluate/r4_scorecard.py`, `figures/r4_scorecard/val{ext,sub}.{png,md}`): every
   deterministic loss and clean FM, full | cut, on the FM subsets; colour = % change of each metric's error vs MSE
@@ -826,7 +826,7 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       random-drop, area-only full/cut, SSIM full/cut, wet area cut, spectral full/cut at 0.15 and the full-arm bracket
       0.05 / 0.015. Still to run (`run_r4_queue.sh`): wet area full, optical-flow pair, the four s44 runs.*
       *Update 2026-11-16: all 25 cells done (R4_QUEUE_DONE 2026-11-14) and evaluated on val and on the FM subsets;
-      optical flow dropped (§3b). Running: spectral w = 0.03 full/cut s42 on node40.* Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
+      optical flow dropped (§3b); spectral w = 0.03 started and stopped (Baselines v2, G0).* Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
       GPU-days) -> verify: startup lines (loss, weight, train list = cut list, GPU).
 - [ ] E2. FM base model on the cut list, sigma_r recomputed for its backbone, then energy_qm on top -> verify: the
       `config FM_RESIDUAL_SCALE` line. Cost of the FM base run to be measured.
