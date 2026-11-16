@@ -11,4 +11,4 @@
 | spectral w=0.05 | 0.588 |  | 0.0144 |  | 0.176 |  | 0.162 |  | 0.79 |  | 0.605 |  | 4.1e-02 |  | 2.04 |  | 1.62 |  |
 | spectral w=0.015 | 0.346 |  | 0.0091 |  | 0.098 |  | 0.055 |  | 0.23 |  | 0.132 |  | 2.5e-04 |  | 1.93 |  | 1.65 |  |
 | MSE random-drop |  | 0.341 |  | 0.0089 |  | 0.109 |  | 0.055 |  | 0.21 |  | 0.079 |  | 0.0e+00 |  | 3.56 |  | 1.76 |
-| FM, clean (mean) | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| FM, clean (mean) | 0.336 | pending | 0.0085 | pending | 0.569 | pending | 0.290 | pending | 0.46 | pending | 0.237 | pending | 2.2e-03 | pending | 0.75 | pending | 1.38 | pending |
