@@ -271,6 +271,25 @@ max is >= u (`conditioned.obs_selected`). Vanilla v4 (`UNet_Ana_20261021_211732`
   activity test by a hair (MAE 1.0098 x vanilla vs >= 1.01), so no weight passes (computed from the summaries;
   the bracket log is not in this checkout).
 
+**Update 2026-11-16 (all 25 cells evaluated):**
+- *Three seeds, mean ± sd (val):* MSE full / cut exc. ratio 0.086±0.012 / 0.059±0.012, FSS@50.1 0.297 / 0.239;
+  Minkowski full / cut 0.160±0.018 / 0.157±0.015, FSS 0.373 / 0.381. The H3 pattern holds with 3 seeds (val only).
+- *Optical flow is dropped from the comparison (researcher, 2026-11-16).* The code works (no fallback); the loss is
+  ill-posed here. Its teacher is the coarse input, block-upsampled to 2 km, advected by a flow estimated between the
+  input and the target; input and target are the same hour, so the flow is ~0 (median 0.04 px, 45% of wet pixels
+  exactly 0) and the teacher is the input (MAE to input 0.08, to target 0.87, peaks 2-16% of the target's). At
+  w = 0.014 it trains the U-Net toward the input blocks: block-edge jump ratio 2.37 vs 1.3 for MSE / Minkowski /
+  SSIM and the target, anisotropy 10-13, no exceedances. Its FM reward row is dropped too (E3).
+- *Spectral at 0.15 and 0.05 hacks with patch-edge spikes:* the patch maximum sits within 2 px of the edge in 5/6
+  (0.15) and 4/6 (0.05) of the six panel patches (FFT boundary). The bracket log confirms the FLAG: no weight in
+  {0.05, 0.015} passes. A w = 0.03 pair (full GPU 0, cut GPU 1, node40, started 2026-11-16 10:54, labels
+  `r4_spectral_{full,cut}_s42_w0.03`) tests the gap; the cut run counts only if the full run passes the bracket rule.
+- *MSE vs vanilla:* same config (MSE only, full list, 25 epochs, fp16 AMP); vanilla lies inside the 3-seed MSE spread.
+- *Scorecard* (`scripts/evaluate/r4_scorecard.py`, `figures/r4_scorecard/val{ext,sub}.{png,md}`): every
+  deterministic loss and clean FM, full | cut, on the FM subsets; colour = % change of each metric's error vs MSE
+  full. FM-cut cells pending (E3 step 3). Figures without optical flow: `figures/v4adv_val_r4_{losses_full,losses_cut,
+  spectral_bracket,spectral_cut}/`, panels `figures/v4adv_valext_fields_r4_{full,cut}/`.
+
 ## 4. Tooling
 
 | Script | Purpose |
@@ -805,7 +824,9 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       runs (seed-42 pair MSE/Minkowski cut first). See DECISIONS §43 amendments for the list.*
       *Status 2026-11-16: 18 cells trained and evaluated on val (§3b): MSE and Minkowski full/cut s42 and s43, MSE
       random-drop, area-only full/cut, SSIM full/cut, wet area cut, spectral full/cut at 0.15 and the full-arm bracket
-      0.05 / 0.015. Still to run (`run_r4_queue.sh`): wet area full, optical-flow pair, the four s44 runs.* Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
+      0.05 / 0.015. Still to run (`run_r4_queue.sh`): wet area full, optical-flow pair, the four s44 runs.*
+      *Update 2026-11-16: all 25 cells done (R4_QUEUE_DONE 2026-11-14) and evaluated on val and on the FM subsets;
+      optical flow dropped (§3b). Running: spectral w = 0.03 full/cut s42 on node40.* Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
       GPU-days) -> verify: startup lines (loss, weight, train list = cut list, GPU).
 - [ ] E2. FM base model on the cut list, sigma_r recomputed for its backbone, then energy_qm on top -> verify: the
       `config FM_RESIDUAL_SCALE` line. Cost of the FM base run to be measured.
@@ -823,6 +844,11 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       `val_extremes1024` and `val_subset4096` at u=50.1, M=16, from `fm_mink_latest.pth` -> verify per row: startup
       lines (`config FM_RESIDUAL_SCALE`, reward mode, channel weights), then activity (own-reward drop vs control),
       anisotropy, exceedance ratio, RL bias against fm_energy_ctl on the same subset.
+      *Status 2026-11-16: (1) spectral, area, wetarea, SSIM full s42 done; **optical flow dropped** (researcher; its
+      teacher is the coarse input, §3b): the full-arm run was stopped at epoch 5/10 and `opticalflow_cut_s42` is
+      marked DROPPED in `logs/fm_r4/done.txt`, so the cut arm has 6 rows. (2) done on node40
+      (`node40_r4_subset_evals.py`); clean FM full list evaluated as `fm_r4_clean_full`. (3) started 10:54 on node32
+      GPU 1 (sigma_r, then the FM base on the cut list, ~2.6 d).*
 
 **F. Scoring (test touched once per final model)**
 - [ ] F1. R0, R1, R3 for every final model; R2 on the paired store.
