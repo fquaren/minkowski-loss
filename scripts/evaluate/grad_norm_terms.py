@@ -26,7 +26,7 @@ from src.models.unet import LogSpaceResidualUNet
 from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss
 from src.trainers.reward_finetune import (
-    draft_k_sample, minkowski_reward, proximal_anchor, _load_sigma, _make_fm,
+    configure_pixel_rewards, draft_k_sample, minkowski_reward, proximal_anchor, _load_sigma, _make_fm,
 )
 
 
@@ -46,6 +46,7 @@ def main():
     max_val = torch.tensor(scaler_val, device=device, dtype=torch.float32)
 
     mode = config.get("REWARD_MODE", "distributional")
+    print(configure_pixel_rewards(config, mode) or f"reward mode {mode}", flush=True)
     K = int(config.get("REWARD_K", 1)); M = int(config.get("REWARD_ENSEMBLE", 4))
     w_reward = float(config.get("REWARD_WEIGHT", 1e-3))
     w_prox = float(config.get("REWARD_PROXIMAL_WEIGHT", 1.0))

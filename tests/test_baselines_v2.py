@@ -138,3 +138,57 @@ def test_ph_missing_peak_costs_and_descends():
     with torch.no_grad():
         p2 = p - 1.0 * p.grad
     assert float(fn(p2, t)) < float(l0)
+
+
+# ---- FM rewards (M = 1 reduces to the U-Net loss) -----------------------------------------
+from src.trainers import reward_finetune as rf   # noqa: E402
+
+MAXV = 7.0
+
+
+def test_reward_spectral_hann_m1_is_unet_loss():
+    y, p = _rain(11), _rain(12)
+    n = lambda x: torch.log1p(x) / MAXV
+    got = rf.spectral_hann_energy_reward(p[None], y, max_val=MAXV)
+    assert torch.allclose(got, FFT2DKernelCRPSLoss(window="hann")(n(p), n(y)), rtol=1e-5)
+
+
+def test_reward_pixel_is_fair_crps():
+    y = _rain(13, b=2, h=8, w=8)
+    ens = torch.stack([_rain(20 + m, b=2, h=8, w=8) for m in range(3)])
+    n = lambda x: torch.log1p(x) / MAXV
+    # fair CRPS per pixel by brute force
+    e, t = n(ens), n(y)
+    crps = (e - t).abs().mean(0) - 0.5 * (e[:, None] - e[None]).abs().sum((0, 1)) / (3 * 2)
+    assert torch.allclose(rf.pixel_energy_reward(ens, y, max_val=MAXV), crps.mean(), rtol=1e-5)
+    assert torch.allclose(rf.pixel_energy_reward(ens[:1], y, max_val=MAXV), (e[0] - t).abs().mean())
+
+
+def test_reward_pixel_tw_chain_and_unit_weights():
+    knots = torch.tensor([0.1, 0.5])
+    z = torch.tensor([0.0, 0.05, 0.1, 0.3, 0.5, 1.0])
+    v = rf._chain(z, knots, torch.tensor([1.0, 2.0, 10.0]))
+    assert torch.allclose(v, torch.tensor([0.0, 0.05, 0.1, 0.5, 0.9, 5.9]))
+    rf._PIXEL_CFG["pixel_tw"] = (torch.tensor(U), torch.ones(len(U)))    # all weights 1: v = identity
+    y, ens = _rain(14), torch.stack([_rain(15), _rain(16)])
+    assert torch.allclose(rf.pixel_tw_energy_reward(ens, y, max_val=MAXV),
+                          rf.pixel_energy_reward(ens, y, max_val=MAXV), rtol=1e-5)
+    p = ens.clone().requires_grad_()
+    rf._PIXEL_CFG["pixel_tw"] = (torch.tensor(U), torch.tensor([0.1, 0.01, 1e-3, 1e-4]))
+    rf.pixel_tw_energy_reward(p, y, max_val=MAXV).backward()
+    assert torch.isfinite(p.grad).all()
+    rf._PIXEL_CFG.clear()
+
+
+def test_reward_fss_m1_is_unet_loss_and_unconfigured_raises():
+    y, p = _rain(17), _rain(18)
+    with pytest.raises(RuntimeError):
+        rf.fss_energy_reward(p[None], y)
+    rf._PIXEL_CFG["fss"] = (SoftFSSLoss(U), SoftFSSLoss(U, hard_target=False))
+    assert torch.allclose(rf.fss_energy_reward(p[None], y), SoftFSSLoss(U)(p, y))
+    ens = torch.stack([p, _rain(19)]).requires_grad_()
+    r = rf.fss_energy_reward(ens, y)
+    r.backward()
+    term1 = 0.5 * (SoftFSSLoss(U)(p, y) + SoftFSSLoss(U)(_rain(19), y))
+    assert torch.isfinite(ens.grad).all() and float(r) <= float(term1) + 1e-6   # pair term >= 0
+    rf._PIXEL_CFG.clear()

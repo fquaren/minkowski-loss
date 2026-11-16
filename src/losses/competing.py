@@ -379,8 +379,10 @@ class SoftFSSLoss(nn.Module):
     1 - FSS of the evaluation. A threshold with no exceedance in either field scores 0.
     """
 
-    def __init__(self, thresholds, windows=(5, 11, 21), temperature: float = 0.1, eps: float = 1e-8):
+    def __init__(self, thresholds, windows=(5, 11, 21), temperature: float = 0.1, eps: float = 1e-8,
+                 hard_target: bool = True):
         super().__init__()
+        self.hard_target = bool(hard_target)     # False: soft on both sides (member-to-member terms)
         if temperature <= 0:
             raise ValueError("temperature must be > 0")
         self.register_buffer("u", torch.as_tensor(thresholds, dtype=torch.float32).view(1, -1, 1, 1))
@@ -390,8 +392,9 @@ class SoftFSSLoss(nn.Module):
         self.temperature, self.eps = float(temperature), float(eps)
 
     def forward(self, pred, target):
-        sp = torch.sigmoid((pred.float() - self.u) / (self.temperature * self.u))    # [B,Q,H,W]
-        st = (target.float() >= self.u).float()
+        soft = lambda x: torch.sigmoid((x.float() - self.u) / (self.temperature * self.u))
+        sp = soft(pred)                                                              # [B,Q,H,W]
+        st = (target.float() >= self.u).float() if self.hard_target else soft(target)
         out = []
         for w in self.windows:
             pf = F.avg_pool2d(sp, w, stride=1, padding=w // 2, count_include_pad=True)

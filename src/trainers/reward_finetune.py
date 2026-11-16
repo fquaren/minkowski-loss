@@ -20,7 +20,10 @@ Two modes are provided so the choice can be tested rather than assumed:
     ssim           energy score with 1 - SSIM as the distance, log-normalised space
     opticalflow    energy score against the advected-input teacher, masked L1 over pixels
                    The last four are the Study-1 competing losses as ensemble rewards; they
-                   use no Minkowski functionals. Area-only Minkowski is mode "energy" with
+                   use no Minkowski functionals.
+    Baselines v2 (EXPERIMENTS G1): spectral_hann (Hann-tapered spectral), pixel (pixel-mean
+    fair CRPS), pixel_tw (threshold-weighted CRPS, inverse-exceedance weights), fss (1 - FSS
+    as the distance). pixel_tw and fss need configure_pixel_rewards(config, mode) first. Area-only Minkowski is mode "energy" with
                    MINKOWSKI_CHANNEL_WEIGHTS [1, 0, 0].
 
 Guardrails. A per-sample structural reward invites degenerate textures: grid-aligned
@@ -53,7 +56,8 @@ from src.models.unet import LogSpaceResidualUNet
 from src.models.flow_matching import FlowMatching
 from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss
-from src.losses.competing import ImageSSIMLoss, OpticalFlowConsistencyLoss
+from src.losses.competing import (ImageSSIMLoss, OpticalFlowConsistencyLoss, SoftFSSLoss, hann2d,
+                                  train_exceedance_fractions)
 from src.evaluation.tail_metrics import directional_anisotropy, peak_ratio
 
 
@@ -343,8 +347,99 @@ def opticalflow_energy_reward(fields, target_field, max_val=None, reference=None
     return _energy_l1(fields.flatten(2), teacher.flatten(1), mask.flatten(1).to(fields.dtype))
 
 
+def spectral_hann_energy_reward(fields, target_field, max_val=None, reference=None):
+    """spectral_energy_reward on Hann-tapered fields (FFT2DKernelCRPSLoss(window="hann")): the
+    taper is zero on the patch edges, so edge spikes cannot buy spectral power (EXPERIMENTS §3b)."""
+    f = _norm(fields, max_val)[:, :, 0]
+    t = _norm(target_field, max_val)[:, 0]
+    w = hann2d(t.shape[-2], t.shape[-1], t)
+    S = torch.abs(torch.fft.rfft2(f * w, norm="ortho")).flatten(2)
+    T = torch.abs(torch.fft.rfft2(t * w, norm="ortho")).flatten(1)
+    return _energy_l1(S, T)
+
+
+def pixel_energy_reward(fields, target_field, max_val=None, reference=None):
+    """Energy score with the pixel-mean L1 distance in log-normalised space, which equals the
+    pixel-mean fair ensemble CRPS. With M = 1 it is the MAE in network space."""
+    return _energy_l1(_norm(fields, max_val).flatten(2), _norm(target_field, max_val).flatten(1))
+
+
+# Set by configure_pixel_rewards: the modes below depend on the threshold grid / training list.
+_PIXEL_CFG = {}
+
+
+def configure_pixel_rewards(config: dict, mode: str):
+    """Prepare the config-dependent reward modes (pixel_tw, fss); a no-op for the others.
+
+    Grid: PHYSICAL_THRESHOLDS truncated below MINKOWSKI_MAX_THRESHOLD, as the U-Net losses
+    (R4, DECISIONS §43). pixel_tw reads the exceedance fractions of TRAIN_METADATA_FILE.
+    Returns a one-line description for the log.
+    """
+    if mode not in ("pixel_tw", "fss"):
+        return ""
+    u = load_physical_thresholds(config)
+    u_max = config.get("MINKOWSKI_MAX_THRESHOLD")
+    if u_max is not None:
+        u = u[u < float(u_max)]
+    if mode == "fss":
+        windows = [int(w) for w in config.get("FSS_WINDOWS", [5, 11, 21])]
+        temp = float(config.get("FSS_TEMPERATURE", 0.1))
+        _PIXEL_CFG["fss"] = (SoftFSSLoss(u, windows, temp), SoftFSSLoss(u, windows, temp, hard_target=False))
+        return f"fss reward: {len(u)} thresholds up to {u[-1]:g}, windows {windows}, T {temp:g}"
+    p = train_exceedance_fractions(config, u)
+    _PIXEL_CFG["pixel_tw"] = (torch.as_tensor(u, dtype=torch.float32), torch.as_tensor(p, dtype=torch.float32))
+    return (f"pixel_tw reward: weights 1/P(Y >= u) on {os.path.basename(config['TRAIN_METADATA_FILE'])}, "
+            f"{len(u)} levels, top weight {1 / p[-1]:.3g}")
+
+
+def _chain(z, knots, w):
+    """v(z) = integral_0^z of the piecewise-constant weight w (w[0] below knots[0], w[k+1] on
+    [knots[k], knots[k+1])): the chaining function of the threshold-weighted CRPS."""
+    V = torch.cat([z.new_zeros(1), torch.cumsum(w[:-1] * torch.diff(torch.cat([z.new_zeros(1), knots])), 0)])
+    k = torch.bucketize(z, knots, right=True)
+    lo = torch.cat([z.new_zeros(1), knots])
+    return V[k] + w[k] * (z - lo[k])
+
+
+def pixel_tw_energy_reward(fields, target_field, max_val=None, reference=None):
+    """Threshold-weighted CRPS per pixel: the pixel energy score of v(x), with v the chaining
+    function of the weight w(z) = 1 / P(Y >= u_k) on the grid bins (z in log-normalised space).
+
+    Weighting the CRPS by the observed value would make it improper; weighting the thresholds
+    through v keeps it proper (Gneiting & Ranjan 2011 [CITE?: twCRPS kernel form with a chaining
+    function]). The weights are those of the wmse U-Net loss.
+    """
+    if "pixel_tw" not in _PIXEL_CFG:
+        raise RuntimeError("pixel_tw reward: call configure_pixel_rewards(config, mode) first")
+    u, p = (a.to(fields.device) for a in _PIXEL_CFG["pixel_tw"])
+    knots = _norm(u, max_val)
+    w = torch.cat([u.new_ones(1), 1.0 / p])
+    v = lambda x: _chain(_norm(x, max_val), knots, w)
+    return _energy_l1(v(fields).flatten(2), v(target_field).flatten(1))
+
+
+def fss_energy_reward(fields, target_field, max_val=None, reference=None):
+    """Energy score with d = mean over thresholds and windows of (1 - FSS), fields in mm.
+
+    Member-to-target terms use SoftFSSLoss as the U-Net loss (hard target indicator), so M = 1
+    gives the U-Net loss; member-to-member terms use the soft indicator on both sides
+    (symmetric). 1 - FSS is not a metric, so propriety is not guaranteed (as for ssim).
+    """
+    if "fss" not in _PIXEL_CFG:
+        raise RuntimeError("fss reward: call configure_pixel_rewards(config, mode) first")
+    hard, soft = (m.to(fields.device) for m in _PIXEL_CFG["fss"])
+    M = fields.shape[0]
+    term1 = sum(hard(fields[m], target_field) for m in range(M)) / M
+    if M < 2:
+        return term1
+    pair = sum(soft(fields[m], fields[k]) for m in range(M) for k in range(m + 1, M))
+    return term1 - pair / (M * (M - 1))
+
+
 PIXEL_MODES = {"spectral": spectral_energy_reward, "wetarea": wetarea_energy_reward,
-               "ssim": ssim_energy_reward, "opticalflow": opticalflow_energy_reward}
+               "ssim": ssim_energy_reward, "opticalflow": opticalflow_energy_reward,
+               "spectral_hann": spectral_hann_energy_reward, "pixel": pixel_energy_reward,
+               "pixel_tw": pixel_tw_energy_reward, "fss": fss_energy_reward}
 
 
 def reward_from_features(geom_fn, lg, target_log_gamma, W, mode, w_spread):
@@ -446,6 +541,9 @@ def run_reward_finetune(config, args):
 
         # ---- reward and guardrail settings ----------------------------------------
         mode = config.get("REWARD_MODE", "distributional")
+        desc = configure_pixel_rewards(config, mode)
+        if desc:
+            logger.info(desc)
         K = int(config.get("REWARD_K", 1))
         M = int(config.get("REWARD_ENSEMBLE", 4))
         w_reward = float(getattr(args, "w_reward", None) or config.get("REWARD_WEIGHT", 1e-3))

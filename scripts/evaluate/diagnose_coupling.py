@@ -54,7 +54,7 @@ from src.models.flow_matching import FlowMatching
 from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss
 from src.trainers.reward_finetune import (
-    draft_k_sample, minkowski_reward, _log_gamma, _load_sigma, _make_fm,
+    configure_pixel_rewards, draft_k_sample, minkowski_reward, _log_gamma, _load_sigma, _make_fm,
 )
 
 
@@ -114,6 +114,7 @@ def main():
     topo = config.get("TOPOLOGY_MODE", "euler")
     u_phys = load_physical_thresholds(config)
     mode = args.mode or config.get("REWARD_MODE", "distributional")
+    print(configure_pixel_rewards(config, mode) or f"reward mode {mode}", flush=True)
     M = args.ensemble or int(config.get("REWARD_ENSEMBLE", 8))
     K = int(config.get("REWARD_K", 1))
     n_steps = int(config.get("FM_SAMPLE_STEPS", 16))
