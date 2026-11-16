@@ -3402,7 +3402,8 @@ spectral. No cGAN. An FGN-style CRPS-trained generator is planned as a contingen
 - *Optical flow* is ill-posed for co-located input and target: the estimated flow is ~0 (median 0.04 px), so the
   teacher is the block-upsampled coarse input and the loss trains the U-Net toward the input blocks (EXPERIMENTS §3b).
 - *Unwindowed spectral* hacks with spikes at the patch edge (FFT periodicity); it is replaced by the Hann-windowed
-  version and kept in the appendix as the hacking case.
+  version.
 
-Finished rows of the dropped losses stay as an appendix table. Plan and verification steps: EXPERIMENTS
+The dropped losses are not reported anywhere, appendix included (researcher, 2026-11-16); their finished results are
+stored in case they are needed (EXPERIMENTS G0). Plan and verification steps: EXPERIMENTS
 "Baselines v2" (G0-G5).

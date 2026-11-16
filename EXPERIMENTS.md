@@ -867,13 +867,16 @@ alarms <= 1e-3), Minkowski-style grids truncated below the cut in both arms (§4
 val_extremes1024 / val_subset4096, field panels looked at before any row is believed. Each item: step -> verify.
 
 **G0. Drops and the running runs**
-- [x] Dropped from the comparison (researcher, 2026-11-16): SSIM, wet area, optical flow (U-Net and FM). Their
-      finished rows go to an appendix table; unwindowed spectral 0.15 / 0.05 / 0.015 too, as the edge-spike hacking case.
-- [ ] Unwindowed spectral w = 0.03 (full s42, cut s42, full s43, node40 GPUs 0-2, started 11-16): keep for the
-      appendix or stop and give the GPUs to G2 (researcher to decide).
-- [ ] FM queue cut arm: mark `ssim_cut_s42` and `wetarea_cut_s42` DROPPED in `logs/fm_r4/done.txt`; swap
-      `spectral_cut_s42` for the windowed version (G3). Must happen before step 4 starts (~2026-11-19, when the cut
-      FM base finishes) -> verify: `queue.log` prints "done already" for the dropped labels.
+- [x] Dropped from the comparison and from the paper, appendix included (researcher, 2026-11-16): SSIM, wet area,
+      optical flow and unwindowed spectral (U-Net and FM). Their finished results stay stored, not reported: eval
+      summaries in `eval_results/{extremes,backbone}/v4adv_val*/r4_{ssim,wetarea,opticalflow,spectral}_*` and
+      `.../fm_r4_{ssim,wetarea,spectral}_full_s42`, checkpoints in the worktrees' `runs/`.
+- [x] Unwindowed spectral w = 0.03 (full s42, cut s42, full s43 on node40) stopped 2026-11-16 ~12:00 after ~1 h,
+      before any epoch finished; partial run dirs `UNet_Ana_20261116_{105348,105418,112806}` (rtx6000 worktree)
+      are not in the done list. node40 GPUs 0-2 free for G2.
+- [x] FM queue cut arm: `ssim_cut_s42`, `wetarea_cut_s42`, `spectral_cut_s42` (and `opticalflow_cut_s42`) marked
+      DROPPED in `logs/fm_r4/done.txt`; the old queue's cut arm is now control, Minkowski, area-only. The windowed
+      spectral row comes with G3 -> verify at step 4 (~2026-11-19): `queue.log` prints "done already" for them.
 
 **G1. Code (no GPU; each with a test in `tests/`)**
 - [ ] `wmse`: MSE with per-pixel weights rising with the target intensity, inverse exceedance frequency of the
@@ -918,7 +921,7 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
 **G4. Scorecard v2**
 - [ ] Rows: MSE, MSE + QM, wmse, quantile, area-only, windowed spectral, fss, ph, Minkowski | FM clean, FM + QM,
       FM + pixel ES, FM + weighted pixel ES, FM + windowed spectral, FM + fss, FM + area-only, FM + Minkowski
-      (energy_qm). Appendix table: SSIM, wet area, optical flow, unwindowed spectral.
+      (energy_qm). SSIM, wet area, optical flow and unwindowed spectral are not reported (G0).
 
 **G5. Contingency: an FGN-style CRPS-trained generator (only if time remains or a reviewer asks)**
 - [ ] Noise-conditioned residual U-Net on the same backbone, trained with the fair ensemble CRPS per pixel (M = 2-4
