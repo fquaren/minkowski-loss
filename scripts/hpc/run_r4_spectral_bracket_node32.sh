@@ -17,7 +17,7 @@
 # Run detached:  setsid nohup bash scripts/hpc/run_r4_spectral_bracket_node32.sh <pid> >> logs/r4_spectral_bracket.log 2>&1 &
 set -uo pipefail
 cd "$(dirname "$0")/../.."
-WAITPID=${1:?pid of the running wetarea-cut training}
+WAITPID=${1:?pid of the running wetarea-cut training, or none to skip step 0}
 E=/work/fquareng/.micromamba/envs/dl-stable
 export LD_LIBRARY_PATH=$E/lib OMP_NUM_THREADS=1 PYTHONPATH=$PWD PYTHONUNBUFFERED=1
 W=/work/fquareng/ch2/minkowski-loss/.claude/worktrees/radar-day-exclusion
@@ -76,16 +76,18 @@ PY
 }
 
 # 0. the wetarea-cut run started by run_r4_competing_node32.sh (its driver is stopped, so record it here)
-WLAB=r4_wetarea_cut_s42
-WRD=$(ls -l /proc/$WAITPID/fd 2>/dev/null | grep -oE "runs/sr_analytical/UNet_Ana_[0-9_]+/train.log" | head -1 | cut -d/ -f3)
-echo "=== 0. waiting for $WLAB (pid $WAITPID, run ${WRD:-?}) $(date)"
-[ -n "$WRD" ] || { echo "pid $WAITPID has no run dir open; is it the wetarea run?"; exit 1; }
-while [ -d /proc/$WAITPID ]; do sleep 120; done
-if [ -f runs/sr_analytical/$WRD/unet_latest.pth ] && grep -q "Epoch 25 |" runs/sr_analytical/$WRD/train.log; then
-  grep -q "^$WLAB " $DONE || echo "$WLAB $WRD" >> $DONE
-  ev $WLAB $WRD
-else
-  echo "TRAIN FAILED $WLAB: no epoch 25 / checkpoint in $WRD"
+if [ "$WAITPID" != none ]; then
+  WLAB=r4_wetarea_cut_s42
+  WRD=$(ls -l /proc/$WAITPID/fd 2>/dev/null | grep -oE "runs/sr_analytical/UNet_Ana_[0-9_]+/train.log" | head -1 | cut -d/ -f3)
+  echo "=== 0. waiting for $WLAB (pid $WAITPID, run ${WRD:-?}) $(date)"
+  [ -n "$WRD" ] || { echo "pid $WAITPID has no run dir open; is it the wetarea run?"; exit 1; }
+  while [ -d /proc/$WAITPID ]; do sleep 120; done
+  if [ -f runs/sr_analytical/$WRD/unet_latest.pth ] && grep -q "Epoch 25 |" runs/sr_analytical/$WRD/train.log; then
+    grep -q "^$WLAB " $DONE || echo "$WLAB $WRD" >> $DONE
+    ev $WLAB $WRD
+  else
+    echo "TRAIN FAILED $WLAB: no epoch 25 / checkpoint in $WRD"
+  fi
 fi
 
 # 1. bracket, full list
