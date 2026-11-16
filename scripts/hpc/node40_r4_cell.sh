@@ -3,6 +3,7 @@
 # u = 50.1), then record "<label> <run>" in logs/r4_queue_done.txt so run_r4_queue.sh skips it.
 #   node40_r4_cell.sh <gpu 0-3> <label> <arm cut|full|randdrop> <weight|mink_trunc|area_trunc> <seed> [channels] [u_max]
 # A named weight is read from the R4 parity audit's weights.json, waiting for it if the audits are still running.
+# R4_LOSS=<name> in the environment trains another STRUCTURAL_LOSS (default minkowski), e.g. a spectral bracket run.
 # Run detached:  setsid nohup scripts/hpc/node40_r4_cell.sh ... > logs/node40/cell_<label>.log 2>&1 < /dev/null &
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -35,10 +36,10 @@ LIST=$META/full_train.txt; [ $ARM = cut ] && LIST=$META/full_train_cut50.1.txt
 [ $ARM = randdrop ] && LIST=$META/full_train_randdrop50.1.txt   # size-matched random-drop control (§43)
 CFG=$CD/$LAB.yaml
 $E/bin/python - "$CFG" "$LIST" "$CW" "$UMAX" <<'PY' || { echo "CONFIG FAILED"; exit 1; }
-import sys, yaml                      # same fields as mkcfg in run_r4_queue.sh
+import os, sys, yaml                  # same fields as mkcfg in run_r4_queue.sh
 out, train, cw, umax = sys.argv[1:5]
 c = yaml.safe_load(open("configs/config_v4_adv.yaml"))
-c["STRUCTURAL_LOSS"] = "minkowski"
+c["STRUCTURAL_LOSS"] = os.environ.get("R4_LOSS", "minkowski")
 c["TRAIN_METADATA_FILE"] = train
 c["MINKOWSKI_FORM"] = "threshold"
 c["MINKOWSKI_CHANNEL_WEIGHTS"] = [float(x) for x in cw.split(",")]
