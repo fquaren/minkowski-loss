@@ -14,8 +14,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import torchvision.transforms.v2 as v2
-import zarr
 
+from src.data.packed_store import open_store
 from src.utils import signed_log1p
 
 
@@ -98,7 +98,7 @@ class ZarrMixupDataset(Dataset):
         self.topology_mode = topology_mode
         self.load_in_ram = load_in_ram
 
-        store = zarr.open(zarr_path, mode="r")
+        store = open_store(zarr_path)
         if split not in store:
             raise KeyError(f"Split '{split}' not found in zarr store.")
         self.group = store[split]
@@ -247,7 +247,7 @@ class DeterministicSRDataset(Dataset):
         )
 
         # Validate split exists in Zarr store at init time (not lazily in workers)
-        _store = zarr.open(self.zarr_path, mode="r")
+        _store = open_store(self.zarr_path)
         if split not in _store:
             available = list(_store.keys())
             # Handle common val/validation mismatch
@@ -300,7 +300,7 @@ class DeterministicSRDataset(Dataset):
             self.sample_weights = np.where(is_wet, w_wet, w_dry).astype(np.float64)
 
         if self.load_in_ram:
-            store = zarr.open(self.zarr_path, mode="r")
+            store = open_store(self.zarr_path)
             g = store[split]
             self.ram_original = g["original_precip"][:]
             self.ram_interp = g["interpolated_precip"][:]
@@ -318,7 +318,7 @@ class DeterministicSRDataset(Dataset):
 
     def _init_zarr(self):
         if self._store is None:
-            self._store = zarr.open(self.zarr_path, mode="r")
+            self._store = open_store(self.zarr_path)
             self._group = self._store[self.split]
 
     def _dem_for(self, meta_row, patch):
@@ -420,7 +420,7 @@ class DiffusionSRDataset(Dataset):
         )
 
         # Validate split exists in Zarr store at init time (not lazily in workers)
-        _store = zarr.open(self.zarr_path, mode="r")
+        _store = open_store(self.zarr_path)
         if split not in _store:
             available = list(_store.keys())
             # Handle common val/validation mismatch
@@ -460,7 +460,7 @@ class DiffusionSRDataset(Dataset):
             )
 
         if self.load_in_ram:
-            store = zarr.open(self.zarr_path, mode="r")
+            store = open_store(self.zarr_path)
             g = store[self.split]
             srows = self._store_rows[np.asarray(self.valid_indices)]
             self.ram_original = g["original_precip"].oindex[srows]
@@ -499,7 +499,7 @@ class DiffusionSRDataset(Dataset):
             meta_row = self._meta_rows[real_idx]
         else:
             if self._store is None:
-                self._store = zarr.open(self.zarr_path, mode="r")
+                self._store = open_store(self.zarr_path)
                 self._group = self._store[self.split]
             srow = int(self._store_rows[real_idx])
             target_phys = self._group["original_precip"][srow]
