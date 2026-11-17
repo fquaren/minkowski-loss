@@ -63,6 +63,12 @@ micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICE
 
 **`python` may not exist** — use `python3`, or resolve it with `command -v`.
 
+**NFS state-manager stall.** If a run stops progressing with workers in `D`, check `top` on that node for
+root's `10.2.1.210-manager` near 100% CPU (node32 2026-11-05, node40 2026-11-16): every NFS open on the node then
+hangs, and recovery needs root. The trigger is one file per patch in the stores. Read stores through
+`src.data.packed_store.open_store` (the datasets do), which uses `<store>.packed` when present; after rebuilding
+or editing a store, re-run `scripts/data/pack_store.py <store.zarr>` (a stale pack is refused, not silently used).
+
 **Orphaned DataLoader workers.** Launch long runs under `setsid` (or Slurm). A tmux exit
 leaves the worker pool unreaped; the node has previously accumulated ~193 zombies plus stuck
 root NFS/RPC threads. Prefer `persistent_workers=True` and modest `num_workers`.

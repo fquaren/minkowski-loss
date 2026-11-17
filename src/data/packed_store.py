@@ -53,7 +53,7 @@ class PackedStore(BaseStore):
             if json.loads(self._dir[path + "/.zarray"]) != m["zarray"]:
                 raise RuntimeError(f"{path}: .zarray changed since packing; re-run the pack")
             self._arrays[path] = dict(m, grid=_grid(m["zarray"]))
-        self._idx, self._fds = {}, {}
+        self._idx, self._fds, self._meta = {}, {}, {}
 
     # fds and memory maps are per process; a pickled copy (spawned DataLoader worker) reopens them
     def __getstate__(self):
@@ -79,7 +79,14 @@ class PackedStore(BaseStore):
     def __getitem__(self, key):
         loc = self._locate(key)
         if loc is None:
-            return self._dir[key]
+            if not key.rpartition("/")[2].startswith("."):
+                return self._dir[key]
+            # metadata is read on every g[array] access (once per sample in the datasets): cache it
+            if key not in self._meta:
+                self._meta[key] = self._dir[key] if key in self._dir else None    # absent keys too
+            if self._meta[key] is None:
+                raise KeyError(key)
+            return self._meta[key]
         head, part, off, n = loc
         if n == 0:
             raise KeyError(key)                        # chunk never written: zarr uses the fill value
@@ -93,7 +100,15 @@ class PackedStore(BaseStore):
 
     def __contains__(self, key):
         loc = self._locate(key)
-        return key in self._dir if loc is None else loc[3] > 0
+        if loc is not None:
+            return loc[3] > 0
+        if key.rpartition("/")[2].startswith("."):
+            try:
+                self[key]
+                return True
+            except KeyError:
+                return False
+        return key in self._dir
 
     def listdir(self, path=""):
         return self._dir.listdir(path)

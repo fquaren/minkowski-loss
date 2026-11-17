@@ -72,3 +72,19 @@ def test_fallback_and_stale_metadata(store):
         open_store(store)
     os.remove(os.path.join(packed_dir(store), "manifest.json"))      # an unfinished pack is ignored
     assert not isinstance(open_store(store).store, PackedStore)
+
+
+def test_metadata_read_once_per_process(store):
+    pack(store, workers=1)
+    st = PackedStore(store)
+    calls = []
+    real = st._dir.__class__.__getitem__
+    st._dir.__class__.__getitem__ = lambda self, k: calls.append(k) or real(self, k)
+    try:
+        g = zarr.open_group(store=st, mode="r")
+        for i in range(5):                                            # as the datasets: g[array] per sample
+            g["train"]["original_precip"][i]; g["train"]["gamma_targets"][i]
+    finally:
+        st._dir.__class__.__getitem__ = real
+    assert len(calls) == len(set(calls))                              # each metadata key fetched once
+    assert not any(k.rpartition("/")[2][0].isdigit() for k in calls)  # no chunk from the directory store
