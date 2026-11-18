@@ -79,6 +79,36 @@ others.
 - A data-quality audit: 6.
 - Do not start a second CPU-heavy job alongside a full audit plus the fetcher.
 
+### Shared filesystem: per-file reads stalled two nodes (added 2026-11-18)
+
+**What happened.** node32 (2026-11-05, ~19 h of FM training lost) and node40 (2026-11-16 to 11-18, the v2 parity
+audits blocked for ~2 days) both froze the same way. The NFSv4 client's state manager for server1 (`/work`), kernel
+thread `10.2.1.210-manager`, spun at ~100% CPU. Every uncached open on that node took 2-8 s (3 ms elsewhere),
+DataLoader workers sat in `D`, and Python could not even import torch. Only root on the node could recover it.
+CPU, local disk and `/home` stayed normal, which is why a load check on the node shows nothing wrong.
+
+**We caused it** (inference from strong correlation, not a kernel trace). The patch stores keep one file per patch
+per array (chunks `[1,128,128]`, ~8M files in v4_adv train). Each training sample opened and closed three files,
+each with a read delegation, so a training node ran 700-1,500 NFS CLOSE + DELEGRETURN per second for days. Other
+nodes ran 4-9 per second.
+
+**Fix** (main `eb95325`, `989b3bd`, `4338fbe`):
+- *Packed copy:* `scripts/data/pack_store.py` writes `<store>.packed`. It holds the chunk bytes of
+  `original_precip`, `interpolated_precip` and `gamma_targets` concatenated into a few part files plus an index.
+  `src.data.packed_store.open_store` serves them with `pread` on file descriptors opened once per process. Decoded
+  arrays are bit-identical (tests, plus a 2,000-row check per array). Only `patches_v4_adv` is packed (41 GB).
+- *Guard:* `open_store` refuses a store whose hot arrays keep one file per patch and that has no packed copy, and
+  refuses a pack whose `.zarray` no longer matches the store. It warns once per array when an unpacked array
+  (`coarse_precip`, `max_rate`, `n_wet`) is read through a packed store. The datasets and six analysis scripts
+  read through it.
+- *Check:* `ssh <node> bash scripts/hpc/nfs_rate.sh` gives the node's NFS ops/s on `/work`. Measured 2026-11-18:
+  node40 with two packed audits, 0 CLOSE/s. The node32 FM run went from 1,102/s on the old path to 0/s after the
+  switch, at the same 1.60 it/s.
+
+**Rules:** read patch stores only through `open_store`. Repack after building or editing a store. Check
+`nfs_rate.sh` after every launch. If a run stops progressing, look for `10.2.1.210-manager` in `top -H` on that node
+first, and time an uncached open on `/work`; the remedy needs root (`echo 2 > /proc/sys/vm/drop_caches` or a remount).
+
 ---
 
 ## 1. Checkpoints
@@ -307,6 +337,8 @@ max is >= u (`conditioned.obs_selected`). Vanilla v4 (`UNet_Ana_20261021_211732`
 | `src/sweep_util.py` | `patch` a config / `collect` a summary into CSV |
 | `scripts/data/fetch_opera_archive.py` | fetch OPERA RATE + QIND from the open archive onto the patch grid |
 | `scripts/hpc/launch_data_quality.sh` | the whole data-quality audit below, under `setsid` |
+| `scripts/data/pack_store.py` | write and check `<store>.packed`, the read path `open_store` requires (§0) |
+| `scripts/hpc/nfs_rate.sh` | NFS ops/s on `/work` for one node; a healthy run shows ~0 CLOSE/s (§0) |
 | `scripts/data_quality/` | raw-archive audit: clutter climatology, per-tile artefact features, split leakage, summary with candidate rules, image gallery + label sheet (see its README) |
 
 Figures: perception–distortion plane, RAPSD with ratio panel, GPD return levels + exceedance
@@ -931,10 +963,21 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
       `diagnose_coupling.py`; unconfigured they raise. Grid truncated below MINKOWSKI_MAX_THRESHOLD, as the U-Net.
 
 **G2. U-Net runs (node40 GPUs 0-3, ~46 h each)**
-- [ ] Parity audits at the vanilla checkpoint for wmse, quantile, fss, windowed spectral -> `weights.json`.
+- [x] Parity audits at the vanilla checkpoint for wmse, quantile, fss, windowed spectral -> `weights.json`.
+      *Done 2026-11-18 11:56* (node40, after the NFS stall of §0 blocked the 11-16 attempts):
+      `radar-day-exclusion/eval_results/gradient_audit/2026-11-16_v2_parity/weights.json`, target Adam share 5.30
+      (Minkowski at 6.0e-5, as R4). Weights: wmse 4.3e-4, quantile 0.068, fss 2.1e-4 (grids truncated below
+      50.1 mm), spectral_hann 0.51 (unwindowed spectral was 0.15). Jackknife rel. SE 2.6-4.3%. Noise-corrected
+      cosine with MSE: wmse +0.04, quantile -0.13, fss +0.09, spectral_hann +0.28.
 - [ ] Full and cut, seed 42: wmse, quantile, fss, windowed spectral (bracket if its parity weight hacks):
       8 runs, ~5 days on 4 GPUs. -> verify: startup lines (loss, weight, list, GPU UUID); bracket rule;
       val + FM-subset evals; panels.
+      *Launched 2026-11-18 15:13* (`rtx6000` worktree `logs/node40/launch_g2.sh`, code `cd9770c`): one round per
+      GPU, full then cut, labels `r4_{wmse,quantile,fss,spectral_hann}_{full,cut}_s42` on GPUs 0/1/2/3, logs
+      `logs/node40/round_g2_gpu<g>.log` and `cell_<label>.log`. Startup verified: loss, weight from the command
+      line, 13 thresholds < 50.1 for wmse/fss, Hann window for spectral, `[store] packed read path`, one GPU each,
+      all processes on CPUs 0-5, node40 NFS 0 CLOSE/s. Full runs `UNet_Ana_20261118_{151313,151343,151413,151446}`;
+      ~1.2-1.5 h per epoch at the start, so ~3 days per GPU for both cells.
 - [ ] QM rows (eval only): MSE + QM, both arms.
 
 **G3. FM rows (node32 GPU 1; after the cut FM base)**
