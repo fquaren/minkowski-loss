@@ -65,9 +65,16 @@ micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICE
 
 **NFS state-manager stall.** If a run stops progressing with workers in `D`, check `top` on that node for
 root's `10.2.1.210-manager` near 100% CPU (node32 2026-11-05, node40 2026-11-16): every NFS open on the node then
-hangs, and recovery needs root. The trigger is one file per patch in the stores. Read stores through
-`src.data.packed_store.open_store` (the datasets do), which uses `<store>.packed` when present; after rebuilding
-or editing a store, re-run `scripts/data/pack_store.py <store.zarr>` (a stale pack is refused, not silently used).
+hangs, and recovery needs root. We caused it: the stores keep one file per patch, and sample-by-sample reads ran
+~700-1,500 NFS CLOSE + DELEGRETURN per second for days. Rules:
+- Read patch stores only through `src.data.packed_store.open_store` (the datasets do), never `zarr.open`, in any
+  script that touches more than a handful of patches. It uses `<store>.packed`, and refuses a store whose hot
+  arrays keep one file per patch and that has no packed copy; it also warns once per array when a run reads an
+  array that is not packed (`coarse_precip`, `max_rate`, `n_wet`). Only `patches_v4_adv` is packed.
+- After building, rebuilding or editing a store, run `scripts/data/pack_store.py <store.zarr>` (a stale pack is
+  refused, not silently used).
+- After launching any run, check `ssh <node> bash scripts/hpc/nfs_rate.sh`: CLOSE and DELEGRETURN must be near
+  0/s (packed audits on node40: 0/s; the unpacked FM run on node32: 693/s).
 
 **Orphaned DataLoader workers.** Launch long runs under `setsid` (or Slurm). A tmux exit
 leaves the worker pool unreaped; the node has previously accumulated ~193 zombies plus stuck

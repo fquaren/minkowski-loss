@@ -31,11 +31,11 @@ import sys
 
 import numpy as np
 import pandas as pd
-import zarr
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO)
 from src.data.geo import lonlat_to_rowcol  # noqa: E402
+from src.data.packed_store import open_store  # noqa: E402
 
 V4 = "/home/fquareng/work/data/extremes/OPERA/patches_v4_adv"
 TILES = {(640, 768), (640, 896)}
@@ -74,7 +74,7 @@ def gauge_windows(smn, abbr):
 def pairs(smn):
     st = stations(smn)
     gw = {a: gauge_windows(smn, a) for a in st.station_abbr.unique()}
-    store = zarr.open(os.path.join(V4, "preprocessed_dataset.zarr"), mode="r")
+    store = open_store(os.path.join(V4, "preprocessed_dataset.zarr"))
     rows = []
     for sp, grp in GROUP.items():
         m = pd.read_csv(f"{V4}/meta/full_{sp}.txt", header=None, names=["t", "y", "x", "mx", "r"])
@@ -106,7 +106,7 @@ def pairs_dwd(min_tile_max):
     st["py"], st["px"] = (st.row - st.ty).astype(int), (st.col - st.tx).astype(int)
     tiles = set(zip(st.ty, st.tx))
     by_tile = {k: g for k, g in st.groupby(["ty", "tx"])}
-    store = zarr.open(os.path.join(V4, "preprocessed_dataset.zarr"), mode="r")
+    store = open_store(os.path.join(V4, "preprocessed_dataset.zarr"))
     rows = []                                          # pass 1: radar at every station pixel
     for sp, grp in GROUP.items():
         m = pd.read_csv(f"{V4}/meta/full_{sp}.txt", header=None, names=["t", "y", "x", "mx", "r"])

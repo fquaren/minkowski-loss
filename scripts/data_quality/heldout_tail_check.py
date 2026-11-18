@@ -21,7 +21,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-import zarr  # noqa: E402
+from src.data.packed_store import open_store  # noqa: E402
 
 D = "/home/fquareng/work/data/extremes/OPERA"
 V4 = f"{D}/patches_v4_adv"
@@ -47,7 +47,7 @@ def page(sel, title, path):
         return
     cols = 8
     fig, axs = plt.subplots(int(np.ceil(n / cols)), cols, figsize=(2.1 * cols, 2.3 * np.ceil(n / cols)), squeeze=False)
-    stores = {sp: zarr.open(os.path.join(V4, "preprocessed_dataset.zarr"), mode="r")[GROUP[sp]]["original_precip"]
+    stores = {sp: open_store(os.path.join(V4, "preprocessed_dataset.zarr"))[GROUP[sp]]["original_precip"]
               for sp in sel.split.unique()}
     for ax, r in zip(axs.flat, sel.itertuples()):
         f = np.asarray(stores[r.split][int(r.r)])

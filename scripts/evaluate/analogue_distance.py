@@ -30,7 +30,7 @@ import os
 
 import numpy as np
 import pandas as pd
-import zarr
+from src.data.packed_store import open_store
 from sklearn.neighbors import KDTree
 
 V4 = "/home/fquareng/work/data/extremes/OPERA/patches_v4_adv"
@@ -38,13 +38,13 @@ GROUP = {"train": "train", "val": "validation", "test": "test", "nimbus": "nimbu
 
 
 def features(split, rows):
-    a = zarr.open(os.path.join(V4, "preprocessed_dataset.zarr"), mode="r")[GROUP[split]]["coarse_precip"]
+    a = open_store(os.path.join(V4, "preprocessed_dataset.zarr"))[GROUP[split]]["coarse_precip"]
     return np.log1p(np.stack([np.nan_to_num(a[int(r)]) for r in rows]).reshape(len(rows), -1)).astype(np.float32)
 
 
 def shape(split, rows):
     from src.evaluation.analogue import shape_features
-    a = zarr.open(os.path.join(V4, "preprocessed_dataset.zarr"), mode="r")[GROUP[split]]["original_precip"]
+    a = open_store(os.path.join(V4, "preprocessed_dataset.zarr"))[GROUP[split]]["original_precip"]
     return np.stack([shape_features(a[int(r)]) for r in rows])
 
 
