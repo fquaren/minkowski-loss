@@ -18,10 +18,10 @@ import os
 
 import numpy as np
 import pandas as pd
-import zarr
 from sklearn.neighbors import KDTree
 
 from src.evaluation.analogue import shape_features
+from src.data.packed_store import open_store
 
 V4 = "/home/fquareng/work/data/extremes/OPERA/patches_v4_adv"
 AN = "/home/fquareng/work/data/extremes/OPERA/quality_v4/analogue"
@@ -51,7 +51,7 @@ def read(split, rows, cache, want_features=True):
         c = np.load(cache)
         if np.array_equal(c["rows"], rows):
             return (c["X"] if want_features else None), c["edge"]
-    z = zarr.open(os.path.join(V4, "preprocessed_dataset.zarr"), mode="r")[{"train": "train", "test": "test"}[split]]
+    z = open_store(os.path.join(V4, "preprocessed_dataset.zarr"))[{"train": "train", "test": "test"}[split]]
     a = z["original_precip"]
     X, E = [], []
     for r in rows:

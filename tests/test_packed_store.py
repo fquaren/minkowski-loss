@@ -61,8 +61,24 @@ def test_pickle_and_read_only(store):
         st["train/original_precip/0.0.0"] = b""
 
 
+def test_unpacked_per_patch_store_refused(store, tmp_path):
+    with pytest.raises(RuntimeError, match="pack_store.py"):          # one file per patch and no packed copy
+        open_store(store)
+    p = str(tmp_path / "chunked.zarr")                                # many patches per chunk: plain zarr is fine
+    zarr.open(p, mode="w").create_group("train").create_dataset(
+        "original_precip", data=np.zeros((12, 8, 8), np.float32), chunks=(4, 8, 8))
+    assert not isinstance(open_store(p).store, PackedStore)
+
+
+def test_unpacked_array_warns_once(store, capsys):
+    pack(store, workers=1)
+    g = open_store(store)
+    for i in range(3):
+        g["train"]["coarse_precip"][i]
+    assert capsys.readouterr().out.count("train/coarse_precip is not packed") == 1
+
+
 def test_fallback_and_stale_metadata(store):
-    assert not isinstance(open_store(store).store, PackedStore)       # no packed copy yet
     pack(store, workers=1)
     za = os.path.join(store, "train", "gamma_targets", ".zarray")
     m = json.load(open(za))
@@ -70,8 +86,9 @@ def test_fallback_and_stale_metadata(store):
     json.dump(m, open(za, "w"))
     with pytest.raises(RuntimeError, match="re-run the pack"):
         open_store(store)
-    os.remove(os.path.join(packed_dir(store), "manifest.json"))      # an unfinished pack is ignored
-    assert not isinstance(open_store(store).store, PackedStore)
+    os.remove(os.path.join(packed_dir(store), "manifest.json"))      # an unfinished pack is not used
+    with pytest.raises(RuntimeError, match="pack_store.py"):
+        open_store(store)
 
 
 def test_metadata_read_once_per_process(store):

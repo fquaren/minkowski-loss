@@ -21,9 +21,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import zarr
 
 from src.evaluation.analogue import FRACTIONS, shape_features
+from src.data.packed_store import open_store
 
 V4 = "/home/fquareng/work/data/extremes/OPERA/patches_v4_adv"
 AN = "/home/fquareng/work/data/extremes/OPERA/quality_v4/analogue"
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     if os.path.exists(cache) and np.array_equal(np.load(cache)["rows"], te.r.values):
         Xp = np.load(cache)["X"]
     else:
-        z = zarr.open(os.path.join(V4, "preprocessed_dataset.zarr"), mode="r")["test"]["original_precip"]
+        z = open_store(os.path.join(V4, "preprocessed_dataset.zarr"))["test"]["original_precip"]
         Xp = np.stack([shape_features(z[int(r)]) for r in te.r.values])
         np.savez_compressed(cache, X=Xp, rows=te.r.values)
     print(f"cut-training hours {len(Xb)}, held-out extremes {len(Xp)}")

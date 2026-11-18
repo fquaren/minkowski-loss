@@ -19,14 +19,14 @@ import sys
 
 import numpy as np
 import pandas as pd
-import zarr
+from src.data.packed_store import open_store
 
 V4 = "/home/fquareng/work/data/extremes/OPERA/patches_v4_adv"
 GROUP = {"train": "train", "test": "test", "nimbus": "nimbus"}
 
 
 def coarse_max(sp, rows):
-    g = zarr.open(os.path.join(V4, "preprocessed_dataset.zarr"), mode="r")[GROUP[sp]]
+    g = open_store(os.path.join(V4, "preprocessed_dataset.zarr"))[GROUP[sp]]
     a, t = g["interpolated_precip"], g["original_precip"]
     cm = np.array([float(np.max(a[int(r)])) for r in rows])
     tm = np.array([float(np.max(t[int(r)])) for r in rows])

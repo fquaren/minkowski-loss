@@ -13,7 +13,8 @@ store. The decoded arrays are therefore bit-identical, and the store stays on NF
     preprocessed_dataset.packed/    manifest.json, <split>/<array>.part<k>.bin, <split>/<array>.idx.npy
 
 open_store() uses the packed copy when its manifest exists and the packed arrays' .zarray still match the
-original; otherwise it falls back to zarr.open.
+original. Without a packed copy it falls back to zarr.open only if no hot array keeps one file per patch, and
+refuses otherwise, so a run cannot silently go back to per-file reads.
 """
 from __future__ import annotations
 
@@ -53,7 +54,7 @@ class PackedStore(BaseStore):
             if json.loads(self._dir[path + "/.zarray"]) != m["zarray"]:
                 raise RuntimeError(f"{path}: .zarray changed since packing; re-run the pack")
             self._arrays[path] = dict(m, grid=_grid(m["zarray"]))
-        self._idx, self._fds, self._meta = {}, {}, {}
+        self._idx, self._fds, self._meta, self._warned = {}, {}, {}, set()
 
     # fds and memory maps are per process; a pickled copy (spawned DataLoader worker) reopens them
     def __getstate__(self):
@@ -79,7 +80,13 @@ class PackedStore(BaseStore):
     def __getitem__(self, key):
         loc = self._locate(key)
         if loc is None:
-            if not key.rpartition("/")[2].startswith("."):
+            head, _, last = key.rpartition("/")
+            if not last.startswith("."):
+                if head not in self._warned and last[:1].isdigit():
+                    self._warned.add(head)        # a chunk of an array that is not packed: one NFS open each
+                    print(f"[store] WARNING: {head} is not packed; its chunks are opened one by one over NFS. "
+                          f"Reading it sample by sample can stall the node (CLAUDE.md, NFS state-manager stall).",
+                          flush=True)
                 return self._dir[key]
             # metadata is read on every g[array] access (once per sample in the datasets): cache it
             if key not in self._meta:
@@ -131,11 +138,25 @@ class PackedStore(BaseStore):
         self._fds.clear()
 
 
+def _per_patch_arrays(g):
+    """Hot arrays stored as one chunk (one file) per patch."""
+    return [f"{s}/{a}" for s in g.group_keys() for a in PACKED_ARRAYS
+            if a in g[s] and g[s][a].shape[0] > 1 and g[s][a].chunks[0] == 1]
+
+
 def open_store(zarr_path: str):
-    """zarr.open(zarr_path, mode="r"), through the packed copy when one exists next to the store."""
+    """zarr.open(zarr_path, mode="r"), through the packed copy, which must exist when the hot arrays keep one file
+    per patch: sample-by-sample reads of those over NFS stalled node32 and node40 (module docstring)."""
     p = packed_dir(zarr_path)
     if not os.path.exists(os.path.join(p, "manifest.json")):
-        return zarr.open(zarr_path, mode="r")
+        g = zarr.open(zarr_path, mode="r")
+        bad = _per_patch_arrays(g) if isinstance(g, zarr.hierarchy.Group) else []
+        if bad:
+            raise RuntimeError(
+                f"{zarr_path}: {', '.join(bad[:3])}{' ...' if len(bad) > 3 else ''} keep one file per patch and the "
+                f"store has no packed copy. Reading them sample by sample over NFS stalls the node (CLAUDE.md, NFS "
+                f"state-manager stall). Pack it first: python scripts/data/pack_store.py {zarr_path}")
+        return g
     g = zarr.open_group(store=PackedStore(zarr_path, p), mode="r")
     if p not in _ANNOUNCED:                            # once per process; DataLoader workers stay quiet
         _ANNOUNCED.add(p)
