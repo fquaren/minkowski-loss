@@ -1,4 +1,4 @@
-"""R4 scorecard: every deterministic loss and the clean FM model, full and cut training lists, one subset.
+"""R4 scorecard v2: the deterministic losses and the FM rows of EXPERIMENTS G4, full and cut training lists, one subset.
 
 Cells print the metric; colour is the % difference of the metric's error against the reference row (MSE, full
 list, seed 42), blue = better. Errors: the metric itself for lower-is-better columns; |ln x| for ratios whose
@@ -22,17 +22,23 @@ BASE = "/work/fquareng/ch2/minkowski-loss/.claude/worktrees/radar-day-exclusion/
 REF = ("MSE", {"full": "r4_mse_full_s42_v100", "cut": "r4_mse_cut_s42"})
 # Optical flow is left out (2026-11-16): with co-located input and target its teacher is the block-upsampled
 # coarse input, so the loss trains the U-Net toward the input blocks (EXPERIMENTS §3b).
+# Scorecard v2 rows (EXPERIMENTS G4, 2026-11-21). SSIM, wet area and unwindowed spectral are not reported (G0).
 LOSSES = [
-    ("Minkowski", {"full": "r4_mink_full_s42", "cut": "r4_mink_cut_s42"}),
-    ("Minkowski area-only", {"full": "r4_area_full_s42", "cut": "r4_area_cut_s42"}),
-    ("SSIM", {"full": "r4_ssim_full_s42", "cut": "r4_ssim_cut_s42"}),
-    ("wet area", {"full": "r4_wetarea_full_s42", "cut": "r4_wetarea_cut_s42"}),
-    ("spectral w=0.15", {"full": "r4_spectral_full_s42", "cut": "r4_spectral_cut_s42"}),
-    ("spectral w=0.05", {"full": "r4_spectral_full_s42_w0.05"}),
-    ("spectral w=0.015", {"full": "r4_spectral_full_s42_w0.015"}),
+    ("MSE + QM", {"full": "r4_mse_qm_full_s42", "cut": "r4_mse_qm_cut_s42"}),
     ("MSE random-drop", {"cut": "r4_mse_randdrop_s42"}),
+    ("wmse", {"full": "r4_wmse_full_s42", "cut": "r4_wmse_cut_s42"}),
+    ("quantile", {"full": "r4_quantile_full_s42", "cut": "r4_quantile_cut_s42"}),
+    ("fss", {"full": "r4_fss_full_s42", "cut": "r4_fss_cut_s42"}),
+    ("windowed spectral 0.51", {"full": "r4_spectral_hann_full_s42", "cut": "r4_spectral_hann_cut_s42"}),
+    ("Minkowski area-only", {"full": "r4_area_full_s42", "cut": "r4_area_cut_s42"}),
+    ("Minkowski", {"full": "r4_mink_full_s42", "cut": "r4_mink_cut_s42"}),
 ]
-FM = ("FM, clean (mean)", {"full": "fm_r4_clean_full", "cut": "fm_r4_clean_cut"})
+# FM area-only (w 41) aborted after epoch 1 in both arms: left out until its bracket picks a weight (E3).
+FMS = [
+    ("FM, clean", {"full": "fm_r4_clean_full", "cut": "fm_r4_clean_cut"}),
+    ("FM, control (w = 0)", {"full": "fm_energy_ctl_cond", "cut": "fm_r4_ctl_cut_s42"}),
+    ("FM + Minkowski", {"full": "fm_energy_qm_cond", "cut": "fm_r4_mink_cut_s42"}),
+]
 
 
 def _cond(s, k):
@@ -86,7 +92,7 @@ def main():
     ap.add_argument("--subset", choices=["ext", "sub"], default="ext")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
-    rows = [REF] + LOSSES + [FM]
+    rows = [REF] + LOSSES + FMS
     S = {(r, a): load(args.subset, t) for r, tags in rows for a, t in tags.items()}
     ref_full = S[(REF[0], "full")]
     if ref_full is None:
@@ -109,7 +115,7 @@ def main():
     top = 1.95 + nr * ch
     x0 = 2.6
     groups = [(0, 1, "#eef1f8", ""), (1, 1 + len(LOSSES), "#fbe5e5", "deterministic U-Net,\nauxiliary losses"),
-              (nr - 1, nr, "#e9f3e9", "")]
+              (nr - len(FMS), nr, "#e9f3e9", "flow matching,\nreward fine-tunes")]
     for a, b, col, lab in groups:
         y1, y0 = top - a * ch, top - b * ch
         ax.add_patch(plt.Rectangle((0.05, y0 + 0.03), x0 - 0.1, y1 - y0 - 0.06, color=col, ec="#e3b3b3" if lab else col))
