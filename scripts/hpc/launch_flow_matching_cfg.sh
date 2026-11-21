@@ -18,7 +18,7 @@ LOG_FILE="${PROJECT_ROOT}/logs/flow_matching_${TIMESTAMP}.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 cd "$PROJECT_ROOT"
 echo "Training Flow Matching (config=${CONFIG}, backbone=${BACKBONE}, data=${DATA_PCT}%) — log: $LOG_FILE"
-micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 python \
+micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES="${GPU_UUID}" python \
     "${PROJECT_ROOT}/scripts/train/train_flow_matching.py" "$CONFIG" \
     --backbone "$BACKBONE" --data_percentage "$DATA_PCT" --no_amp \
     > "$LOG_FILE" 2>&1

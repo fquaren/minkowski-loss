@@ -24,7 +24,7 @@ mkdir -p "$(dirname "$LOG_FILE")"
 
 echo "Training UNet+analytical (w_geom=${WEIGHT_GEOM}) — log: $LOG_FILE"
 
-micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 python "${PROJECT_ROOT}/scripts/train/train_unet_analytical.py" \
+micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES="${GPU_UUID}" python "${PROJECT_ROOT}/scripts/train/train_unet_analytical.py" \
     "$CONFIG" \
     --params_path "$PARAMS" \
     ${WEIGHT_ARGS[@]+"${WEIGHT_ARGS[@]}"} \

@@ -45,9 +45,9 @@ SWEEP_ROOT="${SWEEP_ROOT:-${PROJECT_ROOT}/sweeps}"
 SWEEP_NAME="${SWEEP_NAME:-reward_$(date +%Y%m%d_%H%M%S)}"
 SWEEP_DIR="${SWEEP_ROOT}/${SWEEP_NAME}"
 RESULTS_CSV="${SWEEP_DIR}/results.csv"
-GPU="${GPU:-1}"
-# Shared node: GPU 1 only (EXPERIMENTS.md "Compute node"). Refuse anything else.
-[[ "$GPU" == "1" ]] || { echo "GPU=$GPU is not allowed on this node: GPU 1 only." >&2; exit 1; }
+GPU="${GPU:-${CUDA_VISIBLE_DEVICES}}"   # env.sh: our card's PCI-order index
+# Our GPU only, by its PCI-order index from env.sh or its UUID (EXPERIMENTS.md "Compute node").
+[[ "$GPU" == "$CUDA_VISIBLE_DEVICES" || "$GPU" == "$GPU_UUID" ]] || { echo "GPU=$GPU is not allowed: our GPU only (index $CUDA_VISIBLE_DEVICES here, or $GPU_UUID)." >&2; exit 1; }
 SEED="${SEED:-42}"
 EVAL_CKPT="${EVAL_CKPT:-latest}"        # latest | best | both
 DRY_RUN="${DRY_RUN:-0}"

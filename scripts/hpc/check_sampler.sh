@@ -37,9 +37,9 @@ BASE_CONFIG="${BASE_CONFIG:-${PROJECT_ROOT}/config.yaml}"
 FM_CKPT="${FM_CKPT:-${PROJECT_ROOT}/runs/sr_flow_matching/flow_matching_20260716_071518/fm_best.pth}"
 OUT_DIR="${OUT_DIR:-${PROJECT_ROOT}/sweeps/sampler_check_$(date +%Y%m%d_%H%M%S)}"
 RESULTS_CSV="${OUT_DIR}/results.csv"
-GPU="${GPU:-1}"
-# Shared node: GPU 1 only (EXPERIMENTS.md "Compute node"). Refuse anything else.
-[[ "$GPU" == "1" ]] || { echo "GPU=$GPU is not allowed on this node: GPU 1 only." >&2; exit 1; }
+GPU="${GPU:-${CUDA_VISIBLE_DEVICES}}"   # env.sh: our card's PCI-order index
+# Our GPU only, by its PCI-order index from env.sh or its UUID (EXPERIMENTS.md "Compute node").
+[[ "$GPU" == "$CUDA_VISIBLE_DEVICES" || "$GPU" == "$GPU_UUID" ]] || { echo "GPU=$GPU is not allowed: our GPU only (index $CUDA_VISIBLE_DEVICES here, or $GPU_UUID)." >&2; exit 1; }
 M="${M:-16}"
 BATCHES="${BATCHES:-32}"
 POT_THRESHOLD="${POT_THRESHOLD:-31}"

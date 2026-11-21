@@ -17,7 +17,7 @@ mkdir -p "$(dirname "$LOG_FILE")"
 echo "Training Flow Matching (w_geom=${WEIGHT_GEOM}) — log: $LOG_FILE"
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES="${GPU_UUID}"
 micromamba run -n dl-stable python "${PROJECT_ROOT}/scripts/train/train_flow_matching.py" \
     "$CONFIG" \
     --backbone "/home/fquareng/work/ch2/minkowski-loss/runs/sr_analytical/UNet_Ana_20260623_144958/unet_best.pth" \

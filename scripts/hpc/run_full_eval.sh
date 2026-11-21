@@ -39,9 +39,9 @@ cd "$PROJECT_ROOT"
 PYTHON="${PYTHON:-$(command -v python3 || command -v python)}"
 [ -z "$PYTHON" ] && { echo "no python interpreter; set PYTHON=..." >&2; exit 1; }
 
-GPU="${GPU:-1}"
-# Shared node: GPU 1 only (EXPERIMENTS.md "Compute node"). Refuse anything else.
-[[ "$GPU" == "1" ]] || { echo "GPU=$GPU is not allowed on this node: GPU 1 only." >&2; exit 1; }
+GPU="${GPU:-${CUDA_VISIBLE_DEVICES}}"   # env.sh: our card's PCI-order index
+# Our GPU only, by its PCI-order index from env.sh or its UUID (EXPERIMENTS.md "Compute node").
+[[ "$GPU" == "$CUDA_VISIBLE_DEVICES" || "$GPU" == "$GPU_UUID" ]] || { echo "GPU=$GPU is not allowed: our GPU only (index $CUDA_VISIBLE_DEVICES here, or $GPU_UUID)." >&2; exit 1; }
 POT="${POT:-31}"                      # one level for every row
 SPLIT="${SPLIT:-test}"
 ENSEMBLE="${ENSEMBLE:-16}"

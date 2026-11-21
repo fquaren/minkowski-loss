@@ -39,10 +39,12 @@ python scripts/evaluate/diagnose_coupling.py config.yaml \
 
 ## Operational traps — these have all cost days at least once
 
-**Shared node: GPU 1 only, at most 8 of 12 cores** (EXPERIMENTS.md §0). Our GPU is assigned by
-UUID (`GPU-9e0aab27-…`), not by node: it was on node34 until 2026-11-03 and is on node32 since,
-possibly temporarily, so run wherever that card is. GPU 0 belongs to someone else and must never
-be used. At least 4 cores must always stay free. Both limits are enforced in two places, on
+**Our GPU only, at most 8 of 12 cores** (EXPERIMENTS.md §0). Our GPU is assigned by
+UUID (`GPU-9e0aab27-…`), not by node: it was on node34 until 2026-11-03 and is on node32 since.
+**Since 2026-11-20 node32 is ours** (researcher): the other card is gone, so ours is the only GPU
+and its index is **0**, no longer 1. Select it by UUID, never by a literal index. The core limit
+stays (researcher, 2026-11-20): cores 4–11 only, at least 4 cores free; other users still run CPU
+jobs on node32. Both limits are enforced in two places, on
 whichever node holds our card (detected by UUID, not hostname):
 - `src/node_limits.py`, run on `import src`: pins the process to cores 4–11, refuses any
   `CUDA_VISIBLE_DEVICES` other than our card's PCI-order index or its UUID, and checks the UUID
@@ -52,13 +54,15 @@ whichever node holds our card (detected by UUID, not hostname):
 Don't work around either. Size worker pools so that everything running at once (training,
 DataLoader workers, the fetcher, audits) fits in 8 cores; they all share cores 4–11.
 
-**GPU selection.** `CUDA_VISIBLE_DEVICES=1` alone is not enough: CUDA's default device order
-is not `nvidia-smi`'s, and the two cards are identical, so the logs would not show a wrong
-pick. Always set both variables. Setting them inside the `micromamba run` wrapper is the
-safe habit (as of 2026-09-23, `micromamba run` passes them through unchanged):
+**GPU selection.** Use the UUID: the card's index has already changed once (1 until the
+2026-11-19 reboot, 0 since), and many old scripts in `scripts/hpc/` still hardcode `1`; on node32
+they now fail at `import src` with `NodeLimitError`. With an index, `CUDA_VISIBLE_DEVICES` alone
+is not enough, because CUDA's default device order is not `nvidia-smi`'s. Setting the variables
+inside the `micromamba run` wrapper is the safe habit (as of 2026-09-23, `micromamba run` passes
+them through unchanged):
 
 ```bash
-micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 python ...
+micromamba run -n dl-stable env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=GPU-9e0aab27-00b0-8d7e-df63-922075bf41b4 python ...
 ```
 
 **`python` may not exist** — use `python3`, or resolve it with `command -v`.

@@ -1,6 +1,6 @@
 # Experiment tracker
 
-Last updated: 2026-11-16 (R4 validation results in §3b)
+Last updated: 2026-11-21 (G2 cut rows in §3b; FM area-only aborted, bracket running: E3; spectral_hann bracket and QM rows launched: G2)
 
 **Read first:** `DECISIONS.md` (why things are the way they are, and what is already ruled
 out), then `CLAUDE.md` (operational traps), then this file (the compute node in §0, what exists and what's next).
@@ -31,6 +31,15 @@ Runs go wherever that card is. It was in **node34** until the reboot of 2026-11-
 **node32** since (same two cards, same PCI slots, same CPU layout); the move may be temporary.
 node34 now holds one unrelated card (`GPU-1765684b-…`). The node is **shared with other users**.
 To find the card: `grep -l 9e0aab27 /proc/driver/nvidia/gpus/*/information` on each node.
+
+**Update 2026-11-20: node32 is ours** (researcher). node32 rebooted 2026-11-19 14:09-15:20 (it killed the FM R4
+queue at `ctl_cut_s42`, relaunched 2026-11-20 08:56). Since then it holds only our card, at PCI 83:00.0, which is
+now **index 0**, not 1. Every launcher that hardcodes `CUDA_VISIBLE_DEVICES=1` now fails at `import src`
+(`NodeLimitError`, no silent wrong pick). The maintained launchers (`launch_unet_analytical`, `launch_flow_matching`,
+`launch_flow_matching_cfg`, `run_full_eval`, `eval_losses`, `launch_eval_losses`, `check_sampler`, `sweep_reward`)
+and `run_fm_r4_queue.sh` now select the card by UUID or by env.sh's index; ~20 one-off scripts still say `1`.
+Another user (linanxu) still ran ~10 CPU-bound processes on node32 on 2026-11-20, and the **8-core limit (cores
+4-11) stays** (researcher, 2026-11-20). The GPU 0 row below describes node32 before the reboot.
 
 | | |
 |---|---|
@@ -144,6 +153,39 @@ first, and time an uncached open on `/work`; the remedy needs root (`echo 2 > /p
 | `Energy_20260811_171310` | energy + retention (w=1.0) | FM + Minkowski energy | best exceedance ratio and RAPSD |
 
 Both are evaluated from `fm_mink_latest.pth` (DECISIONS §10).
+
+### v4 hourly checkpoints (`patches_v4_adv`, from 2026-10-21; added 2026-11-20)
+
+The tables above are pre-v4 (15-min rates, mirrored DEM) and are not comparable with these. U-Net runs live in
+`.claude/worktrees/radar-day-exclusion/runs/sr_analytical/` (`rtx6000-…/runs` is a symlink to the same place); FM
+R4 runs in `.claude/worktrees/fm-r4/runs/`. Every R4 / G2 run evaluates `unet_latest.pth`.
+
+| Label | Run | Status |
+|---|---|---|
+| vanilla v4 (MSE) | `UNet_Ana_20261021_211732` | **reference backbone, full arm** (MAE 0.04390, aniso 2.12 on val) |
+| `r4_mse_full_s42_v100` / `_s43` / `_s44` | `UNet_Ana_20261105_150530` / `20261109_125359` / `20261111_162434` | R4, evaluated (§3b) |
+| `r4_mse_cut_s42` / `_s43` / `_s44` | `UNet_Ana_20261105_142458` / `20261107_150924` / `20261111_143655` | R4, evaluated; **s42 is the cut-arm FM backbone** |
+| `r4_mse_randdrop_s42` | `UNet_Ana_20261107_151025` | R4 size-matched control, evaluated |
+| `r4_mink_full_s42` / `_s43` / `_s44` | `UNet_Ana_20261105_150601` / `20261109_125433` / `20261111_170644` | R4, Minkowski 6.0e-5, evaluated |
+| `r4_mink_cut_s42` / `_s43` / `_s44` | `UNet_Ana_20261105_150429` / `20261107_150954` / `20261111_152845` | R4, evaluated |
+| `r4_area_full_s42` / `r4_area_cut_s42` | `UNet_Ana_20261109_125328` / `20261109_125213` | R4 area-only, evaluated |
+| `r4_wmse_full_s42` / `_cut_s42` | `UNet_Ana_20261118_151313` / `20261120_003042` | G2, wmse 4.3e-4; both evaluated (§3b); cut early-stopped at epoch 23 |
+| `r4_quantile_full_s42` / `_cut_s42` | `UNet_Ana_20261118_151343` / `20261120_004843` | G2, quantile 0.068; both evaluated |
+| `r4_fss_full_s42` / `_cut_s42` | `UNet_Ana_20261118_151413` / `20261120_071846` | G2, fss 2.1e-4; full evaluated, cut training (epoch 19/25 on 11-21 12:24) |
+| `r4_spectral_hann_full_s42` / `_cut_s42` | `UNet_Ana_20261118_151446` / `20261120_004443` | G2, windowed spectral 0.51; both evaluated (**looks like hacking in both arms**, §3b) |
+| dropped (G0) | SSIM full/cut, wet area full/cut, optical flow full/cut, unwindowed spectral (0.15, 0.05, 0.015) | trained and evaluated in R4, not reported |
+
+| FM (v4) | Run | σ_r | Status |
+|---|---|---|---|
+| FM base, full list | `radar-day-exclusion/runs/sr_flow_matching/Extremes_20261026_092630` | 0.01266805361956358 | clean reference, full arm (`fm_r4_clean_full`) |
+| FM base, cut list | `fm-r4/runs/sr_flow_matching/FMbase_cut_v4adv_20261116_111924` | 0.012145508080720901 | early stop at epoch 37 (best val_fm 0.2406, epoch 32); evaluated (`fm_r4_clean_cut`) |
+| FM control, full | `radar-day-exclusion/runs/sr_fm_minkowski/FMenergyctl_v4adv_20261030_141741` | full | w_reward = 0 control |
+| FM + Minkowski energy_qm, full | `radar-day-exclusion/runs/sr_fm_minkowski/FMenergyqm_v4adv_20261031_022957` | full | the FM Minkowski row |
+| FM R4 full s42: spectral / wetarea / SSIM | `fm-r4/runs/sr_fm_minkowski/FMr4_{spectral,wetarea,ssim}_full_s42_*` | full | evaluated; weights 96 / 7.3 / 13; dropped from the report (G0) |
+| FM R4 area-only s42, w 41 (parity), full / cut | `FMr4_area_full_s42_20261115_015111` / `FMr4_area_cut_s42_20261121_093600` | full / cut | **guard ABORT after epoch 1** (peak ratio 1.204 > 1.150 / 1.401 > 1.164); 1-epoch models, evaluated by the queue as if complete: **do not use** (E3) |
+| FM R4 area-only bracket, w 14 / 4.1 | `FMr4_area_{full,cut}_s42_w{14,4.1}_*` | | running from 2026-11-21 13:17 (E3) |
+| FM R4 cut s42: control / Minkowski | `FMr4_ctl_cut_s42_20261120_090336` / `FMr4_mink_cut_s42_20261120_211914` | cut | 10 epochs, evaluated (the `ctl_cut_s42_20261119_115729` dir is a partial run killed by the node32 reboot) |
+| FM R4 seeds 43/44, control and Minkowski, both arms | `FMr4_{ctl,mink}_{full,cut}_s4{3,4}_*` | | running: `ctl_full_s43` from 2026-11-21 11:53, then 7 more (~12 h each, ~11-25) |
 
 ### Retired and deprioritised
 
@@ -288,6 +330,13 @@ max is >= u (`conditioned.obs_selected`). Vanilla v4 (`UNet_Ana_20261021_211732`
 | Wet area cut s42 | 0.0436 | 1.68 | 0.065 | 0.024 | 0.265 |
 | Spectral full s42, w 0.15 / 0.05 / 0.015 | 0.0481 / 0.0454 / 0.0443 | 2.25 / 1.92 / 1.65 | 0.318 / 0.174 / 0.051 | 0.779 / 0.561 / 0.048 | 0.312 / 0.308 / 0.198 |
 | Spectral cut s42, w 0.15 | 0.0464 | 2.29 | 0.188 | 0.348 | 0.304 |
+| *G2 (2026-11-20):* wmse full s42, 4.3e-4 | 0.0467 | 2.36 | 0.170 | 0.079 | 0.411 |
+| quantile full s42, 0.068 | 0.0495 | 1.95 | 0.139 | 0.047 | 0.394 |
+| fss full s42, 2.1e-4 | 0.0458 | 1.28 | 0.490 | 0.456 | 0.646 (own objective) |
+| windowed spectral full s42, 0.51 | 0.0451 | 1.19 | 0.198 | 0.369 | 0.303 |
+| *G2 cut (2026-11-21):* wmse cut s42 | 0.0491 | 2.59 | 0.055 | 0.024 | 0.239 |
+| quantile cut s42 | 0.0500 | 1.79 | 0.098 | 0.033 | 0.334 |
+| windowed spectral cut s42 | 0.0449 | 1.20 | 0.108 | 0.305 | 0.182 |
 
 **Provisional reading (2026-11-16, not yet in DECISIONS §43):**
 - *MSE loses tail when the extremes are cut:* exc. ratio -25 to -35% and FSS@50.1 -0.05 to -0.08 in both seeds; the
@@ -300,6 +349,20 @@ max is >= u (`conditioned.obs_selected`). Vanilla v4 (`UNet_Ana_20261021_211732`
   bracket rule of `run_r4_spectral_bracket_node32.sh`, 0.05 fails the false-alarm test and 0.015 misses the
   activity test by a hair (MAE 1.0098 x vanilla vs >= 1.01), so no weight passes (computed from the summaries;
   the bracket log is not in this checkout).
+
+**G2 full rows (2026-11-20, `UNet_Ana_20261118_*`, same protocol):** false-alarm rates (max >= u predicted where
+the observed max is below): MSE 0.0001, Minkowski 0.0004, wmse 0.0001, quantile 0.0001, fss 0.0039, windowed
+spectral 0.0140. RL bias (mean abs): MSE 0.31, Minkowski 0.43, wmse 0.54, quantile 0.25, fss 0.30, windowed spectral
+13.0. All four are active (MAE +2.7% to +12.7% vs vanilla). Windowed spectral shows the false-alarm and RL-bias
+signature of the unwindowed spectral hacking; fss's FSS@50.1 is its own objective. Panels not yet looked at.
+
+**G2 cut rows (2026-11-21, seed 42 only):** exceedance ratio full -> cut: MSE 0.096 -> 0.072 (-25%), Minkowski
+0.150 -> 0.165 (+10%), wmse 0.170 -> 0.055 (-68%), quantile 0.139 -> 0.098 (-29%), windowed spectral 0.198 -> 0.108
+(-45%). FSS@50.1 falls with the cut for every rival (wmse 0.411 -> 0.239). *Provisional reading:* every rival loss
+pays a cut penalty at least as large as MSE's, and Minkowski does not; the H3 pattern of the 3-seed MSE/Minkowski
+comparison extends to the rivals. One seed per rival, validation only, fss cut pending. wmse cut also has the highest
+anisotropy (2.59) and RL bias (0.63). Windowed spectral keeps its hacking signature in the cut arm (false alarms
+1.1%, RL bias 6.9). False alarms cut: MSE 0.0000, Minkowski 0.0014, wmse 0.0000, quantile 0.0001.
 
 **Update 2026-11-16 (all 25 cells evaluated):**
 - *Three seeds, mean ± sd (val):* MSE full / cut exc. ratio 0.086±0.012 / 0.059±0.012, FSS@50.1 0.297 / 0.239;
@@ -852,7 +915,7 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       model); energy_qm seeds still open.*
 
 **E. Training for R4** (after A1-A2, D1-D3)
-- [ ] E1. *Queued 2026-11-04 (`scripts/hpc/run_r4_queue.sh`, starts after tonight's chain): parity audits, then 21
+- [x] E1. *Queued 2026-11-04 (`scripts/hpc/run_r4_queue.sh`, starts after tonight's chain): parity audits, then 21
       runs (seed-42 pair MSE/Minkowski cut first). See DECISIONS §43 amendments for the list.*
       *Status 2026-11-16: 18 cells trained and evaluated on val (§3b): MSE and Minkowski full/cut s42 and s43, MSE
       random-drop, area-only full/cut, SSIM full/cut, wet area cut, spectral full/cut at 0.15 and the full-arm bracket
@@ -860,8 +923,11 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       *Update 2026-11-16: all 25 cells done (R4_QUEUE_DONE 2026-11-14) and evaluated on val and on the FM subsets;
       optical flow dropped (§3b); spectral w = 0.03 started and stopped (Baselines v2, G0).* Cut runs: MSE, Minkowski, Minkowski area-only, competing loss; 3 seeds each (~20 h per run, ~10
       GPU-days) -> verify: startup lines (loss, weight, train list = cut list, GPU).
-- [ ] E2. FM base model on the cut list, sigma_r recomputed for its backbone, then energy_qm on top -> verify: the
+- [x] E2. FM base model on the cut list, sigma_r recomputed for its backbone, then energy_qm on top -> verify: the
       `config FM_RESIDUAL_SCALE` line. Cost of the FM base run to be measured.
+      *Done 2026-11-19 (E3 step 3): sigma_r 0.012146 (full 0.012668), startup line `config FM_RESIDUAL_SCALE=0.01215`;
+      ~1 h 53 min per epoch on node32, early stop at epoch 37 (best val_fm 0.2406 at 32), ~3 days in all. energy_qm on
+      the cut list is E3 step 4 (`mink_cut_s42`).*
 - [ ] E3. *Queued 2026-11-12 (`scripts/hpc/run_fm_r4_queue.sh`, worktree `fm-r4`, log `logs/fm_r4/queue.log`;
       starts when the U-Net R4 queue prints R4_QUEUE_DONE, ~2026-11-14).* FM R4: the U-Net R4 loss comparison as
       reward fine-tunes of the FM model. Rows per arm: control (w=0), Minkowski (energy_qm), area-only (energy,
@@ -881,6 +947,29 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       marked DROPPED in `logs/fm_r4/done.txt`, so the cut arm has 6 rows. (2) done on node40
       (`node40_r4_subset_evals.py`); clean FM full list evaluated as `fm_r4_clean_full`. (3) started 10:54 on node32
       GPU 1 (sigma_r, then the FM base on the cut list, ~2.6 d).*
+      *Status 2026-11-20: (3) done 2026-11-19 10:45 (E2); `clean_cut` evaluated on valext and valsub. (4) `ctl_cut_s42`
+      started 11:57, killed in epoch 2 by the node32 reboot (2026-11-19 14:09); queue relaunched 2026-11-20 08:56 with
+      the GPU by UUID (§0), `opticalflow_full_s42` marked DROPPED in `done.txt` so it is not retried. The relaunch also
+      evaluated the four G2 full runs on valext/valsub (step 2 picks up new lines of `r4_queue_done.txt`).
+      `ctl_cut_s42` restarted 09:03, startup verified (sigma_r from config, reward mode energy w 0, packed read path,
+      our GPU, cores 4-11). Left: `mink_cut_s42`, `area_cut_s42`, then seeds 43/44 for control and Minkowski, both
+      arms: 9 fine-tunes at ~11 h each plus evals, ~4-5 days. node32 NFS 2026-11-20 09:05: CLOSE 116/s, DELEGRETURN
+      111/s while another user's CPU jobs ran; our processes read only the packed part files (attribution is an
+      inference: the counter is per node).*
+      *Status 2026-11-21: `ctl_cut_s42` and `mink_cut_s42` done (10 epochs each) and evaluated. **Area-only aborted in
+      both arms.** At its parity weight 41 the reward-hacking guard stopped `area_full_s42` (2026-11-15, peak ratio
+      1.204 > 1.150) and `area_cut_s42` (2026-11-21, 1.401 > 1.164) after epoch 1. The trainer exits 0 on an abort
+      and writes its checkpoints, so the queue marked both done and evaluated 1-epoch models: the FM area-only rows on
+      valext/valsub (`fm_r4_area_{full,cut}_s42`) are not usable. Every other s42 fine-tune ran 10 epochs (optical
+      flow 5, stopped by hand). The remaining queue steps are control and Minkowski only (neither has tripped the
+      guard), so the running script is left unedited; any new FM queue must check for `ABORT: reward hacking`.
+      Bracket below parity (DECISIONS §16, {λ*/3, λ*/10} = {14, 4.1}), seed 42, channels [1,0,0], on node32 beside the
+      queue (both share the card, so each runs slower): `scripts/hpc/run_fm_area_bracket.sh` (fm-r4), log
+      `logs/fm_r4/area_bracket.log`, results `logs/fm_r4/area_bracket.txt` (PASS / ABORT per run). Order: full@14; if
+      it passes, cut@14 then full@4.1; else full@4.1 then cut@4.1. Passing runs are evaluated as `fm_r4_area_*_w*`.
+      Started 13:17, startup verified (sigma_r from config 0.01267, w_reward 14, channels [1,0,0], packed read path,
+      our GPU, cores 4-11). -> verify: guard pass, then activity (own-reward drop vs `ctl`), anisotropy, exceedance
+      ratio, RL bias against control on the same subset. Queue: `ctl_full_s43` from 11:53, 7 seed runs after it.*
 
 **F. Scoring (test touched once per final model)**
 - [ ] F1. R0, R1, R3 for every final model; R2 on the paired store.
@@ -978,7 +1067,30 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
       line, 13 thresholds < 50.1 for wmse/fss, Hann window for spectral, `[store] packed read path`, one GPU each,
       all processes on CPUs 0-5, node40 NFS 0 CLOSE/s. Full runs `UNet_Ana_20261118_{151313,151343,151413,151446}`;
       ~1.2-1.5 h per epoch at the start, so ~3 days per GPU for both cells.
+      *Status 2026-11-20: all four full runs ran 25/25 epochs (done 11-20 00:30-07:17) and are evaluated on val (§3b)
+      and on valext/valsub (by the node32 FM queue). Cut runs started 11-20 00:30-07:18
+      (`UNet_Ana_20261120_{003042,004843,071846,004443}` for wmse, quantile, fss, spectral_hann), expected 11-21.
+      spectral_hann at its parity weight 0.51 looks like hacking (false alarms 1.4%, RL bias 13): look at the panels,
+      then bracket. fss: exceedance ratio 0.49, false alarms 0.39% (9x Minkowski): look at the panels first.*
+      *Status 2026-11-21: wmse cut (early stop, epoch 23), quantile cut and spectral_hann cut (25/25) done and
+      evaluated on val (§3b); fss cut at epoch 19, due ~11-21 evening.*
+      *Windowed-spectral bracket launched 2026-11-21 13:27 (researcher: parity 0.51 hacks in both arms), DECISIONS §16
+      below parity: {0.51/3, 0.51/10} = {0.17, 0.051}, both arms, seed 42, grid truncated below 50.1 as G2
+      (`rtx6000` worktree `logs/node40/launch_g2b.sh`, code `cd9770c`). Labels `r4_spectral_hann_{full,cut}_s42_w{0.17,
+      0.051}`: GPU 0 full@0.17 (`UNet_Ana_20261121_132752`), GPU 1 cut@0.17 (`UNet_Ana_20261121_132823`), GPU 3
+      full@0.051 after the QM rows, GPU 2 cut@0.051 after the G2 fss round prints ROUND_DONE (so the fss eval is not
+      refused). Logs `logs/node40/round_g2b_gpu<g>.log`, `cell_<label>.log`. Startup verified for the 0.17 pair:
+      spectral [hann window], w from the command line, train list per arm, packed read path, CPUs 0-5, node40 NFS
+      0 CLOSE/s. ~33 h per run; all four evaluated on val by ~11-23/24. -> verify: §16 rule (best exceedance ratio with
+      MAE <= +5% and anisotropy <= 1.2x vanilla), plus false alarms and RL bias against the parity point.*
 - [ ] QM rows (eval only): MSE + QM, both arms.
+      *Launched 2026-11-21 13:27 on node40 GPU 3 (`scripts/hpc/node40_qm_rows.sh`, rtx6000 worktree; outputs
+      `logs/node40/qm/`).* Per arm: 16,384 rows sampled from the arm's train list (`fit_<arm>.txt`), train-split
+      histograms of the MSE s42 model (`r4_mse_full_s42_v100` / `r4_mse_cut_s42`), map `qm_<arm>.json`, then
+      `eval_extremes --qm` on val, valext and valsub as `r4_mse_qm_{full,cut}_s42`. `eval_backbone.py` has no `--qm`,
+      so these rows have no MAE column (anisotropy and the tail columns come from `eval_extremes`). The cut map is
+      fitted on the cut list and can only extrapolate above u. -> verify: QM ratio printed at load; mapped train
+      marginal = target marginal (tests); then the rows against MSE.
 
 **G3. FM rows (node32 GPU 1; after the cut FM base)**
 - [ ] Both arms: pixel energy, weighted pixel energy, fss, windowed spectral (+ the existing control, Minkowski
@@ -992,6 +1104,35 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
 - [ ] Rows: MSE, MSE + QM, wmse, quantile, area-only, windowed spectral, fss, Minkowski | FM clean, FM + QM,
       FM + pixel ES, FM + weighted pixel ES, FM + windowed spectral, FM + fss, FM + area-only, FM + Minkowski
       (energy_qm). SSIM, wet area, optical flow and unwindowed spectral are not reported (G0).
+      *First version 2026-11-21 (`scripts/evaluate/r4_scorecard.py`, rows switched to this list; rtx6000 worktree
+      `figures/r4_scorecard_v2/val{ext,sub}.{png,md}`).* Pending: FM + QM, the G3 FM rows, FM area-only (bracket).
+      fss cut landed 11-21 22:44 (UNet_Ana_20261120_071846): valext exc. ratio 0.338, hit 0.561, FSS 0.551, false
+      alarms 9.1% (full 5.6%), anisotropy 0.56; the cut val summary and cut panels were redone with it (11-21 23:18).
+      FM summaries on the subsets, MSE + QM | FM clean | control | + Minkowski: `figures/v4adv_val{ext,sub}_fm_{full,cut}/`. MSE + QM landed 11-21 (no MAE column). The FM full control and FM + Minkowski full rows
+      were re-evaluated 11-21 with the current `eval_extremes.py` (tags `fm_energy_{ctl,qm}_cond`, valext/valsub,
+      `fm_mink_latest.pth`, M = 16, sigma_r from config; the old 11-04 dirs are kept), so no cell is n/a any more.
+      Readings, valext / valsub, full list:
+      - *FM + Minkowski vs control:* exc. ratio 0.452 / 0.576 vs 0.228 / 0.238, hit 0.481 / 0.553 vs 0.209 / 0.263,
+        twCRPS 0.0327 / 0.0082 vs 0.0345 / 0.0085, at equal RMSE and anisotropy (1.36-1.41). But false alarms
+        10.0% vs 1.1% on valext (1.2% vs 0.15% on valsub): the reward buys tail by firing on non-event patches too.
+        Look at valext non-event samples before claiming the tail gain.
+      - *MSE + QM* full: exc. ratio 1.07 on valext (overshoots), false alarms 1.1%, FSS 0.442; on the cut arm the map
+        only extrapolates above u (0.82 valext, 0.18 valsub).
+      Figures for the G2 rows (2026-11-21, rtx6000 worktree): summaries `figures/v4adv_val_r4_g2_{full,cut}/`
+      (val), panels on the six §38 patches
+      `figures/v4adv_valext_fields_r4_g2_{full,cut}/` and `figures/v4adv_valext_fields_fm_r4_cut/` (FM member 0,
+      full vs cut). What they show:
+      - *Windowed spectral 0.51 hacks:* RAPSD up to ~9x the target's power below ~10 km, GPD return levels running to
+        ~27,000 mm/h, false alarms 15% (valext); on patch 979 a single-pixel spike of 179 mm/h against a target max
+        of 87. Bracket running (G2).
+      - *fss* places the cores well on the panels (patch 354: 109 mm/h at the observed core, target 191) and has the
+        best FSS, exceedance ratio and hit rate on valext, at RMSE +8% and false alarms 5.6% (valext), the second
+        largest after windowed spectral. FSS is its own objective.
+      - *wmse* full: anisotropy 2.71 on valext, the highest of the U-Nets; its cut arm loses almost all its tail
+        (exc. ratio 0.008).
+      - *FM cut vs full:* on the panels the cut-list FM models peak near 50 mm/h (patch 354: 43-51 vs 100-125 for
+        full). On valext FM + Minkowski cut keeps exc. ratio 0.297 against 0.132 for the cut control and 0.162 for
+        clean cut, with FSS 0.476 vs 0.322 / 0.341; false alarms 3.5% vs 0.5% / 0.8%. One seed; s43/s44 running.
 
 **G5. Contingency: an FGN-style CRPS-trained generator (only if time remains or a reviewer asks)**
 - [ ] Noise-conditioned residual U-Net on the same backbone, trained with the fair ensemble CRPS per pixel (M = 2-4
