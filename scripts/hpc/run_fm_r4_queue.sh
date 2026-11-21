@@ -21,7 +21,7 @@ STORE=/home/fquareng/work/data/extremes/OPERA/patches_v4_adv
 OUTE=$W/eval_results/extremes
 L=$PWD/logs/fm_r4; mkdir -p $L/configs
 DONE=$L/done.txt; touch $DONE
-P="env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 taskset -c 4-11 $E/bin/python -u"
+P="env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=GPU-9e0aab27-00b0-8d7e-df63-922075bf41b4 taskset -c 4-11 $E/bin/python -u"
 
 FMB_FULL=$W/runs/sr_flow_matching/Extremes_20261026_092630/fm_best.pth
 BB_FULL=$W/runs/sr_analytical/UNet_Ana_20261021_211732/unet_latest.pth

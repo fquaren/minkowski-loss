@@ -1,0 +1,2 @@
+area_full_s42_w14 ABORT runs/sr_fm_minkowski/FMr4_area_full_s42_w14_20261121_131703 epochs=1  peak ratio 1.200 > 1.150 
+area_full_s42_w4.1 ABORT runs/sr_fm_minkowski/FMr4_area_full_s42_w4.1_20261121_160647 epochs=2  peak ratio 1.217 > 1.150 
