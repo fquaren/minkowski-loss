@@ -1,0 +1,5 @@
+spectral 96
+area 41
+wetarea 7.3
+ssim 13
+opticalflow 55

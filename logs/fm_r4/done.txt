@@ -1,0 +1,12 @@
+spectral_full_s42 runs/sr_fm_minkowski/FMr4_spectral_full_s42_20261114_133748 96
+area_full_s42 runs/sr_fm_minkowski/FMr4_area_full_s42_20261115_015111 41
+wetarea_full_s42 runs/sr_fm_minkowski/FMr4_wetarea_full_s42_20261115_041213 7.3
+ssim_full_s42 runs/sr_fm_minkowski/FMr4_ssim_full_s42_20261115_162420 13
+opticalflow_cut_s42 DROPPED_2026-11-16_teacher_is_coarse_input 0
+ssim_cut_s42 DROPPED_2026-11-16_baselines_v2 0
+wetarea_cut_s42 DROPPED_2026-11-16_baselines_v2 0
+spectral_cut_s42 DROPPED_2026-11-16_baselines_v2 0
+opticalflow_full_s42 DROPPED_2026-11-16_teacher_is_coarse_input 0
+ctl_cut_s42 runs/sr_fm_minkowski/FMr4_ctl_cut_s42_20261120_090336 0
+mink_cut_s42 runs/sr_fm_minkowski/FMr4_mink_cut_s42_20261120_211914 1.0
+area_cut_s42 runs/sr_fm_minkowski/FMr4_area_cut_s42_20261121_093600 41

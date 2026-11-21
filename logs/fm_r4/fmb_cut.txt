@@ -1,0 +1,1 @@
+/work/fquareng/ch2/minkowski-loss/.claude/worktrees/fm-r4/runs/sr_flow_matching/FMbase_cut_v4adv_20261116_111924/fm_best.pth

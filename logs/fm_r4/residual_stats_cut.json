@@ -1,0 +1,13 @@
+{
+  "backbone": "/work/fquareng/ch2/minkowski-loss/.claude/worktrees/rtx6000-node-detection-750d7c/runs/sr_analytical/UNet_Ana_20261105_142458/unet_latest.pth",
+  "split": "train",
+  "n_samples": 1285619,
+  "sigma_r_scalar": 0.012145508080720901,
+  "residual_mean_abs_max": 0.005669832695275545,
+  "residual_mean_spatial_mean": 1.8177870515501127e-05,
+  "std_map_min": 0.010500490665435791,
+  "std_map_max": 0.01984892599284649,
+  "std_map_mean": 0.012116476893424988,
+  "std_map_cv": 0.06564830243587494,
+  "recommend_per_pixel_map": false
+}
