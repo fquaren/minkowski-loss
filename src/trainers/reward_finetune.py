@@ -259,6 +259,8 @@ def minkowski_reward(geom_fn, fields, target_log_gamma, mode, anneal, w_spread,
         if target_field is None:
             raise ValueError(f"{mode} reward needs target_field")
         return PIXEL_MODES[mode](fields, target_field, max_val=max_val, reference=reference)
+    if geom_fn.target_prefix:     # grid truncated below MINKOWSKI_MAX_THRESHOLD: the first Q stored columns
+        target_log_gamma = target_log_gamma[..., :geom_fn.xi.numel()]
     lg, tg, W = reward_features(geom_fn, fields, target_log_gamma, anneal, form, target_field)
     return reward_from_features(geom_fn, lg, tg, W, mode, w_spread)
 
@@ -519,6 +521,9 @@ def run_reward_finetune(config, args):
     max_val = torch.tensor(scaler_val, device=device, dtype=torch.float32)
     topo_mode = config.get("TOPOLOGY_MODE", "euler")
     u_phys = load_physical_thresholds(config)
+    u_max = config.get("MINKOWSKI_MAX_THRESHOLD")      # R4: no threshold at or above the cut, as the U-Net (§43)
+    if u_max is not None:
+        u_phys = u_phys[u_phys < float(u_max)]
     pixel_km = float(config.get("PIXEL_SIZE_KM", 2.0))
 
     run_name = f"{config.get('EXPERIMENT_NAME', 'FM_MINK')}_{time.strftime('%Y%m%d_%H%M%S')}"
@@ -582,6 +587,8 @@ def run_reward_finetune(config, args):
                     f"w_retain={w_retain:g} "
                     f"w_spread={w_spread:g} guards: aniso<{aniso_max} peak<{peak_max}")
         cw = [float(c) for c in config.get("MINKOWSKI_CHANNEL_WEIGHTS", [1.0, 1.0, 1.0])]
+        logger.info(f"reward grid: {len(u_phys)} thresholds {u_phys[0]:g}..{u_phys[-1]:g}"
+                    + (f" (MINKOWSKI_MAX_THRESHOLD={u_max})" if u_max is not None else " (full grid)"))
         logger.info(f"reward channel weights (area, perimeter, euler) = {cw}"
                     + (" [unused by this mode]" if mode in PIXEL_MODES else ""))
 
@@ -589,6 +596,7 @@ def run_reward_finetune(config, args):
         geom_fn = AnalyticalMinkowskiLoss(
             physical_thresholds=u_phys, pixel_size_km=pixel_km, topology_mode=topo_mode,
             area_mode="ste", persistence_thresh_b0=thresh_b0, channel_weights=cw,
+            target_prefix=u_max is not None,
         ).to(device)
 
         # ---- data ------------------------------------------------------------------

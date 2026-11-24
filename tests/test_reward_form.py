@@ -199,3 +199,22 @@ def test_max_form_identical_prediction_scores_zero(geom):
     pred = y.unsqueeze(0).repeat(3, 1, 1, 1, 1)
     r = minkowski_reward(geom, pred, _target(geom, y), "energy", ANNEAL, 0.5, "quantile_mass_max", y)
     assert abs(float(r)) < 1e-6
+
+
+def test_truncated_grid_uses_the_target_prefix():
+    # MINKOWSKI_MAX_THRESHOLD for the reward (DECISIONS §43, as the U-Net loss): a geom on the 13 levels below
+    # 50.1 with target_prefix reads the first 13 columns of the stored 15-level targets, so the reward equals
+    # the one computed on targets sliced by hand, and the levels >= 50.1 play no part.
+    u13 = np.array([u for u in U if u < 50.1], np.float32)
+    g13 = AnalyticalMinkowskiLoss(physical_thresholds=u13, pixel_size_km=2.0, topology_mode="euler",
+                                  area_mode="ste", target_prefix=True)
+    g15 = AnalyticalMinkowskiLoss(physical_thresholds=np.array(U, np.float32), pixel_size_km=2.0,
+                                  topology_mode="euler", area_mode="ste")
+    y = _cell(80.0)
+    pred = torch.cat([_cell(40.0, seed=s) for s in range(2)], 0).unsqueeze(1)
+    t15 = _target(g15, y)
+    for form in ("threshold", "quantile_mass", "quantile_mass_max"):
+        r_prefix = minkowski_reward(g13, pred, t15, "energy", ANNEAL, 0.5, form, y)
+        r_hand = minkowski_reward(g13, pred, t15[..., :13], "energy", ANNEAL, 0.5, form, y)
+        assert torch.allclose(r_prefix, r_hand), form
+        assert not torch.allclose(r_prefix, minkowski_reward(g15, pred, t15, "energy", ANNEAL, 0.5, form, y))

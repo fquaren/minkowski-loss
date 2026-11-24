@@ -74,8 +74,13 @@ def main():
     fm_ref.eval()
     params = [p for p in fm.parameters() if p.requires_grad]
 
+    u_phys = load_physical_thresholds(config)
+    u_max = config.get("MINKOWSKI_MAX_THRESHOLD")      # as the trainer: grid truncated below the cut (§43)
+    if u_max is not None:
+        u_phys = u_phys[u_phys < float(u_max)]
+    print(f"reward grid: {len(u_phys)} thresholds {u_phys[0]:g}..{u_phys[-1]:g}", flush=True)
     geom_fn = AnalyticalMinkowskiLoss(
-        physical_thresholds=load_physical_thresholds(config),
+        physical_thresholds=u_phys, target_prefix=u_max is not None,
         pixel_size_km=float(config.get("PIXEL_SIZE_KM", 2.0)),
         topology_mode=config.get("TOPOLOGY_MODE", "euler"), area_mode="ste",
         channel_weights=config.get("MINKOWSKI_CHANNEL_WEIGHTS", [1.0, 1.0, 1.0]),
