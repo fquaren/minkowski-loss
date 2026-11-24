@@ -3410,3 +3410,76 @@ in the text until then.
 The dropped losses are not reported anywhere, appendix included (researcher, 2026-11-16); their finished results are
 stored in case they are needed (EXPERIMENTS G0). Plan and verification steps: EXPERIMENTS
 "Baselines v2" (G0-G5).
+
+## 45. Windowed spectral: keep w = 0.051, and report that it games the loss (2026-11-23)
+
+**Decision (researcher).** The windowed-spectral rival is reported at w = 0.051 (parity 0.51 / 10), both arms, and
+the text states that the loss is gamed at every weight tried.
+
+**What the bracket showed** (EXPERIMENTS §3b, val, seed 42). No weight in {0.51, 0.17, 0.051} is clean. At all three
+the U-Net adds a 1-2 px spike at the patch centre (median 0.7 px from the centre pixel) on an otherwise MSE-like field:
+the patch maximum lies within 8 px of the centre in 54 / 53 / 41% of the 1,024 `val_extremes1024` patches (full arm;
+target 1.3%, MSE 1.2%), every false alarm of every windowed run sits there, and the spike is 10-30x the mean of its
+8 neighbours. No edge spikes (border share 1-3%, target 8.7%). Lowering the weight makes the spikes rarer and smaller,
+not absent: 0.051 has the fewest false alarms (0.0039 / 0.0017 on val) and the smallest RL bias (1.6 / 0.26).
+Mechanism (inference): a single-pixel spike has a flat spectrum, so it adds the high-wavenumber power a smooth
+prediction lacks, and the Hann window weights the centre most. The window moved the unwindowed version's edge spikes
+to the centre; it did not remove the hack.
+
+**Why 0.051 and not drop it as unwindowed spectral was (§44).** The comparison needs a spectral row, a referee will ask
+for one, and the gaming is itself a result: a spectral loss can be satisfied by spike injection. Minkowski shows no such
+signature on the same patches (centre share 1.4%, 1 false alarm in the full arm); why the functionals resist it is not
+yet argued. 0.051 is
+the least-gamed weight; the activity proxy is borderline in the full arm (ΔMAE +0.8%), but RAPSD falls from 3.60 to
+0.83, so the term is active. Every table carrying this row flags it.
+
+## 46. FM area-only reward: match the maximum too (form `quantile_mass_max`) (2026-11-23)
+
+**Problem.** The FM area-only row aborted on the peak-ratio guard at weights 41, 14 and 4.1 alike (1.20-1.22;
+EXPERIMENTS E3), so the weight was not what set the overshoot. Cause: in the `quantile_mass` form the area channel
+compares the n_j-th largest predicted and target values at the target's exceedance counts n_j, and masks every
+threshold above the target maximum. Nothing compares the predicted values above max(y), so with area-only channel
+weights a peak can grow at no cost (raising every member's peak from 30 to 330 mm on a 30 mm target leaves reward and
+gradient exactly unchanged; `logs/fm_r4/area_blind_check.py`, `tests/test_reward_form.py`). The full reward is
+protected by its perimeter and Euler channels, which give the empty thresholds weight; the drift rate scaled with the
+weight but nothing restored it, so a lower weight only delayed the abort.
+
+**Decision (researcher asked for the fix, 2026-11-23).** New form `quantile_mass_max`, used only for the area-only
+rows: the first threshold above the target maximum compares the predicted maximum with the target maximum (rank 1)
+instead of being masked. Every predicted value is then bounded through the maximum, and a dry target now penalises
+predicted rain (the old form was blind there too). `quantile_mass` is unchanged, so the Minkowski rows and the running
+seed queue are unaffected. Area-only is the distribution-matching rival; matching the end of the survival curve is
+part of matching the distribution. Parity weight with the new form: 30 (old form 41).
+
+**Not fixed, noted:** the U-Net quantile-form loss (`src/losses/competing.py`) and the FM energy_qm area channel have
+the same blind spot; the MSE term (U-Net) and the perimeter/Euler channels (energy_qm) cover it in practice.
+
+## 47. Main result table: scores and protocol (2026-11-23)
+
+**Decision (researcher, 2026-11-23).** The paper's main table (deterministic and generative blocks; bulk R0 on
+val_subset4096, R1 full arm and R4 cut arm on val_extremes1024, u = 50.1; degradation R1 -> R4 against the block
+baseline with paired day-block intervals) uses:
+- **Member averages for FM.** Every case-level tail score (exceedance ratio, peak ratio, hit rate, FAR, patch-maximum
+  quantiles, FSS, anisotropy, MAE) is computed per member and averaged over the 16 members: the expected score of one
+  draw. `eval_extremes.py` used member 0 only (`ens[0]`); the old keys are kept, the new ones are the `table` block
+  (`src.evaluation.conditioning.member_case_scores`, tests in `tests/test_conditioning.py`).
+- **Patch-maximum quantile ratios instead of the GPD return-level bias.** q50 and q90 of predicted over observed patch
+  maxima on the observed-event cases (unpaired). The GPD fit fails (NaN) for weak-tail models, so RL bias, although
+  fixed in advance, cannot fill the table.
+- **False-alarm ratio** P(obs max < u | pred max >= u) instead of the false-alarm rate, which depends on how many
+  non-events a subset holds.
+- **twCRPS (weight 1{z >= u}) in the tail block, CRPS in the bulk block.** twCRPS is summed over all pixels and divided by
+  the number of observed pixels >= u, a model-independent count, so it stays proper. No pixel or case is selected by the
+  observation (forecaster's dilemma). Correction of an earlier claim: the pixel mean is not "diluted" in a way that hides
+  differences; it divides the same sum by a constant, so the relative spread between rows is identical.
+- **Validation now, test once later (F2).**
+
+**Degradation column.** [log X(cut) - log X(full)] minus the same for the baseline (MSE / FM control), reported as
+exp(.) - 1, 95% bootstrap over the 219 processing days of val_extremes1024, one resample shared by all four columns.
+Builder: `scripts/analysis/main_table.py`; re-evals `logs/tab/tab_evals.py` into `v4adv_val{ext,sub}_tab`.
+
+**Error found (2026-11-23): cut-arm FM evals used the full backbone's sigma_r.** `run_fm_r4_queue.sh` evaluated every
+cut-arm FM model with `config_v4_adv_fm_eval{ext,sub}.yaml`, whose FM_RESIDUAL_SCALE is the full backbone's 0.01267;
+the cut backbone's is 0.01215 (fine-tuning used the right one). The sampled residual was 4.3% too large in
+fm_r4_{clean,ctl,mink,area}_cut_* in `v4adv_val{ext,sub}`. Those summaries are superseded by the `_tab` re-evals with
+`logs/tab/configs/config_v4_adv_fm_eval{ext,sub}_cut.yaml`; the G3 queue was fixed before it started.

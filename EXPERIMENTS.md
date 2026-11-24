@@ -1,6 +1,6 @@
 # Experiment tracker
 
-Last updated: 2026-11-21 (G2 cut rows in §3b; FM area-only aborted, bracket running: E3; spectral_hann bracket and QM rows launched: G2)
+Last updated: 2026-11-23 (fss cut, windowed-spectral bracket and MSE + QM rows in §3b: G2; FM area-only bracket aborted at both weights, FM seed-43 rows: E3)
 
 **Read first:** `DECISIONS.md` (why things are the way they are, and what is already ruled
 out), then `CLAUDE.md` (operational traps), then this file (the compute node in §0, what exists and what's next).
@@ -171,8 +171,9 @@ R4 runs in `.claude/worktrees/fm-r4/runs/`. Every R4 / G2 run evaluates `unet_la
 | `r4_area_full_s42` / `r4_area_cut_s42` | `UNet_Ana_20261109_125328` / `20261109_125213` | R4 area-only, evaluated |
 | `r4_wmse_full_s42` / `_cut_s42` | `UNet_Ana_20261118_151313` / `20261120_003042` | G2, wmse 4.3e-4; both evaluated (§3b); cut early-stopped at epoch 23 |
 | `r4_quantile_full_s42` / `_cut_s42` | `UNet_Ana_20261118_151343` / `20261120_004843` | G2, quantile 0.068; both evaluated |
-| `r4_fss_full_s42` / `_cut_s42` | `UNet_Ana_20261118_151413` / `20261120_071846` | G2, fss 2.1e-4; full evaluated, cut training (epoch 19/25 on 11-21 12:24) |
+| `r4_fss_full_s42` / `_cut_s42` | `UNet_Ana_20261118_151413` / `20261120_071846` | G2, fss 2.1e-4; both evaluated (cut 25/25, done 11-21 21:40) |
 | `r4_spectral_hann_full_s42` / `_cut_s42` | `UNet_Ana_20261118_151446` / `20261120_004443` | G2, windowed spectral 0.51; both evaluated (**looks like hacking in both arms**, §3b) |
+| `r4_spectral_hann_{full,cut}_s42_w0.17` / `_w0.051` | `UNet_Ana_20261121_132752` / `132823` (0.17); `20261121_150629` / `224857` (0.051) | G2 bracket, 25/25 each; evaluated on val only (§3b). **0.051 is the reported pair** (DECISIONS §45; gamed at every weight) |
 | dropped (G0) | SSIM full/cut, wet area full/cut, optical flow full/cut, unwindowed spectral (0.15, 0.05, 0.015) | trained and evaluated in R4, not reported |
 
 | FM (v4) | Run | σ_r | Status |
@@ -183,9 +184,9 @@ R4 runs in `.claude/worktrees/fm-r4/runs/`. Every R4 / G2 run evaluates `unet_la
 | FM + Minkowski energy_qm, full | `radar-day-exclusion/runs/sr_fm_minkowski/FMenergyqm_v4adv_20261031_022957` | full | the FM Minkowski row |
 | FM R4 full s42: spectral / wetarea / SSIM | `fm-r4/runs/sr_fm_minkowski/FMr4_{spectral,wetarea,ssim}_full_s42_*` | full | evaluated; weights 96 / 7.3 / 13; dropped from the report (G0) |
 | FM R4 area-only s42, w 41 (parity), full / cut | `FMr4_area_full_s42_20261115_015111` / `FMr4_area_cut_s42_20261121_093600` | full / cut | **guard ABORT after epoch 1** (peak ratio 1.204 > 1.150 / 1.401 > 1.164); 1-epoch models, evaluated by the queue as if complete: **do not use** (E3) |
-| FM R4 area-only bracket, w 14 / 4.1 | `FMr4_area_{full,cut}_s42_w{14,4.1}_*` | | running from 2026-11-21 13:17 (E3) |
+| FM R4 area-only bracket, w 14 / 4.1, full | `FMr4_area_full_s42_w14_20261121_131703` / `FMr4_area_full_s42_w4.1_20261121_160647` | full | **guard ABORT at both weights** (peak ratio 1.200 after epoch 1 / 1.217 after epoch 2); cut arm not run (bracket rule); no usable FM area-only row (E3) |
 | FM R4 cut s42: control / Minkowski | `FMr4_ctl_cut_s42_20261120_090336` / `FMr4_mink_cut_s42_20261120_211914` | cut | 10 epochs, evaluated (the `ctl_cut_s42_20261119_115729` dir is a partial run killed by the node32 reboot) |
-| FM R4 seeds 43/44, control and Minkowski, both arms | `FMr4_{ctl,mink}_{full,cut}_s4{3,4}_*` | | running: `ctl_full_s43` from 2026-11-21 11:53, then 7 more (~12 h each, ~11-25) |
+| FM R4 seeds 43/44, control and Minkowski, both arms | `FMr4_{ctl,mink}_{full,cut}_s4{3,4}_*` | | `ctl_full_s43` (`_20261121_115342`), `mink_full_s43` (`_20261122_062206`), `ctl_cut_s43` (`_20261122_184051`) done and evaluated on valext/valsub; `mink_cut_s43` running from 2026-11-23 06:54, then the 4 seed-44 runs (~12 h each, ~11-25/26) |
 
 ### Retired and deprioritised
 
@@ -337,6 +338,10 @@ max is >= u (`conditioned.obs_selected`). Vanilla v4 (`UNet_Ana_20261021_211732`
 | *G2 cut (2026-11-21):* wmse cut s42 | 0.0491 | 2.59 | 0.055 | 0.024 | 0.239 |
 | quantile cut s42 | 0.0500 | 1.79 | 0.098 | 0.033 | 0.334 |
 | windowed spectral cut s42 | 0.0449 | 1.20 | 0.108 | 0.305 | 0.182 |
+| *G2 (2026-11-22/23):* fss cut s42 | 0.0459 | 1.17 | 0.368 | 0.518 | 0.550 (own objective) |
+| windowed spectral full s42, w 0.17 / 0.051 | 0.0446 / 0.0443 | 1.25 / 1.26 | 0.153 / 0.113 | 0.356 / 0.203 | 0.300 / 0.305 |
+| windowed spectral cut s42, w 0.17 / 0.051 | 0.0445 / 0.0447 | 1.22 / 1.24 | 0.107 / 0.077 | 0.261 / 0.118 | 0.260 / 0.269 |
+| MSE + QM full / cut s42 | n/a | 2.22 / 2.30 | 1.035 / 0.781 | 0.199 / 0.137 | 0.412 / 0.465 |
 
 **Provisional reading (2026-11-16, not yet in DECISIONS §43):**
 - *MSE loses tail when the extremes are cut:* exc. ratio -25 to -35% and FSS@50.1 -0.05 to -0.08 in both seeds; the
@@ -360,9 +365,35 @@ signature of the unwindowed spectral hacking; fss's FSS@50.1 is its own objectiv
 0.150 -> 0.165 (+10%), wmse 0.170 -> 0.055 (-68%), quantile 0.139 -> 0.098 (-29%), windowed spectral 0.198 -> 0.108
 (-45%). FSS@50.1 falls with the cut for every rival (wmse 0.411 -> 0.239). *Provisional reading:* every rival loss
 pays a cut penalty at least as large as MSE's, and Minkowski does not; the H3 pattern of the 3-seed MSE/Minkowski
-comparison extends to the rivals. One seed per rival, validation only, fss cut pending. wmse cut also has the highest
+comparison extends to the rivals. One seed per rival, validation only (fss cut landed 11-21, below). wmse cut also has the highest
 anisotropy (2.59) and RL bias (0.63). Windowed spectral keeps its hacking signature in the cut arm (false alarms
 1.1%, RL bias 6.9). False alarms cut: MSE 0.0000, Minkowski 0.0014, wmse 0.0000, quantile 0.0001.
+
+**G2 rows added 2026-11-23 (seed 42, val; ΔMAE vs vanilla 0.04390):**
+- *fss cut* (`UNet_Ana_20261120_071846`, 25/25): exc. ratio 0.490 -> 0.368 (-25%), FSS@50.1 0.646 -> 0.550, false
+  alarms 0.0039 -> 0.0057, RL bias 0.30 -> 0.39, ΔMAE +4.6%. fss pays a cut penalty like MSE's, so every G2 rival
+  now has its cut cell and Minkowski is still the only loss without a cut penalty (one seed per rival, val only).
+- *Windowed-spectral bracket {0.17, 0.051}:* no weight is clean. False alarms full / cut: 0.51 0.0140 / 0.0112,
+  0.17 0.0114 / 0.0070, 0.051 0.0039 / 0.0017; RL bias (mean abs) 13.0 / 6.9, 9.6 / 3.1, 1.6 / 0.26. ΔMAE full / cut:
+  +2.7 / +2.3%, +1.5 / +1.4%, +0.8 / +1.8%. 0.17 keeps the hacking signature; full@0.051 misses the activity test
+  (< +1%) and still has 5x MSE's RL bias (1.58 vs 0.31); only cut@0.051 looks clean, at exc. ratio 0.077 (MSE cut 0.072). Every
+  weight passes the anisotropy bound (<= 2.54), so the §16 rule alone would pick 0.51: the false-alarm and RL checks
+  decide here.
+- *Spike check (2026-11-23, all 1,024 `val_extremes1024` patches; `radar-day-exclusion` worktree
+  `logs/edge_check_spectral.{sh,py}`, numbers `eval_results/fields/v4adv_valext_all_spectral_edge.txt`, figure
+  `figures/spectral_hann_edge_check/false_alarms_w0.051_full.png`):* **every windowed weight games the loss with a
+  1-2 px spike at the patch centre.** Patch max within 8 px of the centre, full / cut: 0.51 54 / 53%, 0.17 53 / 48%,
+  0.051 41 / 35%; target 1.3%, MSE 1.2 / 1.4%, Minkowski 1.4 / 1.3%. 100% of the windowed runs' false alarms sit at
+  the centre (median 0.7 px from it); peak / mean of 8 neighbours 10-30 (target 1.9). No edge spikes (max within 2 px
+  of the edge: 1-3%, target 8.7%). The Hann window moved the unwindowed edge spikes to the centre, where it weights
+  most. (The earlier "5/6 panel patches at the edge" line for unwindowed spectral does not reproduce on the saved
+  6-patch bundles: 0/6 at 0.15, 3/6 at 0.05.)
+- ***Decision (researcher, 2026-11-23, DECISIONS §45): windowed spectral is reported at w = 0.051, flagged as gamed;
+  the paper states that the loss is gamed by spike injection at every weight.***
+- *MSE + QM:* exc. ratio 1.035 / 0.781 (full / cut), hit 0.199 / 0.137, false alarms 0.0011 / 0.0005, RL bias
+  0.49 / 0.06, anisotropy unchanged (2.22 / 2.30). Quantile mapping is built to match the marginal, so the
+  exceedance ratio near 1 is by construction, not structural evidence; the hit rate (0.20 vs Minkowski 0.22) is the
+  fairer comparison. No MAE column (`eval_backbone.py` has no `--qm`).
 
 **Update 2026-11-16 (all 25 cells evaluated):**
 - *Three seeds, mean ± sd (val):* MSE full / cut exc. ratio 0.086±0.012 / 0.059±0.012, FSS@50.1 0.297 / 0.239;
@@ -970,6 +1001,17 @@ Rungs R0-R6 and the reasons are in DECISIONS §43. Each item: step -> verify.
       Started 13:17, startup verified (sigma_r from config 0.01267, w_reward 14, channels [1,0,0], packed read path,
       our GPU, cores 4-11). -> verify: guard pass, then activity (own-reward drop vs `ctl`), anisotropy, exceedance
       ratio, RL bias against control on the same subset. Queue: `ctl_full_s43` from 11:53, 7 seed runs after it.*
+      *Status 2026-11-23: **the area-only bracket aborted at both weights** (`logs/fm_r4/area_bracket.txt`, done
+      11-21 22:49): full@14 peak ratio 1.200 after epoch 1, full@4.1 1.142 after epoch 1 (pass) then 1.217 after
+      epoch 2; per the bracket rule the cut arm was not run. Guard baseline: clean reference peak ratio 0.851 ->
+      bound 1.150. The overshoot hardly changes over a 10x weight range (1.204 / 1.200 / 1.217 at 41 / 14 / 4.1), so
+      the reward weight does not set it (inference); candidates are the area channel itself and the guard bound.
+      No FM area-only row exists; decision pending (researcher). Seed queue: `ctl_full_s43`, `mink_full_s43`,
+      `ctl_cut_s43` done and evaluated; `mink_cut_s43` running from 11-23 06:54, then 4 seed-44 runs (~11-25/26).
+      valext, ctl vs Minkowski: full s43 exc. ratio 0.221 vs 0.759, hit 0.241 vs 0.524, FSS@50.1 0.404 vs 0.548;
+      cut s42 0.132 vs 0.297 (ctl cut s43 0.158). mink_full_s43 on valsub has peak ratio (ext.) 0.82 against ~0.45 for
+      every other FM row: the overshoot signature, so look at its panels before using it. The control is below clean
+      FM in both arms (full exc. ratio 0.221 vs 0.276), so compare Minkowski with the control, not with clean FM.*
 
 **F. Scoring (test touched once per final model)**
 - [ ] F1. R0, R1, R3 for every final model; R2 on the paired store.
@@ -1083,7 +1125,11 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
       spectral [hann window], w from the command line, train list per arm, packed read path, CPUs 0-5, node40 NFS
       0 CLOSE/s. ~33 h per run; all four evaluated on val by ~11-23/24. -> verify: §16 rule (best exceedance ratio with
       MAE <= +5% and anisotropy <= 1.2x vanilla), plus false alarms and RL bias against the parity point.*
-- [ ] QM rows (eval only): MSE + QM, both arms.
+      *Status 2026-11-23: all four bracket runs 25/25 and evaluated on val (§3b; not yet on valext/valsub). No weight
+      is clean in both arms: 0.17 keeps the hacking signature, full@0.051 misses the activity test. fss cut done
+      11-21 21:40, evaluated (§3b).* *Decided 2026-11-23 (DECISIONS §45): w = 0.051, both arms, reported as gamed
+      (centre spikes at every weight, §3b). Its valext/valsub evals are not run yet (the scorecard needs them).*
+- [x] QM rows (eval only): MSE + QM, both arms.
       *Launched 2026-11-21 13:27 on node40 GPU 3 (`scripts/hpc/node40_qm_rows.sh`, rtx6000 worktree; outputs
       `logs/node40/qm/`).* Per arm: 16,384 rows sampled from the arm's train list (`fit_<arm>.txt`), train-split
       histograms of the MSE s42 model (`r4_mse_full_s42_v100` / `r4_mse_cut_s42`), map `qm_<arm>.json`, then
@@ -1091,12 +1137,66 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
       so these rows have no MAE column (anisotropy and the tail columns come from `eval_extremes`). The cut map is
       fitted on the cut list and can only extrapolate above u. -> verify: QM ratio printed at load; mapped train
       marginal = target marginal (tests); then the rows against MSE.
+      *Done 2026-11-21: `r4_mse_qm_{full,cut}_s42` evaluated on val, valext and valsub (val rows in §3b).*
 
 **G3. FM rows (node32 GPU 1; after the cut FM base)**
 - [ ] Both arms: pixel energy, weighted pixel energy, fss, windowed spectral (+ the existing control, Minkowski
       energy_qm, area-only). Full arm needs the new rows; cut arm runs the revised list. Weights by parity with
       retention. Run as a second queue that starts when the current one has written `fmb_cut.txt` and evaluated
       `clean_cut`, never by editing the running script. -> verify: startup lines, activity vs control, panels.
+      *Queued 2026-11-23 (researcher: one seed per competing reward, plus a new area-only, after the seed-44 runs).*
+      Area-only uses the new form `quantile_mass_max` (DECISIONS §46). Seed 42, both arms, 10 fine-tunes x ~12 h:
+      `area`, `pixel`, `pixeltw`, `fss`, `spectralhann` (fm-r4 worktree `scripts/hpc/fm_g3_common.sh`). Parity + 3-step
+      trainer smoke per reward, run beside the seed queue (`fm_g3_parity.sh`, log `logs/fm_g3/parity.log`, weights
+      `logs/fm_g3/weights.txt`; area-only 30). Queue `run_fm_g3_queue.sh` (log `logs/fm_g3/queue.log`, done list
+      `logs/fm_g3/done.txt`) launched 17:40 on node32, waits for `FM_R4_QUEUE_DONE`; it records guard aborts as ABORT
+      and does not evaluate them. Evals as `fm_g3_<row>_<arm>_s42` on valext/valsub.
+      *Parity done 17:54:* area 30, pixel 100, pixeltw 30, fss 3.1, spectralhann 170. All five smokes ran the trainer
+      path without error, and all five tripped the guard after 3 steps (anisotropy ~3.0, peak ratio ~1.5-1.65 against a
+      2-batch baseline of 1.56 / 0.92). **A w_reward = 0 smoke trips it identically (3.07 / 1.59;
+      `logs/fm_g3/smoke_ctl.log`), so it is the 3-step / 2-batch smoke setting, not the rewards**; the real 10-epoch
+      control and Minkowski runs read ~1.1-1.4 / ~0.8-1.0 at epoch 1. Cause not identified (no BatchNorm in the FM
+      model); it does not touch the queued runs, which use 500 steps per epoch and 8 / 20 guard / val batches.
+      *Relaunched 22:10* after fixing its cut-arm evals to use the cut sigma_r (DECISIONS §47); still waiting.
+- [ ] **Main table on validation (DECISIONS §47, 2026-11-23).** Scores: FM member averages, q50/q90 patch-maximum
+      ratios for RL, FAR, twCRPS per observed tail pixel + CRPS. Re-evals of every table row (U-Net: MSE s42-44, MSE+QM,
+      wMSE, quantile, FSS, spectral Hann 0.051, area, Minkowski s42-44, random drop; FM: clean, control and Minkowski
+      s42-44) into `radar-day-exclusion/eval_results/extremes/v4adv_val{ext,sub}_tab`, launched 22:14 on node40 GPUs 0-3
+      (`logs/tab/tab_evals.py`, 4 cost-balanced shards, logs `logs/node40/tab?_20261123_2214*.log` in fm-r4). Rerun the
+      shards after the s44 cut runs finish (skips what exists). Table: `scripts/analysis/main_table.py --out
+      radar-day-exclusion/eval_results/tables`. G3 rows fill in from `v4adv_val{ext,sub}/fm_g3_*` as the queue evaluates.
+      **The old cut-arm FM summaries in `v4adv_val{ext,sub}` used the full sigma_r (+4.3% residual); superseded.**
+      **First build 2026-11-24** (74/74 evals ok; FM s44 cut not trained yet, so FM control and FM + Minkowski are
+      2/3 seeds; G3 rows empty). `main_table_val.md`, `main_table_val_interaction.csv`. Readings (validation only):
+      - U-Net, H3: Minkowski keeps its tail when the extremes are cut (Exc 0.139 -> 0.132; MSE 0.026 -> 0.013),
+        interaction ΔExc +119% [+68, +inf], 3 seeds. Area only does the same (+146% [+73, +inf], 1 seed), so this
+        is the area functional's effect, not the full Minkowski set. Peak and q90 interactions include 0.
+        The upper bounds are +inf because MSE cut predicts no exceedances in >2.5% of day resamples; the MSE ratio is
+        too close to 0 to be a stable denominator. A difference baseline or a QM baseline would fix this.
+      - FM, H3 reversed: FM + Minkowski loses more than the control from R1 to R4 on every tail column
+        (ΔExc -23% [-33, -1], ΔPeak -9% [-12, -7], Δq90 -18% [-22, -15]), though it stays above the control in R4
+        (Exc 0.222 vs 0.130). Its R1 gain is the larger one (0.549 vs 0.247) at FAR 0.49 vs 0.25 and +4.9% MAE.
+      - twCRPS separates almost nothing among FM rows (16.4-16.7) and is worst for MSE + QM (28.4) and spectral:
+        it penalises false tail mass, which the exceedance columns reward.
+      - **Anisotropy of the Minkowski U-Net is 0.50-0.55 on all three seeds** (MSE 2.0, FSS 1.18): more power on
+        the diagonals than on the axes at high wavenumber. This is not the grid-aligned pathology, but it is a
+        large departure; look at the sample images before citing its structural rows.
+        **Checked 2026-11-24** (`fm-r4/logs/tab/aniso_panels.py`, `logs/tab/aniso_panels/{samples,spectra}.png`;
+        s42 full, w_max = 5.2e-5, all three channels): a single-orientation diagonal ripple, wavevector about
+        (0.35, -0.35) cycles/px (period ~3 px along x and y, angle ~135 deg), up to 3x the target's power there
+        (mean of per-patch normalised spectra), visible in the zooms as faint diagonal dotting on the cores and
+        edges. Per-patch anisotropy: target mean 1.85 / median 1.32, MSE 2.72 / 2.23, Minkowski 0.55 / 0.36. The area-only
+        run (1.55) does not show it, which suggests (my inference, untested) the perimeter/Euler terms
+        reward the texture. The "materially higher than vanilla" check cannot see it: anisotropy must be
+        read two-sided against the target (paired log ratio, DECISIONS §37 (b)).
+      - **FM energy_qm vs vanilla FM, spectra and images (2026-11-24**, `logs/tab/aniso_panels_fm.py`,
+        `logs/tab/aniso_panels_fm/`; full arm s42, 2 members, same noise for every model): no ripple and no
+        orientation change. Per-patch anisotropy target 1.85 / 1.32 (mean / median), FM clean 1.51 / 1.27, control
+        1.52 / 1.28, energy 1.46 / 1.25 (backbone mu 2.38 / 1.96). All FM models lack high-k power against the
+        target uniformly in angle (about -0.3 dex); energy is the closest (about -0.15). In the paired draws the
+        structure and positions are the same; energy raises the cores (patch maxima 98 / 67 / 108 / 42 against
+        control 69 / 42 / 55 / 27, target 55 / 80 / 123 / 202), and overshoots on the 55 mm/h patch, consistent with
+        FAR 0.49 vs 0.25. No FM model reproduces the target's isolated convective cells (#515).
 - [ ] FM + QM (eval only), both arms.
 - [ ] Seeds 43/44 for control and Minkowski (from E3 step 5) stay; add seeds for any rival within the seed spread.
 
@@ -1265,6 +1365,11 @@ is signed off by a passing report; its path goes in DECISIONS / EXPERIMENTS when
       confound explained.
 - [ ] State the POT-level choice as estimability, not physics.
 - [ ] Write up the w=1e-3 hacking episode as a positive result on necessary-not-sufficient.
+- [ ] **State that the windowed spectral loss is gamed (researcher, 2026-11-23, DECISIONS §45).** At every weight
+      tried the U-Net injects a 1-2 px spike at the patch centre (unwindowed: at the edge), which adds high-wavenumber
+      power; the row is reported at w = 0.051 and flagged in every table. Show the panel
+      (`figures/spectral_hann_edge_check/`) and the centre-share numbers (§3b). Same theme as the w=1e-3 Minkowski
+      episode: a structural objective can be satisfied without the structure.
 - [ ] Theory framework (roadmap M5, `RESEARCH_NOTES.md`).
 - [ ] **Dataset limitation: coverage rule and coastal bias** (unless fixed first). Only fully
       covered patches are used, which under-represents coastal and network-edge extremes
