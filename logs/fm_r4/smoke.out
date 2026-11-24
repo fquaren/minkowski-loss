@@ -1,0 +1,29 @@
+=== wetarea Thu Nov 12 11:37:51 CET 2026
+[grad] mode=wetarea form=quantile_mass K=1 M=16 w_reward=1 w_prox=1 w_retain=1 w_spread=0 anneal=0.05
+[grad] sigma_r: config FM_RESIDUAL_SCALE=0.01267
+batch 0: R=0.0197 prox=1.34e-07 L_FM=0.1314 | |g| reward=5.680e-02 prox=9.833e-05 fm=3.167e-01 total=3.278e-01 cos(reward,total)=+0.279
+batch 1: R=0.0183 prox=1.86e-07 L_FM=0.5401 | |g| reward=7.303e-02 prox=1.271e-04 fm=1.357e+00 total=1.358e+00 cos(reward,total)=+0.044
+mean |g|: reward 6.491e-02  prox 1.127e-04  fm 8.367e-01  total 8.429e-01
+reward share of the total norm: 11.353%   mean cos(reward, total) +0.162   (clip threshold 1.0)
+=== ssim Thu Nov 12 11:38:42 CET 2026
+[grad] mode=ssim form=quantile_mass K=1 M=16 w_reward=1 w_prox=1 w_retain=1 w_spread=0 anneal=0.05
+[grad] sigma_r: config FM_RESIDUAL_SCALE=0.01267
+batch 0: R=0.0115 prox=1.34e-07 L_FM=0.1314 | |g| reward=2.402e-02 prox=9.833e-05 fm=3.167e-01 total=3.210e-01 cos(reward,total)=+0.217
+batch 1: R=0.0176 prox=1.86e-07 L_FM=0.5401 | |g| reward=3.585e-02 prox=1.271e-04 fm=1.357e+00 total=1.355e+00 cos(reward,total)=-0.025
+mean |g|: reward 2.994e-02  prox 1.127e-04  fm 8.367e-01  total 8.382e-01
+reward share of the total norm: 5.064%   mean cos(reward, total) +0.096   (clip threshold 1.0)
+=== opticalflow Thu Nov 12 11:39:33 CET 2026
+[grad] mode=opticalflow form=quantile_mass K=1 M=16 w_reward=1 w_prox=1 w_retain=1 w_spread=0 anneal=0.05
+[grad] sigma_r: config FM_RESIDUAL_SCALE=0.01267
+batch 0: R=0.0737 prox=1.34e-07 L_FM=0.1314 | |g| reward=2.903e-02 prox=9.832e-05 fm=3.167e-01 total=3.165e-01 cos(reward,total)=+0.041
+batch 1: R=0.0816 prox=1.86e-07 L_FM=0.5401 | |g| reward=2.039e-02 prox=1.271e-04 fm=1.357e+00 total=1.358e+00 cos(reward,total)=+0.085
+mean |g|: reward 2.471e-02  prox 1.127e-04  fm 8.367e-01  total 8.375e-01
+reward share of the total norm: 5.336%   mean cos(reward, total) +0.063   (clip threshold 1.0)
+=== area Thu Nov 12 11:40:23 CET 2026
+[grad] mode=energy form=quantile_mass K=1 M=16 w_reward=1 w_prox=1 w_retain=1 w_spread=0 anneal=0.05
+[grad] sigma_r: config FM_RESIDUAL_SCALE=0.01267
+batch 0: R=0.0162 prox=1.34e-07 L_FM=0.1314 | |g| reward=2.022e-02 prox=9.832e-05 fm=3.167e-01 total=3.158e-01 cos(reward,total)=-0.011
+batch 1: R=0.0209 prox=1.86e-07 L_FM=0.5401 | |g| reward=3.711e-02 prox=1.271e-04 fm=1.357e+00 total=1.358e+00 cos(reward,total)=+0.051
+mean |g|: reward 2.867e-02  prox 1.127e-04  fm 8.367e-01  total 8.370e-01
+reward share of the total norm: 4.568%   mean cos(reward, total) +0.020   (clip threshold 1.0)
+SMOKE_DONE Thu Nov 12 11:41:14 CET 2026

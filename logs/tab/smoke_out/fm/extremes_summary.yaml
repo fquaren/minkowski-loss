@@ -1,0 +1,88 @@
+model: fm
+tag: fm
+split: val
+n_samples: 128
+topology_mode: euler
+rmse_extreme: 2.041626214981079
+rmse_overall: 0.7437830567359924
+rapsd_log_distance: 1.050762414932251
+minkowski_distance: 1.9603073596954346
+fss_thr20.2_win1: 0.15596330275229353
+fss_thr20.2_win5: 0.39802729694426453
+fss_thr20.2_win11: 0.5521354195737753
+fss_thr20.2_win21: 0.6274079849603379
+fss_thr31.7_win1: 0.15902140672782872
+fss_thr31.7_win5: 0.34640702825820346
+fss_thr31.7_win11: 0.47001725772675496
+fss_thr31.7_win21: 0.5406271769110091
+fss_thr50.1_win1: 0.18918918918918914
+fss_thr50.1_win5: 0.3510670273519686
+fss_thr50.1_win11: 0.41141662217476427
+fss_thr50.1_win21: 0.43898523749027485
+gpd_xi_pred: .nan
+gpd_xi_obs: .nan
+gpd_sigma_pred: .nan
+gpd_sigma_obs: .nan
+gpd_xi_abs_err: .nan
+gpd_n_exc_pred: 13
+gpd_n_exc_obs: 61
+gpd_exc_count_ratio: 0.21311475409836064
+gpd_upper_endpoint_pred: .inf
+gpd_upper_endpoint_obs: .inf
+rl_pred_lam10: .nan
+rl_obs_lam10: .nan
+rl_pred_lam100: .nan
+rl_obs_lam100: .nan
+rl_pred_lam1000: .nan
+rl_obs_lam1000: .nan
+rl_bias_mean_abs: .nan
+anisotropy_axis_over_diag: 1.7722323104260531
+peak_ratio_median: 0.45030993572788636
+peak_ratio_extreme_median: 0.7086726708460602
+SAL_median:
+- 0.7243126651240124
+- -0.025814114686309547
+- 0.0323396331451736
+extreme_threshold_mmph: 96.51944496154786
+pot_threshold_mmph: 50.1
+note: minkowski_distance is the training objective for Minkowski-trained models and
+  is not independent evidence there; anisotropy ~1 is isotropic, >1 means grid-aligned
+  structure; peak_ratio is predicted/observed patch maximum.
+conditioned:
+  u: 50.1
+  n_cases: 128
+  n_obs_selected: 13
+  hit_rate: 0.15384615384615385
+  false_alarm_rate: 0.008695652173913044
+  brier_max_ge_u: 0.0789930522441864
+  obs_selected:
+    share_obs_events: 1.0
+    exceedance_ratio: 0.18032786885245902
+    peak_ratio_median: 0.4461931586265564
+    pred_max_ge_u_share: 0.15384615384615385
+  input_selected:
+    share_obs_events: 0.38461538461538464
+    exceedance_ratio: 0.25
+    peak_ratio_median: 0.6341673731803894
+    pred_max_ge_u_share: 0.15384615384615385
+twcrps_mean: 0.0003737879942491418
+twcrps_extreme: 0.014112533070147038
+table:
+  u: 50.1
+  n_members: 3
+  n_obs_selected: 13
+  hit_rate: 0.20512820512820515
+  false_alarm_ratio: 0.3277777777777778
+  exceedance_ratio_obs: 0.180327868852459
+  exceedance_ratio_input: 0.23484848484848486
+  peak_ratio_median_obs: 0.43767268942596954
+  maxq_ratio_q50: 0.4067038998978402
+  maxq_ratio_q90: 0.6264783386385954
+  mae_member: 0.1187705472111702
+  mae_ensemble_mean: 0.10897371172904968
+  anisotropy_member: 1.7416286884374372
+  fss_thr50.1_win11_member: 0.3191842886172816
+  twcrps_per_obs_tail_pixel: 12.850659667468461
+crps_mean: 0.07393224373353556
+crps_extreme: 0.15752296854634062
+ensemble_size: 3

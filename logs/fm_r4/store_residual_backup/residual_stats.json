@@ -1,0 +1,13 @@
+{
+  "backbone": "runs/sr_analytical/UNet_Ana_20261021_211732/unet_latest.pth",
+  "split": "train",
+  "n_samples": 1299686,
+  "sigma_r_scalar": 0.01266805361956358,
+  "residual_mean_abs_max": 0.0021450326312333345,
+  "residual_mean_spatial_mean": 0.00013245007721707225,
+  "std_map_min": 0.010913889855146408,
+  "std_map_max": 0.018047833815217018,
+  "std_map_mean": 0.01263927947729826,
+  "std_map_cv": 0.06387051194906235,
+  "recommend_per_pixel_map": false
+}

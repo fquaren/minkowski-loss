@@ -1,0 +1,3 @@
+minkfull 1.3
+minktr 1.1
+areatr 28
