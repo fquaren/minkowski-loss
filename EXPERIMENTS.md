@@ -1171,8 +1171,9 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
       - U-Net, H3: Minkowski keeps its tail when the extremes are cut (Exc 0.139 -> 0.132; MSE 0.026 -> 0.013),
         interaction ΔExc +119% [+68, +inf], 3 seeds. Area only does the same (+146% [+73, +inf], 1 seed), so this
         is the area functional's effect, not the full Minkowski set. Peak and q90 interactions include 0.
-        The upper bounds are +inf because MSE cut predicts no exceedances in >2.5% of day resamples; the MSE ratio is
-        too close to 0 to be a stable denominator. A difference baseline or a QM baseline would fix this.
+        The upper bounds are +inf because MSE cut predicts no exceedances in >2.5% of day resamples. **Revised
+        (DECISIONS §49): baseline MSE + QM.** ΔExc Minkowski +22% [+9, +47], area-only +37% [+7, +84], FSS 0%
+        [-13, +22]; Δq90 area +22% [+2, +47], FSS +22% [+1, +49], Minkowski +19% [0, +48]; ΔPeak only FSS (+11%).
       - FM, H3 reversed: FM + Minkowski loses more than the control from R1 to R4 on every tail column
         (ΔExc -23% [-33, -1], ΔPeak -9% [-12, -7], Δq90 -18% [-22, -15]), though it stays above the control in R4
         (Exc 0.222 vs 0.130). Its R1 gain is the larger one (0.549 vs 0.247) at FAR 0.49 vs 0.25 and +4.9% MAE.

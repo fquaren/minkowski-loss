@@ -3502,3 +3502,21 @@ for Minkowski on the full grid (known answer: the energy_qm weight 1.0), Minkows
 G3 queue for its other four rows, minktr s43 and s44 both arms. Evals into `v4adv_val{ext,sub}_tab`, labels
 `fm_minktr_*`, `fm_areatr_*`. Dropped: R4 `mink_cut_s44` (full grid, superseded) and the G3 area rows (replaced by
 areatr). The full-grid FM rows (two seeds in the cut arm) stay as an ablation.
+
+## 49. U-Net degradation interaction against MSE + QM, not MSE (2026-11-24; revises §47)
+
+**Decision (researcher, on Claude's recommendation).** For the U-Net block the H3 interaction is computed against MSE
+with quantile mapping. §47's MSE baseline is kept in an appendix table next to each model's own degradation
+(`main_table.py`, section "Own degradation").
+
+**Why.** The MSE exceedance ratio is 0.026 in the full arm and 0.013 in the cut arm; in more than 2.5% of day
+resamples it is 0, so its log degradation is undefined and every upper bound was +inf. QM has a tail in both arms
+(1.07 -> 0.82), is the correction a practitioner would apply to the MSE model, and asks the sharper question: does a
+structural loss extrapolate better than correcting the marginal after training. Rejected: a difference-based
+interaction, which mixes robustness with tail size (a model at 0.5 losing 0.1 would look worse than MSE losing 0.013).
+**Disclosure:** the switch was made after the first build, because of the near-zero baseline; the paper states it and
+reports the pre-stated version.
+
+**Result (validation, first build).** ΔExc vs QM: Minkowski +22% [+9, +47], area-only +37% [+7, +84], FSS 0% [-13,
++22], MSE -44%, wMSE -91%, quantile -39%, spectral -8%. Δq90: area +22% [+2, +47], FSS +22% [+1, +49], Minkowski +19%
+[0, +48]. ΔPeak: FSS +11% [+5, +32], the others' intervals include 0.

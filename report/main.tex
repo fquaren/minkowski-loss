@@ -412,7 +412,11 @@ loss than without it, and the gain comes from the perimeter and euler terms rath
 area channel is distributional information, not geometry. We test the first as an interaction: for a tail score $X$, the degradation from the full to the cut arm is
 $\log X_{\mathrm{cut}} - \log X_{\mathrm{full}}$, and we report the model's degradation minus the baseline's,
 transformed to a percentage, $\exp(\cdot) - 1$. Positive values mean the model degrades less than the baseline. The
-baseline is the mean-squared-error model for Study~1 and the control fine-tune for Study~2. Intervals are $95\,\%$
+baseline is the mean-squared-error model with quantile mapping for Study~1 and the control fine-tune for Study~2. We
+had planned to use the plain mean-squared-error model for Study~1, but its exceedance ratio ($0.026$) is zero in some
+day resamples, which leaves its relative degradation undefined and the intervals unbounded. Quantile mapping is the
+correction a practitioner would apply to that model, and it has a tail in both arms. The interaction against the plain
+model and each model's own degradation are given in Table~\ref{tab:own}. Intervals are $95\,\%$
 paired bootstrap intervals over the $219$ validation days, with one resample shared by all models and columns.
 
 \paragraph{Scores.} For flow matching every case-level score is computed per member and averaged over the $16$
@@ -487,8 +491,9 @@ flow matching with quantile mapping.}
   \setlength{\tabcolsep}{3.5pt}
   \caption{Cut arm and degradation. Tail scores on valext of models trained without any tile-hour above
   $50.1\,\mathrm{mm}$, and the change from the full to the cut arm relative to the block baseline's change
-  (positive: degrades less than the baseline), with $95\,\%$ day-block bootstrap intervals. An upper bound of
-  $+\infty$ means that in more than $2.5\,\%$ of resamples the baseline predicts no exceedance at all in the cut arm.}
+  (positive: degrades less than the baseline), with $95\,\%$ day-block bootstrap intervals. Baselines: MSE with
+  quantile mapping (U-Net), control fine-tune (flow matching). A bound of $-100$ means the model predicts no exceedance
+  in the cut arm in more than $2.5\,\%$ of resamples.}
   \label{tab:cut}
   \resizebox{\textwidth}{!}{%
   \begin{tabular}{lcccccccc}
@@ -496,14 +501,14 @@ flow matching with quantile mapping.}
     Model & Exc & Peak & q90 & FAR & twCRPS & $\Delta$Exc & $\Delta$Peak & $\Delta$q90 \\
     \midrule
     \multicolumn{9}{l}{\emph{Deterministic U-Net}} \\
-    MSE                      & 0.013 & 0.20 & 0.27 & 0.00 & 17.1 & \multicolumn{3}{c}{baseline: $-57\,\%$, $-3\,\%$, $-7\,\%$} \\
-    MSE + quantile mapping   & 0.823 & 0.36 & 0.51 & 0.09 & 24.1 & $+79$ [$+38$, $+\infty$] & $-4$ [$-13$, $+1$] & $-9$ [$-21$, $+1$] \\
-    Weighted MSE             & 0.008 & 0.40 & 0.33 & 0.00 & 17.0 & $-84$ [$-100$, $+\infty$] & $-4$ [$-10$, $+5$] & $-8$ [$-18$, $+5$] \\
-    Quantile                 & 0.040 & 0.23 & 0.30 & 0.25 & 17.3 & $+9$ [$-41$, $+\infty$] & $-1$ [$-8$, $+8$] & $-5$ [$-11$, $+11$] \\
-    Fractions skill score    & 0.338 & 0.73 & 0.64 & 0.42 & 20.3 & $+79$ [$+38$, $+\infty$] & $+6$ [$+2$, $+20$] & $+10$ [$-4$, $+27$] \\
-    Windowed spectral$^\dagger$ & 0.041 & 0.27 & 0.46 & 0.52 & 18.8 & $+64$ [$+5$, $+\infty$] & $-9$ [$-21$, $+2$] & $-49$ [$-62$, $-12$] \\
-    Area only                & 0.175 & 0.53 & 0.49 & 0.07 & 18.3 & $+146$ [$+73$, $+\infty$] & $0$ [$-5$, $+9$] & $+10$ [$-2$, $+24$] \\
-    Minkowski                & 0.132 & 0.55 & 0.56 & 0.14 & 18.3 & $+119$ [$+68$, $+\infty$] & $-6$ [$-10$, $+1$] & $+7$ [$-4$, $+23$] \\
+    MSE                      & 0.013 & 0.20 & 0.27 & 0.00 & 17.1 & $-44$ [$-100$, $-27$] & $+5$ [$-1$, $+15$] & $+10$ [$-1$, $+26$] \\
+    MSE + quantile mapping   & 0.823 & 0.36 & 0.51 & 0.09 & 24.1 & \multicolumn{3}{c}{baseline: $-23\,\%$, $-7\,\%$, $-16\,\%$} \\
+    Weighted MSE             & 0.008 & 0.40 & 0.33 & 0.00 & 17.0 & $-91$ [$-100$, $-71$] & $0$ [$-6$, $+16$] & $+1$ [$-14$, $+24$] \\
+    Quantile                 & 0.040 & 0.23 & 0.30 & 0.25 & 17.3 & $-39$ [$-100$, $+22$] & $+4$ [$-4$, $+17$] & $+5$ [$-7$, $+28$] \\
+    Fractions skill score    & 0.338 & 0.73 & 0.64 & 0.42 & 20.3 & $0$ [$-13$, $+22$] & $+11$ [$+5$, $+32$] & $+22$ [$+1$, $+49$] \\
+    Windowed spectral$^\dagger$ & 0.041 & 0.27 & 0.46 & 0.52 & 18.8 & $-8$ [$-47$, $+64$] & $-5$ [$-18$, $+11$] & $-43$ [$-59$, $-2$] \\
+    Area only                & 0.175 & 0.53 & 0.49 & 0.07 & 18.3 & $+37$ [$+7$, $+84$] & $+5$ [$-2$, $+21$] & $+22$ [$+2$, $+47$] \\
+    Minkowski                & 0.132 & 0.55 & 0.56 & 0.14 & 18.3 & $+22$ [$+9$, $+47$] & $-2$ [$-9$, $+14$] & $+19$ [$0$, $+48$] \\
     \midrule
     \multicolumn{9}{l}{\emph{Flow matching}} \\
     Clean                    & 0.151 & 0.40 & 0.44 & 0.17 & 16.7 & $+13$ [$+2$, $+30$] & $+4$ [$+1$, $+7$] & $+4$ [$-1$, $+9$] \\
@@ -531,15 +536,17 @@ concentrating the rain into cells. \needinput{Interpretation: should the paper p
 losses that work, with the area channel doing most of the work? The single-seed rivals may move with more seeds.}
 
 \paragraph{Beyond the training range.} When the extremes are removed from training, the mean-squared-error model loses
-$57\,\%$ of its already small exceedance mass ($0.026$ to $0.013$), while the Minkowski model keeps almost all of its
-own ($0.139$ to $0.132$; Table~\ref{tab:cut}). The interaction is $+119\,\%$ [$+68\,\%$, $+\infty$], so H3 holds on the
-exceedance ratio for the U-Net. It does not hold on the peak or q90 ratios, whose intervals include zero. Two results
-limit what this shows. First, the area-only loss ($+146\,\%$), the fractions-skill-score loss ($+79\,\%$) and quantile
-mapping ($+79\,\%$) give interactions of the same sign and overlapping intervals, so the effect is not specific to the
-Minkowski loss. Not every method that has a tail keeps it: the weighted-MSE model loses almost all of its own
-($0.116$ to $0.008$), and the quantile loss half ($0.085$ to $0.040$). Second, the baseline's exceedance ratio
-is so close to zero that the ratio interaction is unstable: the upper bounds are infinite. \needinput{A difference-based
-interaction, or quantile-mapped MSE as the baseline, would give finite intervals. Which one should the paper report?}
+$57\,\%$ of its already small exceedance mass ($0.026$ to $0.013$), quantile mapping loses $23\,\%$ ($1.07$ to $0.82$),
+and the Minkowski model keeps almost all of its own ($0.139$ to $0.132$; Table~\ref{tab:cut}). Against quantile mapping,
+the interaction on the exceedance ratio is $+22\,\%$ [$+9$, $+47$], so H3 holds on that score for the U-Net; on the q90
+ratio it is $+19\,\%$ [$0$, $+48$], at the edge of the interval, and on the peak ratio there is no effect. The result is
+not specific to the Minkowski loss. The area-only loss degrades least ($+37\,\%$ [$+7$, $+84$] on the exceedance ratio,
+$+22\,\%$ [$+2$, $+47$] on the q90 ratio; its own exceedance ratio rises slightly, $0.165$ to $0.175$), and the
+fractions-skill-score loss keeps its peaks better than quantile mapping ($+11\,\%$ [$+5$, $+32$]) although it loses as
+much exceedance mass ($0\,\%$ [$-13$, $+22$]). Not every method that has a tail keeps it: the weighted-MSE model loses
+almost all of its own ($0.116$ to $0.008$), and the quantile loss half ($0.085$ to $0.040$). Against the plain
+mean-squared-error model, the baseline stated before the experiment, the ordering is the same but the intervals have no
+upper bound (Table~\ref{tab:own}).
 The random-removal control, trained on as many tile-hours as the cut arm, keeps an exceedance ratio of $0.058$
 (full arm $0.026$, cut arm $0.013$), so the mean-squared-error model's degradation comes from losing the extremes,
 not from losing data; the difference between $0.026$ and $0.058$ is within what one seed of a near-zero ratio can
@@ -653,6 +660,36 @@ exceedance ratio of $0.06$.
   \end{tabular}}
 \end{table}
 
+
+\begin{table}[t]
+  \centering
+  \small
+  \setlength{\tabcolsep}{3.5pt}
+  \caption{Each model's own degradation from the full to the cut arm, $\exp(\log X_{\mathrm{cut}} - \log
+  X_{\mathrm{full}}) - 1$ in percent, and the interaction against the plain mean-squared-error model, the baseline stated
+  before the experiment. $95\,\%$ day-block bootstrap intervals. An upper bound of $+\infty$ means the baseline predicts
+  no exceedance in the cut arm in more than $2.5\,\%$ of resamples.}
+  \label{tab:own}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{lcccccc}
+    \toprule
+    Model & own $\Delta$Exc & own $\Delta$Peak & own $\Delta$q90 & $\Delta$Exc vs MSE & $\Delta$Peak vs MSE & $\Delta$q90 vs MSE \\
+    \midrule
+    MSE & $-57$ [$-100$, $-46$] & $-3$ [$-8$, $0$] & $-7$ [$-16$, $0$] & \multicolumn{3}{c}{baseline} \\
+    MSE + QM & $-23$ [$-36$, $-15$] & $-7$ [$-18$, $-2$] & $-16$ [$-31$, $-2$] & $+79$ [$+38$, $+\infty$] & $-4$ [$-13$, $+1$] & $-9$ [$-21$, $+1$] \\
+    Weighted MSE & $-93$ [$-100$, $-78$] & $-7$ [$-12$, $0$] & $-15$ [$-22$, $-6$] & $-84$ [$-100$, $+\infty$] & $-4$ [$-10$, $+5$] & $-8$ [$-18$, $+5$] \\
+    Quantile & $-53$ [$-100$, $-8$] & $-4$ [$-11$, $+2$] & $-12$ [$-18$, $+1$] & $+9$ [$-41$, $+\infty$] & $-1$ [$-8$, $+8$] & $-5$ [$-11$, $+11$] \\
+    FSS loss & $-23$ [$-32$, $-13$] & $+3$ [$-1$, $+13$] & $+3$ [$-8$, $+14$] & $+79$ [$+38$, $+\infty$] & $+6$ [$+2$, $+20$] & $+10$ [$-4$, $+27$] \\
+    Windowed spectral$^\dagger$ & $-29$ [$-62$, $+31$] & $-12$ [$-24$, $-4$] & $-52$ [$-64$, $-18$] & $+64$ [$+5$, $+\infty$] & $-9$ [$-21$, $+2$] & $-49$ [$-62$, $-12$] \\
+    Area only & $+6$ [$-16$, $+32$] & $-3$ [$-7$, $+4$] & $+2$ [$-6$, $+12$] & $+146$ [$+73$, $+\infty$] & $0$ [$-5$, $+9$] & $+10$ [$-2$, $+24$] \\
+    Minkowski & $-5$ [$-13$, $+3$] & $-9$ [$-12$, $-4$] & $0$ [$-6$, $+7$] & $+119$ [$+68$, $+\infty$] & $-6$ [$-10$, $+1$] & $+7$ [$-4$, $+23$] \\
+    FM clean & $-40$ [$-59$, $-23$] & $-19$ [$-22$, $-16$] & $-22$ [$-28$, $-17$] & & & \\
+    FM control & $-47$ [$-65$, $-30$] & $-22$ [$-25$, $-19$] & $-26$ [$-30$, $-21$] & & & \\
+    FM + Minkowski & $-59$ [$-67$, $-51$] & $-29$ [$-32$, $-27$] & $-39$ [$-43$, $-36$] & & & \\
+    \bottomrule
+  \end{tabular}}
+\end{table}
+
 % =====================================================================
 \section{Discussion}
 \label{sec:disc}
@@ -662,8 +699,8 @@ list:}
 \begin{itemize}
   \item On the U-Net, the Minkowski, area-only and fractions-skill-score losses and quantile mapping keep their tail
   when extremes are removed from training; the weighted-MSE model loses it; the mean-squared-error model, which has
-  almost no tail, loses most of what it has. Against a baseline with almost no tail, the ratio interaction separates
-  models with and without a tail more than it separates losses.
+  almost no tail, loses most of what it has. Against quantile mapping, the area-only and Minkowski losses degrade
+  less on exceedance mass, and the fractions-skill-score loss on peaks; the area-only loss degrades least.
   \item The area channel alone gives the deterministic gain. The perimeter and euler terms add a texture artefact, a
   diagonal ripple, that standard checks miss.
   \item In the generative model the reward raises intensities where the backbone already places rain. It does not
