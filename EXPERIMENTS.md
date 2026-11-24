@@ -1197,6 +1197,12 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
         structure and positions are the same; energy raises the cores (patch maxima 98 / 67 / 108 / 42 against
         control 69 / 42 / 55 / 27, target 55 / 80 / 123 / 202), and overshoots on the 55 mm/h patch, consistent with
         FAR 0.49 vs 0.25. No FM model reproduces the target's isolated convective cells (#515).
+- [ ] **FM reward truncated below 50.1 (DECISIONS §48, launched 2026-11-24 11:29 on node32, PID 602140).**
+      `fm-r4/scripts/hpc/run_fm_trunc_queue.sh`, log `logs/fm_trunc/queue.log`, done list `logs/fm_trunc/done.txt`.
+      Waits for the R4 queue (its `mink_cut_s44` is DROPPED), then parity + smoke (check: `reward grid: 13
+      thresholds 0.1..31.7 (MINKOWSKI_MAX_THRESHOLD=50.1)` in the smoke logs, and the full-grid parity near 1.0),
+      minktr s42 full/cut, areatr s42 full/cut, the G3 queue (area rows DROPPED), minktr s43/s44. ~16 fine-tunes at
+      ~12 h plus evals: about 9-10 days. Then add rows `fm_minktr_*` and `fm_areatr_*` to `main_table.py`.
 - [ ] FM + QM (eval only), both arms.
 - [ ] Seeds 43/44 for control and Minkowski (from E3 step 5) stay; add seeds for any rival within the seed spread.
 

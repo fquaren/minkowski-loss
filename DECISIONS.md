@@ -3483,3 +3483,22 @@ cut-arm FM model with `config_v4_adv_fm_eval{ext,sub}.yaml`, whose FM_RESIDUAL_S
 the cut backbone's is 0.01215 (fine-tuning used the right one). The sampled residual was 4.3% too large in
 fm_r4_{clean,ctl,mink,area}_cut_* in `v4adv_val{ext,sub}`. Those summaries are superseded by the `_tab` re-evals with
 `logs/tab/configs/config_v4_adv_fm_eval{ext,sub}_cut.yaml`; the G3 queue was fixed before it started.
+
+## 48. FM reward grid truncated below the cut, as the U-Net loss; run before G3 (2026-11-24)
+
+**Decision (researcher).** The FM Minkowski reward gets the same treatment as the U-Net loss (§43): thresholds below
+50.1 mm only (13 levels, 0.1-31.7 mm), in both arms, with its own parity weight. The truncated runs go before the G3
+queue.
+
+**Why.** Every FM + Minkowski row so far used the full 15-level grid, also in the cut arm, so its reward referred to
+intensities the cut arm removes, and §43 already noted that the quantile-mass weights give the empty top thresholds the
+largest weight. The comparison with the truncated U-Net rows was not like for like.
+
+**How.** `reward_finetune.py` and `grad_norm_terms.py` honour `MINKOWSKI_MAX_THRESHOLD` (grid sliced, stored targets
+read as a prefix, grid logged at startup); test `tests/test_reward_form.py::test_truncated_grid_uses_the_target_prefix`
+(fails before, passes after). Configs without the key are unchanged. Queue `scripts/hpc/run_fm_trunc_queue.sh`: parity
+for Minkowski on the full grid (known answer: the energy_qm weight 1.0), Minkowski truncated and area-only truncated
+(form quantile_mass_max, §46), each truncated config smoke-tested; then minktr s42 both arms, areatr s42 both arms, the
+G3 queue for its other four rows, minktr s43 and s44 both arms. Evals into `v4adv_val{ext,sub}_tab`, labels
+`fm_minktr_*`, `fm_areatr_*`. Dropped: R4 `mink_cut_s44` (full grid, superseded) and the G3 area rows (replaced by
+areatr). The full-grid FM rows (two seeds in the cut arm) stay as an ablation.
