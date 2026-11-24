@@ -1204,6 +1204,11 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
       thresholds 0.1..31.7 (MINKOWSKI_MAX_THRESHOLD=50.1)` in the smoke logs, and the full-grid parity near 1.0),
       minktr s42 full/cut, areatr s42 full/cut, the G3 queue (area rows DROPPED), minktr s43/s44. ~16 fine-tunes at
       ~12 h plus evals: about 9-10 days. Then add rows `fm_minktr_*` and `fm_areatr_*` to `main_table.py`.
+      *Parity + smoke done 2026-11-24 12:29:* weights minkfull 1.3 (known answer: 1.29 in the energy-weight decision,
+      which was rounded down to 1.0), **minktr 1.1** (reward share 65%), **areatr 28** (share 4.4%; G3's full-grid area
+      weight was 30). Both smoke runs log `reward grid: 13 thresholds 0.1..31.7 (MINKOWSKI_MAX_THRESHOLD=50.1)` and the
+      config sigma_r. Note for the ablation: the full-grid FM + Minkowski rows ran at 0.78x their parity weight, the
+      truncated ones at 1.0x. minktr_full_s42 started 12:29.
 - [ ] FM + QM (eval only), both arms.
 - [ ] Seeds 43/44 for control and Minkowski (from E3 step 5) stay; add seeds for any rival within the seed spread.
 
