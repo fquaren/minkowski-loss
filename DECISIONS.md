@@ -3551,3 +3551,20 @@ perimeter and Euler terms help those channels even inside the grid.
 **Caveats fixed in advance.** Area only is one seed. The Minkowski U-Net carries a diagonal ripple (§47 readings),
 which adds perimeter at low levels. At 79.0 mm most patches are empty in both prediction and target, so that level is
 dominated by false or missed sets.
+
+- *Result (2026-11-24; `eval_results/tables/h2_functionals_val.md`, `fm-r4/scripts/analysis/h2_functionals.py`;
+  known-answer check passed).* Primary, cut arm, 50.1 mm, Minkowski vs area only: perimeter -3.0% [-7.1, +1.1],
+  Euler -8.9% [-13.4, -4.4]. **Verdict by the rule: inconclusive** (Euler supported, perimeter not).
+  Reported without verdict:
+  - The Euler advantage over area only carries from the trained levels to 50.1 mm (cut arm -18% at 20.2, -9% at 31.7,
+    -9% at 50.1) and is gone at 79.0 mm (+3% [-2, +9]). The perimeter advantage is small even inside the grid in the
+    cut arm (-3%, -1%); full arm -8%, -5%, -6%.
+  - Against MSE, every model that produces a tail keeps most of its gain at 50.1 mm in the cut arm (area only and
+    Minkowski about -20% on every channel, FSS -19 to -20% on area and perimeter, QM -15%), except wMSE: -16% at
+    31.7 mm, 0% [-2, +2] at 50.1. Its weights are tied to the training exceedance frequencies, and its gain stops where
+    the training data stop.
+  - *Found after the result, does not change the verdict:* the perimeter residual tracks the area residual almost
+    exactly for every model (e.g. MSE full 0.516 / 0.516 at 50.1), because most of the error is a set that is empty in
+    one field and not in the other. The perimeter channel therefore measures mass more than shape, and this test has
+    little power for the perimeter. A shape-only statistic (perimeter given area, on patches where both sets are
+    non-empty) would be the sharper test; it is exploratory, not a revision of this one.

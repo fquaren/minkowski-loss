@@ -1209,6 +1209,10 @@ val_extremes1024 / val_subset4096, field panels looked at before any row is beli
       weight was 30). Both smoke runs log `reward grid: 13 thresholds 0.1..31.7 (MINKOWSKI_MAX_THRESHOLD=50.1)` and the
       config sigma_r. Note for the ablation: the full-grid FM + Minkowski rows ran at 0.78x their parity weight, the
       truncated ones at 1.0x. minktr_full_s42 started 12:29.
+- [x] **H2 test on the stored functionals (DECISIONS §50, 2026-11-24).** `eval_results/tables/h2_functionals_val.md`.
+      Inconclusive by the pre-stated rule: Minkowski vs area only at 50.1 mm, cut arm, Euler -8.9% [-13.4, -4.4],
+      perimeter -3.0% [-7.1, +1.1]. wMSE's gain stops at the edge of its training data (0% at 50.1, cut arm); the
+      other tail-producing losses keep ~20% at 50.1. The perimeter residual is mostly a mass error (low power).
 - [ ] FM + QM (eval only), both arms.
 - [ ] Seeds 43/44 for control and Minkowski (from E3 step 5) stay; add seeds for any rival within the seed spread.
 

@@ -401,10 +401,20 @@ are cut more often by the patch edge) is not yet checked.}
 
 \emph{H2} (learner): a model trained with the loss ties the geometry at high thresholds to the geometry it learns at
 lower ones. Because the loss grid stops below $50.1\,\mathrm{mm}$, any effect of the loss above that level must come
-through lower thresholds. \todo{H2 is not yet tested. Proposed test: the residual of the predicted functionals at the
-levels the loss never sees ($50.1$ and $79.0\,\mathrm{mm}$), against those at the trained levels, for the
-mean-squared-error, area-only and Minkowski models in both arms; the per-patch functionals are already stored with the
-evaluations.}
+through lower thresholds. We test it on the per-patch functionals of the valext evaluations, with a rule fixed before
+computing: the mean absolute residual between predicted and target perimeter and euler characteristic (in the loss's
+log space) at $50.1\,\mathrm{mm}$, a level no loss sees, in the cut arm, where no training target reaches it. H2 is
+supported if the Minkowski model's residual is smaller than the area-only model's for both channels. Against the
+area-only model, the Minkowski model's euler residual is $8.9\,\%$ smaller [$4.4$, $13.4$] and its perimeter residual
+$3.0\,\%$ smaller [$-1.1$, $7.1$], so by the rule the result is inconclusive. The euler advantage carries from the
+trained levels ($18\,\%$ at $20.2\,\mathrm{mm}$, $9\,\%$ at $31.7\,\mathrm{mm}$) to $50.1\,\mathrm{mm}$ ($9\,\%$) and
+disappears at $79.0\,\mathrm{mm}$. Two further observations, which were not part of the rule: the perimeter residual
+tracks the area residual for every model, because most of the error comes from a set that is empty in one field and
+not in the other, so the test has little power for the perimeter; and the weighted-MSE model, whose weights are tied
+to the training exceedance frequencies, improves on the mean-squared-error model by $16\,\%$ at $31.7\,\mathrm{mm}$ and
+not at all at $50.1\,\mathrm{mm}$ in the cut arm, while the area-only, Minkowski and fractions-skill-score models keep
+about $20\,\%$. \needinput{H2 result: report in the main text or an appendix? A shape-only statistic (perimeter given
+area, on patches where both sets are non-empty) would have more power for the perimeter; it would be exploratory.}
 
 \emph{H3} (the claim): beyond the training range the Minkowski model gives more realistic extremes than the baseline.
 Two predictions were stated before the experiment: the degradation from the full to the cut arm is smaller with the
