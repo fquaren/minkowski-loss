@@ -1,0 +1,2 @@
+area_full_s42 DROPPED 2026-11-24: replaced by the truncated area row (logs/fm_trunc, areatr)
+area_cut_s42 DROPPED 2026-11-24: replaced by the truncated area row (logs/fm_trunc, areatr)

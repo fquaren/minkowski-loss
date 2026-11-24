@@ -16,3 +16,5 @@ ctl_cut_s43 runs/sr_fm_minkowski/FMr4_ctl_cut_s43_20261122_184051 0
 mink_cut_s43 runs/sr_fm_minkowski/FMr4_mink_cut_s43_20261123_065458 1.0
 ctl_full_s44 runs/sr_fm_minkowski/FMr4_ctl_full_s44_20261123_192219 0
 mink_full_s44 runs/sr_fm_minkowski/FMr4_mink_full_s44_20261123_214003 1.0
+ctl_cut_s44 runs/sr_fm_minkowski/FMr4_ctl_cut_s44_20261124_000119 0
+mink_cut_s44 DROPPED 2026-11-24: full-grid reward superseded by the truncated runs (logs/fm_trunc)
