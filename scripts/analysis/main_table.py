@@ -5,8 +5,8 @@ Table 1, one row per model (seed rows averaged):
   bulk R0 (val_subset4096): member MAE and its change against the block baseline, CRPS, anisotropy
   R1 full arm / R4 cut arm (val_extremes1024): exceedance ratio, median peak ratio, q90 ratio of patch maxima,
       false-alarm ratio, twCRPS per observed tail pixel
-  degradation interaction: [log X(cut) - log X(full)] - the same for the block baseline (MSE for U-Nets, FM control
-      for FM), with a 95% paired day-block bootstrap interval; reported as a percentage, exp(.) - 1.
+  degradation interaction: [log X(cut) - log X(full)] - the same for the block baseline (MSE + QM for U-Nets, FM
+      control for FM; DECISIONS §49), with a 95% paired day-block bootstrap interval; reported as a percentage, exp(.) - 1.
       Every R4 model is scored on the same patches as its full-arm twin and as the baseline, so one day resample
       is applied to all four columns at once.
 Table 2 (appendix): FSS, hit rate, input-selected exceedance, q50 ratio, FAR on valsub, exceedance by
@@ -37,7 +37,12 @@ GEN = [("FM clean", ["fm_clean"]), ("FM control", ["fm_ctl_s42", "fm_ctl_s43", "
        ("FM + pixel ES", ["fm_g3_pixel@s42"]), ("FM + tw-pixel ES", ["fm_g3_pixeltw@s42"]),
        ("FM + FSS", ["fm_g3_fss@s42"]), ("FM + spectral (Hann) †", ["fm_g3_spectralhann@s42"]),
        ("FM + area only", ["fm_g3_area@s42"]), ("FM + Minkowski", ["fm_mink_s42", "fm_mink_s43", "fm_mink_s44"])]
-BLOCKS = [("Deterministic (U-Net)", DET, "MSE"), ("Generative (flow matching)", GEN, "FM control")]
+# (block, rows, bulk baseline for ΔMAE, interaction baseline, pre-stated interaction baseline reported in the appendix)
+# U-Net interaction baseline: MSE + QM, not MSE (researcher 2026-11-24, DECISIONS §49): the MSE exceedance ratio is so
+# close to 0 that it is 0 in some day resamples, which leaves its relative degradation undefined. §47's MSE baseline
+# stays in the appendix.
+BLOCKS = [("Deterministic (U-Net)", DET, "MSE", "MSE + QM", "MSE"),
+          ("Generative (flow matching)", GEN, "FM control", "FM control", None)]
 TAIL = [("exc", "Exc"), ("peak", "Peak"), ("q90", "q90"), ("far", "FAR"), ("tw", "twCRPS")]
 DEGR = [("exc", "ΔExc"), ("peak", "ΔPeak"), ("q90", "Δq90")]
 
@@ -117,12 +122,25 @@ def main():
     app = ["", "# Appendix table", "",
            "| model | arm | FSS@50.1 w11 | hit | Exc (input-sel.) | q50 | FAR valsub | Exc 50-80 | Exc 80-120 | Exc >120 |",
            "|---|---|---|---|---|---|---|---|---|---|"]
-    for bname, rows, base in BLOCKS:
+    own = ["", "# Own degradation and the pre-stated interaction (DECISIONS §47: U-Net baseline MSE)", "",
+           "| model | " + " | ".join(f"own {n}" for _, n in DEGR) + " | " + " | ".join(f"{n} vs MSE" for _, n in DEGR)
+           + " |", "|---|" + "---|" * (2 * len(DEGR))]
+    pc = lambda x: 100 * (np.exp(x) - 1)
+    pf = lambda x: ("+inf" if x > 0 else "-100") if np.isinf(x) else f"{pc(x):+.0f}"
+
+    def ci(pt, bs):
+        # a ratio that is 0 in a resample gives log = -inf; inverted_cdf keeps +-inf instead of
+        # interpolating inf - inf into nan, and nan (both rows 0) is dropped
+        lo, hi = np.nanquantile(bs, [0.025, 0.975], method="inverted_cdf")
+        return f"{pf(pt)}% [{pf(lo)}, {pf(hi)}]", lo, hi
+
+    for bname, rows, bulk, base, base2 in BLOCKS:
         lines.append(f"| **{bname}** |" + " |" * (head1.count("|") - 2))
         loaded = {name: load_row(seeds) for name, seeds in rows}
         brow = loaded[base]
-        bmae = np.mean([p[2][0]["table"]["mae_member"] for p in brow if p]) if any(brow) else np.nan
+        bmae = np.mean([p[2][0]["table"]["mae_member"] for p in loaded[bulk] if p]) if any(loaded[bulk]) else np.nan
         bd_point, bd_boot = degr_boot(brow)
+        b2 = degr_boot(loaded[base2]) if base2 else None
         for name, seeds in rows:
             row = loaded[name]
             ok = [p for p in row if p]
@@ -139,20 +157,25 @@ def main():
                 s["tw"] = T(arm, "twcrps_per_obs_tail_pixel")
                 cells += [fmt(s["exc"]), fmt(s["peak"], "{:.2f}"), fmt(s["q90"], "{:.2f}"), fmt(s["far"], "{:.2f}"),
                           fmt(s["tw"], "{:.1f}")]
-            rpt, rbs = degr_boot(row) if name != base else (None, None)
+            rpt, rbs = degr_boot(row)
             for k, _ in DEGR:
                 if name == base:
                     cells.append(f"{fmt(100 * (np.exp(bd_point[k]) - 1), '{:+.0f}%')} (base)")
                     continue
-                pt = rpt[k] - bd_point[k]
-                bs = rbs[k] - bd_boot[k]
-                # a ratio that is 0 in a resample gives log = -inf; inverted_cdf keeps +-inf instead of
-                # interpolating inf - inf into nan, and nan (both rows 0) is dropped
-                lo, hi = np.nanquantile(bs, [0.025, 0.975], method="inverted_cdf")
-                pc = lambda x: 100 * (np.exp(x) - 1)
-                pf = lambda x: ("+inf" if x > 0 else "-100") if np.isinf(x) else f"{pc(x):+.0f}"
-                cells.append(f"{pf(pt)}% [{pf(lo)}, {pf(hi)}]")
-                csv.append((name, k, pc(pt), pc(lo), pc(hi), len(ok)))
+                txt, lo, hi = ci(rpt[k] - bd_point[k], rbs[k] - bd_boot[k])
+                cells.append(txt)
+                csv.append((name, k, base, pc(rpt[k] - bd_point[k]), pc(lo), pc(hi), len(ok)))
+            orow = [name] + [ci(rpt[k], rbs[k])[0] for k, _ in DEGR]
+            for k, _ in DEGR:
+                if b2 is None:
+                    orow.append("–")
+                elif name == base2:
+                    orow.append("(base)")
+                else:
+                    txt, lo, hi = ci(rpt[k] - b2[0][k], rbs[k] - b2[1][k])
+                    orow.append(txt)
+                    csv.append((name, k, base2, pc(rpt[k] - b2[0][k]), pc(lo), pc(hi), len(ok)))
+            own.append("| " + " | ".join(orow) + " |")
             lines.append("| " + " | ".join(cells) + " |")
             for arm, an in ((0, "full"), (1, "cut")):
                 sm, a = ok[0][arm]
@@ -179,14 +202,15 @@ def main():
              "maximum there; q90 = 90th percentile of predicted over observed patch maxima (unpaired); FAR = P(obs max < u "
              "| pred max >= u); twCRPS = threshold-weighted CRPS (weight 1{z >= u}) summed over all pixels per observed "
              "pixel >= u (mm/h). FM: averages over 16 members; twCRPS and CRPS use the ensemble. U-Net CRPS = MAE.",
-             "Δ columns: change from R1 to R4 relative to the block baseline's change, exp(Δlog) - 1; positive = degrades "
-             "less than the baseline. Brackets: 95% paired day-block bootstrap. A ratio already above 1 in R1 that falls "
+             "Δ columns: change from R1 to R4 relative to the block baseline's change (U-Net: MSE + QM; FM: control; "
+             "DECISIONS §49), exp(Δlog) - 1; positive = degrades less than the baseline. ΔMAE: against MSE / FM control. "
+             "Own degradation: exp(log X(cut) - log X(full)) - 1 for the model alone. Brackets: 95% paired day-block bootstrap. A ratio already above 1 in R1 that falls "
              "towards 1 in R4 counts as degradation here; read the R1/R4 values with it.",
              "† the windowed spectral loss is gamed (centre spikes, DECISIONS §45)."]
-    md = "\n".join(lines + notes + app) + "\n"
+    md = "\n".join(lines + notes + app + own) + "\n"
     open(f"{args.out}/main_table_val.md", "w").write(md)
     with open(f"{args.out}/main_table_val_interaction.csv", "w") as f:
-        f.write("model,metric,point_pct,lo95_pct,hi95_pct,n_seeds\n")
+        f.write("model,metric,baseline,point_pct,lo95_pct,hi95_pct,n_seeds\n")
         for r in csv:
             f.write(",".join(str(x) for x in r) + "\n")
     print(md)
