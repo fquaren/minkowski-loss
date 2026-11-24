@@ -36,8 +36,9 @@
 \newcommand{\todo}[1]{\textcolor{blue}{[TODO: #1]}}
 \newcommand{\citeneeded}[1]{\textcolor{red}{[CITE?: #1]}}
 
-\title{Minkowski image loss and extreme events}
-% \needinput{title: the results now centre on extrapolation beyond the training range (Section 6); keep or retitle?}
+\title{Structural losses for the super-resolution of extreme precipitation: what the Minkowski functionals add}
+% \needinput{Proposed title for the agreed framing (one of several losses that work; the area channel does most of the
+% work). The old title was "Minkowski image loss and extreme events".}
 
 \author{
  Filippo Quarenghi \\
@@ -80,8 +81,9 @@ exceeding $50.1\,\mathrm{mm}$ in one hour has been removed. The second arm score
 larger than any it has seen. On the U-Net, the loss raises the predicted-to-observed exceedance ratio above
 $50.1\,\mathrm{mm}$ from $0.03$ to $0.14$ for $+5\,\%$ mean absolute error, and keeps this gain when the extremes are
 removed from training, where the mean-squared-error model loses half of its small exceedance mass. An area-only
-variant and a fractions-skill-score loss behave the same way, so the effect is not specific to the perimeter and
-topology terms. On the flow-matching model the reward doubles the exceedance ratio in distribution but loses more of
+variant and a fractions-skill-score loss behave the same way. The area channel alone matches the observed survival
+function, so most of the gain is distributional: the perimeter and topology terms add little that the area term does
+not already provide. On the flow-matching model the reward doubles the exceedance ratio in distribution but loses more of
 its gain than the control when extremes are removed. We also report two ways the losses are gamed: the Minkowski
 U-Net adds a diagonal ripple with a period of about three pixels, and a windowed spectral loss injects a spike at the
 patch centre.
@@ -103,12 +105,14 @@ The Minkowski image loss \citep{quarenghi2026minkowski} scores the geometry of a
 For each threshold $u$, it summarises the excursion set $\{x \ge u\}$ by its area $A$, perimeter $P$ and euler
 characteristic $\chi$, and compares the resulting curves over $u$ between prediction and target. The three
 functionals span the motion-invariant, additive and continuous valuations in two dimensions (Hadwiger's theorem),
-and because they ignore position they do not double-penalise displacement. That earlier work also showed that a
-deterministic model trained with too large a weight games the loss: it invents grid-aligned filaments that raise
-the perimeter. \needinput{Confirm what the 2026 paper established and what it did not, so that this paragraph does
-not over-attribute.}
+and because they ignore position they do not double-penalise displacement. That work made the functionals
+differentiable in two ways, with temperature-controlled sigmoids and with Lipschitz-constrained neural emulators, and
+showed that the constrained emulator removes the geometrically impossible fields that unconstrained emulators produce
+in up to $7.8\,\%$ of cases; it did not train super-resolution models for extremes. Here we use the analytic
+functionals. A deterministic model trained with too large a weight games the loss: in our runs it adds grid-aligned
+filaments that raise the perimeter.
 
-Here we ask three questions about extremes.
+We ask three questions about extremes, and treat the Minkowski loss as one candidate among several.
 \begin{enumerate}
   \item Does the loss improve the extreme tail of a deterministic and of a generative super-resolution model,
   relative to the same model trained without it, and at what cost in point accuracy?
@@ -118,8 +122,11 @@ Here we ask three questions about extremes.
   without the training patches above a threshold and scoring both versions on the same validation extremes
   (hypothesis H3 in Section~\ref{sec:design}).
 \end{enumerate}
-\needinput{Research questions: question 3 is new relative to the 2026-09 draft. Confirm the framing, and whether H1
-and H2 of the research notes belong in the paper (H1 was inconclusive, DECISIONS §43).}
+Question~3 rests on three hypotheses (Section~\ref{sec:design}): that the geometry of extreme events resembles that
+of ordinary ones (H1), that a model trained with the loss ties its high-threshold geometry to what it learns at lower
+thresholds (H2), and that it therefore produces more realistic extremes beyond the training range (H3). H1 is a
+property of the data, H2 of the learner, H3 the claim that matters; H3 without H1 would be luck, and H1 without H3 would
+mean the model does not use the geometry that is there.
 
 Our contributions are: (i) a comparison of the Minkowski loss with five alternatives at matched gradient budgets on
 hourly radar precipitation; (ii) a test of extrapolation beyond the training range by removing the extremes from
@@ -171,10 +178,13 @@ now uses quantiles of patch maxima instead (DECISIONS §47). Keep any extreme-va
 \label{sec:data}
 % ---------------------------------------------------------------------
 \paragraph{Target and input.} The target is the hourly precipitation accumulation on the $2\,\mathrm{km}$ OPERA grid,
-in $\mathrm{mm}$, formed by summing four screened $15$-min frames with an advection correction
-\needinput{one sentence on the advection correction, or a reference to where it is described}. The input is the
-$25\,\mathrm{km}$ mean of the same field interpolated back to the $2\,\mathrm{km}$ grid, a downscaling factor of
-$12.5$. Models see $128\times128$ patches (about $256\,\mathrm{km}$ on a side) and a second input channel with the
+in $\mathrm{mm}$, formed from four screened $15$-min frames with an advection correction: a dense motion field
+between consecutive frames (Lucas--Kanade, as implemented in pysteps \citeneeded{pysteps}) moves the nearer frame to
+each of $60$ one-minute steps, and the hour is the mean of the $60$ fields. Without the correction a moving cell
+appears four times along its track, which adds spurious components and perimeter, the quantities the loss compares. The input is the same
+field average-pooled to a $10\times10$ grid per patch (cells of $12.8$ pixels, about $25.6\,\mathrm{km}$; nominal
+factor $12.5$) and upsampled back to $2\,\mathrm{km}$ by nearest neighbour, so it is piecewise constant on the coarse
+cells. Models see $128\times128$ patches (about $256\,\mathrm{km}$ on a side) and a second input channel with the
 standardised orography. All thresholds in this paper are hourly accumulations.
 
 \paragraph{Screening.} The radar archive contains artefacts, and real extremes can look like artefacts. We therefore
@@ -185,8 +195,8 @@ screening rules. We also remove tile-hours that no radar covers and seven radar-
 neighbouring radars. \needinput{How much of the screening to describe here versus an appendix; the rule set and the
 rejection rate by intensity bin (DECISIONS §17, §34, §36) are available.}
 
-\paragraph{Splits.} Train, validation and test use the ODYSSEY composite from September 2012 to October 2025
-\needinput{exact first and last dates of the splits}. Validation and test consist of whole ISO weeks drawn per
+\paragraph{Splits.} Train, validation and test use the ODYSSEY composite from 4 September 2012 to 4 July 2024; the later NIMBUS product
+is kept apart for a product-shift test. Validation and test consist of whole ISO weeks drawn per
 calendar month across years, separated from training by at least two processing days, so that no test patch shares a
 day with a training patch. Catalogued prominent events are assigned to test. The splits contain $1{,}299{,}686$
 training, $172{,}050$ validation and $212{,}803$ test tile-hours.
@@ -272,8 +282,8 @@ channels, the interpolated coarse field and the orography, both normalised. It p
 interpolated input in log space and outputs $\max(0, \text{input} + \text{residual})$. It is trained with
 $\mathcal{L} = \mathcal{L}_{\mathrm{mse}} + w(t)\,\mathcal{L}_{\mathrm{aux}}$, where $w(t)$ rises to its maximum over
 the first three epochs on a cosine ramp, with AdamW (learning rate $5\times10^{-5}$), batches of $128$ drawn by a
-weighted sampler, for up to $25$ epochs. We evaluate the last checkpoint. \needinput{Sampler weights: describe the
-half-wet sampling, or cite where it is described.}
+weighted sampler, for up to $25$ epochs. We evaluate the last checkpoint. The sampler draws wet tile-hours (maximum above $0.1\,\mathrm{mm}$) and dry
+ones with equal total probability.
 
 \subsection{Competing losses and corrections}
 \label{sec:competing}
@@ -358,9 +368,9 @@ The fine-tune updates all parameters with AdamW (learning rate $10^{-5}$) for $1
 proximal penalty to the clean model and the flow-matching loss retained (both weight $1$); the reward weight ($1$) is
 set by gradient-norm parity with the retained loss. The run stops if the anisotropy or the peak ratio on a fixed
 validation batch exceeds $1.3$ times the clean model's value. The \emph{control} is the same fine-tune with reward weight
-zero; it separates the reward from the extra training. \needinput{The flow-matching reward uses the full $15$-level
-grid in both arms, unlike the truncated U-Net loss (DECISIONS §43 notes it needs the same treatment). Rerun with a
-truncated reward, or state it as a limitation?}
+zero; it separates the reward from the extra training. The reward grid is truncated below $50.1\,\mathrm{mm}$, as
+for the U-Net. \todo{The flow-matching reward runs in the tables used the full $15$-level grid; the truncated runs
+(both arms, three seeds, reward weight re-set by parity) replace them.}
 
 % =====================================================================
 \section{Experimental design and evaluation}
@@ -379,8 +389,27 @@ anything in training. The level $50.1\,\mathrm{mm}$ is the lowest grid level at 
 stable on the uncorrected store; on the corrected store the stability rule selected no level and $50.1$ was kept.
 \needinput{Justification of $u_c$: is the account above what you want to say?}
 
-\paragraph{Hypothesis.} H3 states that beyond the training range the Minkowski model gives more realistic extremes
-than the baseline. We test it as an interaction: for a tail score $X$, the degradation from the full to the cut arm is
+\paragraph{Hypotheses.} \emph{H1} (data): the excursion-set geometry of extreme events, normalised by the event
+peak, resembles that of ordinary events. We tested it before training with a pre-registered analogue check: for each
+test hour above $50.1\,\mathrm{mm}$ we find its nearest training hour in a space of peak-normalised shape features,
+and ask whether that analogue is itself above $50.1\,\mathrm{mm}$ more often than the base rate of $3.4\,\%$. It is in
+$7.0\,\%$ of $2{,}383$ cases ($2.1$ times the base rate; $1.5$ times for the $20.2$--$50.1\,\mathrm{mm}$ control band).
+By the pre-stated rule (supported below $2\times$, rejected above $5\times$) the result is inconclusive: $93\,\%$ of
+the extreme hours have their closest shape below the cut, but shape is not independent of intensity.
+\needinput{Report the analogue check in the main text or an appendix? A tile-edge truncation caveat (heavier storms
+are cut more often by the patch edge) is not yet checked.}
+
+\emph{H2} (learner): a model trained with the loss ties the geometry at high thresholds to the geometry it learns at
+lower ones. Because the loss grid stops below $50.1\,\mathrm{mm}$, any effect of the loss above that level must come
+through lower thresholds. \todo{H2 is not yet tested. Proposed test: the residual of the predicted functionals at the
+levels the loss never sees ($50.1$ and $79.0\,\mathrm{mm}$), against those at the trained levels, for the
+mean-squared-error, area-only and Minkowski models in both arms; the per-patch functionals are already stored with the
+evaluations.}
+
+\emph{H3} (the claim): beyond the training range the Minkowski model gives more realistic extremes than the baseline.
+Two predictions were stated before the experiment: the degradation from the full to the cut arm is smaller with the
+loss than without it, and the gain comes from the perimeter and euler terms rather than from the area alone, since the
+area channel is distributional information, not geometry. We test the first as an interaction: for a tail score $X$, the degradation from the full to the cut arm is
 $\log X_{\mathrm{cut}} - \log X_{\mathrm{full}}$, and we report the model's degradation minus the baseline's,
 transformed to a percentage, $\exp(\cdot) - 1$. Positive values mean the model degrades less than the baseline. The
 baseline is the mean-squared-error model for Study~1 and the control fine-tune for Study~2. Intervals are $95\,\%$
@@ -516,8 +545,9 @@ The random-removal control, trained on as many tile-hours as the cut arm, keeps 
 not from losing data; the difference between $0.026$ and $0.058$ is within what one seed of a near-zero ratio can
 move. \todo{Random-removal control for the Minkowski loss.}
 
-Research prediction~3 states that the gain should come from the perimeter and topology terms rather than from the area
-alone. The U-Net does not support it: the area-only variant does at least as well in both arms (one seed).
+The second prediction, that the gain comes from the perimeter and euler terms, is not supported: the area-only
+variant does at least as well in both arms (one seed). By the criterion stated in advance, the effect on the U-Net is
+distributional, not geometric.
 
 \subsection{Flow matching}
 The clean flow-matching model reproduces $25\,\%$ of the observed exceedance mass in distribution, ten times the
