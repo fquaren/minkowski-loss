@@ -3520,3 +3520,34 @@ reports the pre-stated version.
 **Result (validation, first build).** ΔExc vs QM: Minkowski +22% [+9, +47], area-only +37% [+7, +84], FSS 0% [-13,
 +22], MSE -44%, wMSE -91%, quantile -39%, spectral -8%. Δq90: area +22% [+2, +47], FSS +22% [+1, +49], Minkowski +19%
 [0, +48]. ΔPeak: FSS +11% [+5, +32], the others' intervals include 0.
+
+## 50. H2 test on the stored functionals (pre-stated 2026-11-24, before any number)
+
+**Question.** H2: a model trained with the Minkowski term ties its geometry at high thresholds to what it learns at
+lower ones. Every deterministic loss grid stops below 50.1 mm, so the levels 50.1 and 79.0 mm are never in any loss,
+and in the cut arm no training target reaches them at all. If the perimeter and Euler terms teach geometry that
+carries upward, the Minkowski model should match the target's perimeter and Euler characteristic at those levels
+better than a model trained on the area alone.
+
+**Data.** The valext evaluations in `v4adv_valext_tab` (1,024 patches, 219 days), both arms: `gamma_hat` (raw
+functionals of the prediction, after QM where it applies) transformed as the loss does (log1p A, log1p P, signed
+log1p chi) and `gamma_target` (already in that space). Rows: MSE (s42-44), MSE + QM, area only, Minkowski
+(s42-44); wMSE, quantile, FSS for context. Seeds averaged in the score.
+
+**Score.** Per model, channel c, level u: S = mean over all 1,024 patches of |g_pred - g_target| (no selection by the
+observation). Levels: trained top band 20.2, 31.7 mm; untrained 50.1, 79.0 mm.
+
+**Primary statistic and rule.** D(c, u) = log S_Minkowski - log S_area-only, c in {perimeter, Euler}, u = 50.1 mm, cut
+arm; 95% day-block bootstrap interval (2,000 resamples, seed 0). **Supported** if the upper bound is < 0 for both
+channels; **not supported** if either lower bound is > 0; otherwise **inconclusive**.
+
+**Reported, no verdict.** D for every channel, level and arm; log S_model - log S_MSE for area only, Minkowski and the
+context rows (does any training transfer to untrained levels at all); D at 31.7 (trained), to see whether the
+perimeter and Euler terms help those channels even inside the grid.
+
+**Known-answer check before reading:** exp(area) - 1 at 50.1 mm must equal 4 km^2 x the stored count of pixels >= 50.1
+(`n_exc_pred_members`, `n_exc_obs`) for every patch, or the arrays and levels are misread.
+
+**Caveats fixed in advance.** Area only is one seed. The Minkowski U-Net carries a diagonal ripple (§47 readings),
+which adds perimeter at low levels. At 79.0 mm most patches are empty in both prediction and target, so that level is
+dominated by false or missed sets.
