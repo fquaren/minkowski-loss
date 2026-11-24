@@ -202,25 +202,36 @@ def reward_features(geom_fn, fields, target_log_gamma, anneal, form="threshold",
       above the target maximum take the weight of the highest populated one. Weights and
       ranks depend on the target only, so the comparison is a fixed feature map per
       condition and the energy score stays proper on it.
+    form="quantile_mass_max": as "quantile_mass", but the first threshold above the target
+      maximum is not masked in the area channel: it compares the predicted maximum with the
+      target maximum (rank 1). Without it nothing above max(y) is seen, so with area-only
+      channel weights a peak can grow without bound at no cost (DECISIONS §46).
     """
     M = fields.shape[0]
     lg = torch.stack([_log_gamma(geom_fn, fields[m], anneal) for m in range(M)], 0)
     if form == "threshold":
         return lg, target_log_gamma, None
-    if form != "quantile_mass":
+    if form not in ("quantile_mass", "quantile_mass_max"):
         raise ValueError(f"unknown reward form {form!r}")
     if target_field is None:
-        raise ValueError("form='quantile_mass' needs the target field")
+        raise ValueError(f"form={form!r} needs the target field")
 
     u = geom_fn.u.view(1, -1)                                          # [1,Q]
     y = target_field.flatten(1)                                        # [B,N]
     n = (y.unsqueeze(1) >= u.unsqueeze(-1)).sum(-1)                    # [B,Q]
     valid = n >= 1
     k = (n - 1).clamp_min(0)                                           # rank index
+    area_valid = valid
+    if form == "quantile_mass_max":
+        # thresholds ascend, so valid.sum is the index of the first empty one; k is 0 there
+        first = valid.sum(1, keepdim=True)
+        cap = torch.zeros_like(valid).scatter_(1, first.clamp_max(valid.shape[1] - 1),
+                                               first < valid.shape[1])
+        area_valid = valid | cap
     ys = torch.sort(y, dim=1, descending=True).values
-    q_t = torch.log1p(torch.gather(ys, 1, k)) * valid                  # [B,Q]
+    q_t = torch.log1p(torch.gather(ys, 1, k)) * area_valid             # [B,Q]
     fs = torch.sort(fields.flatten(2), dim=2, descending=True).values  # [M,B,N]
-    q_m = torch.log1p(torch.gather(fs, 2, k.unsqueeze(0).expand(M, -1, -1))) * valid
+    q_m = torch.log1p(torch.gather(fs, 2, k.unsqueeze(0).expand(M, -1, -1))) * area_valid
 
     lg = torch.cat([q_m.unsqueeze(2), lg[:, :, 1:]], dim=2)
     tg = torch.cat([q_t.unsqueeze(1), target_log_gamma[:, 1:]], dim=1)
@@ -231,7 +242,7 @@ def reward_features(geom_fn, fields, target_log_gamma, anneal, form="threshold",
     w_top = torch.gather(w, 1, top)
     w = torch.where(valid, w, w_top)
     w = w / w.mean(1, keepdim=True)
-    W = torch.stack([valid.to(lg.dtype), w, w], dim=1)                 # [B,3,Q]
+    W = torch.stack([area_valid.to(lg.dtype), w, w], dim=1)            # [B,3,Q]
     return lg, tg, W
 
 

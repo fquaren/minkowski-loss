@@ -1,0 +1,5 @@
+area 30
+pixel 1e+02
+pixeltw 30
+fss 3.1
+spectralhann 1.7e+02

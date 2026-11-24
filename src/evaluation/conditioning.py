@@ -55,3 +55,43 @@ def case_scores(tmax, cmax, pmax, pexc, nexc_pred, nexc_obs, u):
             "pred_max_ge_u_share": float((pmax[sel] >= u).mean()),
         }
     return out
+
+
+def member_case_scores(tmax, cmax, pmax, nexc_pred, nexc_obs, u, qs=(0.5, 0.9)):
+    """The main table's case-level tail scores, per ensemble member, then averaged over members.
+
+    pmax, nexc_pred : (M, N) per-member patch maxima and pixel counts >= u (a deterministic model: M = 1)
+    tmax, cmax, nexc_obs : (N,) as in case_scores
+
+    Every score is a function of one member against the observation, so averaging over members gives the
+    expected score of a single draw; scoring member 0 alone (case_scores) adds member noise to an FM row.
+    false_alarm_ratio = P(observed max < u | predicted max >= u): unlike the false-alarm rate it does not
+    depend on how many non-events the subset holds. maxq_ratio_q* = q-quantile of predicted over observed
+    patch maxima on the observed-event cases (unpaired), the stand-in for the GPD return-level bias,
+    which cannot be fitted for weak-tail models.
+    """
+    tmax, cmax = np.asarray(tmax, float), np.asarray(cmax, float)
+    pmax, nexc_pred = np.atleast_2d(np.asarray(pmax, float)), np.atleast_2d(np.asarray(nexc_pred, float))
+    nexc_obs = np.asarray(nexc_obs, float)
+    event = tmax >= u
+    n_sel = int(event.sum())
+    by_input = np.zeros(tmax.size, bool)
+    if n_sel:
+        by_input[np.argsort(-cmax, kind="stable")[:n_sel]] = True
+    per = []
+    for p, n in zip(pmax, nexc_pred):
+        alarm = p >= u
+        s = {"hit_rate": (p[event] >= u).mean() if n_sel else np.nan,
+             "false_alarm_ratio": (alarm & ~event).sum() / alarm.sum() if alarm.any() else np.nan,
+             "exceedance_ratio_obs": n[event].sum() / max(nexc_obs[event].sum(), 1.0),
+             "exceedance_ratio_input": n[by_input].sum() / max(nexc_obs[by_input].sum(), 1.0),
+             "peak_ratio_median_obs": np.median(p[event] / np.maximum(tmax[event], 1e-6)) if n_sel else np.nan}
+        for q in qs:
+            s[f"maxq_ratio_q{round(100 * q)}"] = (np.quantile(p[event], q) / np.quantile(tmax[event], q)
+                                                   if n_sel else np.nan)
+        per.append(s)
+    out = {"u": float(u), "n_members": len(per), "n_obs_selected": n_sel}
+    for k in per[0]:
+        v = np.array([s[k] for s in per], float)
+        out[k] = float(np.nanmean(v)) if np.isfinite(v).any() else float("nan")
+    return out

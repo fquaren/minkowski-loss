@@ -44,7 +44,7 @@ from src.data.datasets import DeterministicSRDataset
 from src.losses.minkowski import AnalyticalMinkowskiLoss
 from src.evaluation.training_metrics import compute_radial_power_spectrum
 from src.evaluation.extreme_metrics import sal, crps_ensemble
-from src.evaluation.conditioning import case_scores, twcrps_ensemble
+from src.evaluation.conditioning import case_scores, member_case_scores, twcrps_ensemble
 from src.evaluation.day_block import DayRecord, parse_leave_out, processing_days
 from src.evaluation.tail_metrics import (
     FSSAccumulator, POTAccumulator, gpd_comparison, directional_anisotropy, peak_ratio,
@@ -204,6 +204,8 @@ def main():
             s = gp[(gp.row >= ty) & (gp.row < ty + P) & (gp.col >= tx) & (gp.col < tx + P)]
             if len(s):
                 stations_by_tile[(ty, tx)] = list(zip(s.station, s.row - ty, s.col - tx))
+    # main table (DECISIONS §47): every tail score per member, so an FM row averages over its M members
+    mpmax_i, mnexc_i, mmae_i, emae_i, fss_m, maniso = [], [], [], [], None, None
     gamma_hat, gamma_tgt = [], []   # per-patch functionals, as eval_backbone.py saves them
     rapsd_p = rapsd_o = None
 
@@ -267,6 +269,18 @@ def main():
             tt = target.squeeze(1).cpu().numpy()
             if args.qm_hist:
                 qh_pred.update(pp); qh_obs.update(tt)
+            mem = ens[:, :, 0] if args.model == "fm" else pred[None, :, 0]     # [M,B,H,W]
+            mpmax_i.append(mem.amax(dim=(2, 3)).cpu().numpy())
+            mnexc_i.append((mem >= pot_u).sum(dim=(2, 3)).cpu().numpy())
+            mmae_i.append((mem - target[None, :, 0]).abs().mean(dim=(2, 3)).cpu().numpy())
+            emae_i.append((mem.mean(0) - target[:, 0]).abs().mean(dim=(1, 2)).cpu().numpy())
+            mem_np = mem.cpu().numpy()
+            if fss_m is None:
+                fss_m = [FSSAccumulator([pot_u], [11]) for _ in mem_np]
+                maniso = [[] for _ in mem_np]
+            for m in range(len(mem_np)):
+                fss_m[m].update(mem_np[m], tt)
+                maniso[m].append(directional_anisotropy(mem_np[m]))
             if stations_by_tile:                  # loader is not shuffled: sample i <-> ds row i
                 ens_np = ens[:, :, 0].cpu().numpy() if args.model == "fm" else None
                 for i in range(pp.shape[0]):
@@ -333,6 +347,18 @@ def main():
     summary["conditioned"] = case_scores(tmax, cmax, pmax, pexc, nexc_p, nexc_o, pot_u)
     summary["twcrps_mean"] = float(tw.mean())
     summary["twcrps_extreme"] = float(tw[ext].mean())
+    mpmax, mnexc = np.concatenate(mpmax_i, 1), np.concatenate(mnexc_i, 1)
+    mmae, emae = np.concatenate(mmae_i, 1), np.concatenate(emae_i)
+    fkey = f"fss_thr{float(pot_u):g}_win11"
+    summary["table"] = {
+        **member_case_scores(tmax, cmax, mpmax, mnexc, nexc_o, pot_u),
+        "mae_member": float(mmae.mean()), "mae_ensemble_mean": float(emae.mean()),
+        "anisotropy_member": float(np.mean([np.nanmean(a) for a in maniso])),
+        f"{fkey}_member": float(np.mean([f.result()[fkey] for f in fss_m])),
+        # pixel twCRPS summed and divided by the observed pixels >= u: a model-independent count, so the
+        # score stays proper; the pixel mean (twcrps_mean) divides the same sum by every pixel instead
+        "twcrps_per_obs_tail_pixel": float(tw.sum() * tt[0].size / max(nexc_o.sum(), 1.0)),
+    }
     if crps_i:
         crps = np.concatenate(crps_i)
         summary["crps_mean"] = float(crps.mean())
@@ -358,6 +384,8 @@ def main():
                         spectral_dist=spectral_dist,
                         coarse_max=cmax, pred_max=pmax, p_max_ge_u=pexc,
                         n_exc_pred=nexc_p, n_exc_obs=nexc_o, twcrps=tw,
+                        pred_max_members=mpmax, n_exc_pred_members=mnexc,
+                        mae_members=mmae, mae_ensemble_mean=emae,
                         rapsd_pred=rapsd_p, rapsd_target=rapsd_o,
                         gpd_pred=np.array([fit_p["xi"], fit_p["sigma"], fit_p["rate"]]),
                         gpd_obs=np.array([fit_o["xi"], fit_o["sigma"], fit_o["rate"]]),

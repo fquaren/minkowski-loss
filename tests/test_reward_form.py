@@ -123,3 +123,79 @@ def test_mass_weights_fall_with_pixel_count_and_cap_above_the_maximum(geom):
     assert (torch.diff(w[pop]) >= 0).all()            # fewer pixels -> larger weight
     top = int(pop.sum()) - 1
     assert torch.allclose(w[~pop], w[top].expand(int((~pop).sum())))
+
+
+# ---- form "quantile_mass_max" (DECISIONS §46): the area channel also matches the maxima ----
+
+def _spiked(peak, spike, M=4):
+    p = torch.cat([_cell(peak, seed=s) for s in range(M)], 0)
+    p[:, 0, 24, 24] += spike                          # raise each member's peak pixel
+    return p.unsqueeze(1)
+
+
+def test_quantile_mass_area_channel_is_blind_above_the_target_maximum(geom):
+    # documents the failure being fixed: area-only quantile_mass cannot see a peak above max(y)
+    y = _cell(30.0)
+    cw = geom.channel_weights.clone()
+    geom.channel_weights = torch.tensor([1.0, 0.0, 0.0])
+    try:
+        r = [float(minkowski_reward(geom, _spiked(30.0, s), _target(geom, y), "energy", ANNEAL, 0.0,
+                                    "quantile_mass", y)) for s in (0.0, 300.0)]
+    finally:
+        geom.channel_weights = cw
+    assert r[0] == pytest.approx(r[1], abs=1e-7)
+
+
+def test_max_form_penalises_and_pulls_down_an_overshooting_peak(geom):
+    y = _cell(30.0)
+    cw = geom.channel_weights.clone()
+    geom.channel_weights = torch.tensor([1.0, 0.0, 0.0])
+    try:
+        r, g = [], []
+        for s in (0.0, 20.0, 300.0):
+            p = _spiked(30.0, s).requires_grad_(True)
+            rr = minkowski_reward(geom, p, _target(geom, y), "energy", ANNEAL, 0.0, "quantile_mass_max", y)
+            rr.backward()
+            r.append(float(rr)); g.append(float(p.grad[:, 0, 0, 24, 24].mean()))
+    finally:
+        geom.channel_weights = cw
+    assert r[0] < r[1] < r[2]
+    assert g[1] > 0 and g[2] > 0                       # descent lowers the peak
+
+
+def test_max_form_adds_exactly_the_rank_one_feature(geom):
+    y = _cell(40.0)                                   # 50.1 and 79 are above the maximum
+    pred = _cell(30.0).unsqueeze(0)
+    a = reward_features(geom, pred, _target(geom, y), ANNEAL, "quantile_mass", y)
+    b = reward_features(geom, pred, _target(geom, y), ANNEAL, "quantile_mass_max", y)
+    first = int((y.flatten().unsqueeze(0) >= torch.tensor(U).unsqueeze(1)).any(1).sum())
+    diff = (b[2][0, 0] != a[2][0, 0]).nonzero().flatten().tolist()
+    assert diff == [first]                            # one threshold changes, the first empty one
+    assert torch.isclose(b[1][0, 0, first], torch.log1p(y.max()))
+    assert torch.isclose(b[0][0, 0, 0, first], torch.log1p(pred.max()))
+    assert torch.equal(a[2][:, 1:], b[2][:, 1:])       # perimeter / Euler weights unchanged
+    assert torch.equal(a[0][:, :, 1:], b[0][:, :, 1:])
+
+
+def test_max_form_penalises_rain_on_a_dry_target(geom):
+    y = torch.zeros(1, 1, 48, 48)
+    cw = geom.channel_weights.clone()
+    geom.channel_weights = torch.tensor([1.0, 0.0, 0.0])
+    try:
+        dry = minkowski_reward(geom, torch.zeros(2, 1, 1, 48, 48), _target(geom, y), "energy", ANNEAL,
+                               0.0, "quantile_mass_max", y)
+        wet = minkowski_reward(geom, _spiked(10.0, 0.0, M=2), _target(geom, y), "energy", ANNEAL, 0.0,
+                               "quantile_mass_max", y)
+        wet_old = minkowski_reward(geom, _spiked(10.0, 0.0, M=2), _target(geom, y), "energy", ANNEAL,
+                                   0.0, "quantile_mass", y)
+    finally:
+        geom.channel_weights = cw
+    assert abs(float(dry)) < 1e-7 and abs(float(wet_old)) < 1e-7   # the old form sees nothing
+    assert float(wet) > 1e-2
+
+
+def test_max_form_identical_prediction_scores_zero(geom):
+    y = _cell(40.0)
+    pred = y.unsqueeze(0).repeat(3, 1, 1, 1, 1)
+    r = minkowski_reward(geom, pred, _target(geom, y), "energy", ANNEAL, 0.5, "quantile_mass_max", y)
+    assert abs(float(r)) < 1e-6
