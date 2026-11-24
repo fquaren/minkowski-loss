@@ -1,0 +1,55 @@
+# Main table on validation (u = 50.1 mm/h; valsub for bulk, valext for the tail)
+
+| model | seeds | MAE | ΔMAE | CRPS | aniso | Exc R1 | Peak R1 | q90 R1 | FAR R1 | twCRPS R1 | Exc R4 | Peak R4 | q90 R4 | FAR R4 | twCRPS R4 | ΔExc | ΔPeak | Δq90 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Deterministic (U-Net)** | | | | | | | | | | | | | | | | | | |
+| MSE | 3/3 | 0.0435 | +0.0% | 0.0435 | 1.91 | 0.026 | 0.21 | 0.29 | 0.00 | 17.3 | 0.013 | 0.20 | 0.27 | 0.00 | 17.1 | -57% (base) | -3% (base) | -7% (base) |
+| MSE + QM | 1/1 | 0.0467 | +7.4% | 0.0467 | 1.91 | 1.066 | 0.38 | 0.60 | 0.17 | 28.4 | 0.823 | 0.36 | 0.51 | 0.09 | 24.1 | +79% [+38, +inf] | -4% [-13, +1] | -9% [-21, +1] |
+| wMSE | 1/1 | 0.0464 | +6.7% | 0.0464 | 2.36 | 0.116 | 0.43 | 0.39 | 0.12 | 17.1 | 0.008 | 0.40 | 0.33 | 0.00 | 17.0 | -84% [-100, +inf] | -4% [-10, +5] | -8% [-18, +5] |
+| quantile | 1/1 | 0.0490 | +12.7% | 0.0490 | 1.67 | 0.085 | 0.24 | 0.34 | 0.11 | 17.9 | 0.040 | 0.23 | 0.30 | 0.25 | 17.3 | +9% [-41, +inf] | -1% [-8, +8] | -5% [-11, +11] |
+| FSS | 1/1 | 0.0453 | +4.2% | 0.0453 | 1.18 | 0.437 | 0.71 | 0.62 | 0.34 | 20.9 | 0.338 | 0.73 | 0.64 | 0.42 | 20.3 | +79% [+38, +inf] | +6% [+2, +20] | +10% [-4, +27] |
+| spectral (Hann) † | 1/1 | 0.0439 | +0.9% | 0.0439 | 1.20 | 0.058 | 0.30 | 0.95 | 0.63 | 23.3 | 0.041 | 0.27 | 0.46 | 0.52 | 18.8 | +64% [+5, +inf] | -9% [-21, +2] | -49% [-62, -12] |
+| area only | 1/1 | 0.0446 | +2.4% | 0.0446 | 1.55 | 0.165 | 0.54 | 0.48 | 0.03 | 17.6 | 0.175 | 0.53 | 0.49 | 0.07 | 18.3 | +146% [+73, +inf] | -0% [-5, +9] | +10% [-2, +24] |
+| Minkowski | 3/3 | 0.0458 | +5.2% | 0.0458 | 0.52 | 0.139 | 0.60 | 0.56 | 0.15 | 18.1 | 0.132 | 0.55 | 0.56 | 0.14 | 18.3 | +119% [+68, +inf] | -6% [-10, +1] | +7% [-4, +23] |
+| **Generative (flow matching)** | | | | | | | | | | | | | | | | | | |
+| FM clean | 1/1 | 0.0558 | +1.2% | 0.0324 | 1.39 | 0.251 | 0.49 | 0.57 | 0.25 | 16.4 | 0.151 | 0.40 | 0.44 | 0.17 | 16.7 | +13% [+2, +30] | +4% [+1, +7] | +4% [-1, +9] |
+| FM control | 2/3 | 0.0551 | +0.0% | 0.0324 | 1.32 | 0.247 | 0.49 | 0.56 | 0.25 | 16.5 | 0.130 | 0.38 | 0.41 | 0.14 | 16.7 | -47% (base) | -22% (base) | -26% (base) |
+| FM + pixel ES | 0/1 | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| FM + tw-pixel ES | 0/1 | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| FM + FSS | 0/1 | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| FM + spectral (Hann) † | 0/1 | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| FM + area only | 0/1 | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| FM + Minkowski | 2/3 | 0.0578 | +4.9% | 0.0323 | 1.33 | 0.549 | 0.70 | 0.87 | 0.49 | 16.4 | 0.222 | 0.50 | 0.53 | 0.38 | 16.5 | -23% [-33, -1] | -9% [-12, -7] | -18% [-22, -15] |
+
+Validation, not test (F2 not run). valext = val_extremes1024 (187 patches with max >= 50.1), 219 processing days, B = 2000 day resamples.
+Exc = predicted / observed pixels >= u on observed-event patches; Peak = median predicted / observed patch maximum there; q90 = 90th percentile of predicted over observed patch maxima (unpaired); FAR = P(obs max < u | pred max >= u); twCRPS = threshold-weighted CRPS (weight 1{z >= u}) summed over all pixels per observed pixel >= u (mm/h). FM: averages over 16 members; twCRPS and CRPS use the ensemble. U-Net CRPS = MAE.
+Δ columns: change from R1 to R4 relative to the block baseline's change, exp(Δlog) - 1; positive = degrades less than the baseline. Brackets: 95% paired day-block bootstrap. A ratio already above 1 in R1 that falls towards 1 in R4 counts as degradation here; read the R1/R4 values with it.
+† the windowed spectral loss is gamed (centre spikes, DECISIONS §45).
+
+# Appendix table
+
+| model | arm | FSS@50.1 w11 | hit | Exc (input-sel.) | q50 | FAR valsub | Exc 50-80 | Exc 80-120 | Exc >120 |
+|---|---|---|---|---|---|---|---|---|---|
+| MSE | full | 0.048 | 0.02 | 0.033 | 0.22 | 0.00 | 0.062 | 0.003 | 0.011 |
+| MSE | cut | 0.026 | 0.01 | 0.016 | 0.21 | – | 0.035 | 0.002 | 0.000 |
+| MSE + QM | full | 0.442 | 0.24 | 1.460 | 0.41 | 0.33 | 1.647 | 0.670 | 0.894 |
+| MSE + QM | cut | 0.481 | 0.16 | 1.092 | 0.39 | 0.33 | 1.075 | 0.703 | 0.671 |
+| wMSE | full | 0.219 | 0.08 | 0.151 | 0.47 | 0.00 | 0.111 | 0.098 | 0.151 |
+| wMSE | cut | 0.022 | 0.02 | 0.010 | 0.42 | 0.00 | 0.000 | 0.018 | 0.002 |
+| quantile | full | 0.209 | 0.04 | 0.110 | 0.25 | 0.00 | 0.111 | 0.081 | 0.054 |
+| quantile | cut | 0.129 | 0.02 | 0.052 | 0.24 | 0.00 | 0.072 | 0.000 | 0.057 |
+| FSS | full | 0.604 | 0.48 | 0.547 | 0.74 | 0.52 | 0.457 | 0.425 | 0.431 |
+| FSS | cut | 0.551 | 0.56 | 0.423 | 0.78 | 0.56 | 0.394 | 0.317 | 0.295 |
+| spectral (Hann) † | full | 0.075 | 0.18 | 0.071 | 0.34 | 0.79 | 0.106 | 0.027 | 0.042 |
+| spectral (Hann) † | cut | 0.089 | 0.12 | 0.049 | 0.29 | 0.75 | 0.066 | 0.018 | 0.042 |
+| area only | full | 0.407 | 0.19 | 0.214 | 0.55 | 0.08 | 0.172 | 0.154 | 0.173 |
+| area only | cut | 0.423 | 0.21 | 0.223 | 0.56 | 0.15 | 0.189 | 0.172 | 0.161 |
+| Minkowski | full | 0.313 | 0.33 | 0.173 | 0.63 | 0.38 | 0.157 | 0.121 | 0.144 |
+| Minkowski | cut | 0.301 | 0.29 | 0.163 | 0.58 | 0.37 | 0.145 | 0.128 | 0.121 |
+| FM clean | full | 0.438 | 0.26 | 0.311 | 0.52 | 0.41 | 0.285 | 0.218 | 0.255 |
+| FM clean | cut | 0.349 | 0.14 | 0.192 | 0.43 | 0.45 | 0.119 | 0.180 | 0.150 |
+| FM control | full | 0.424 | 0.24 | 0.308 | 0.51 | 0.37 | 0.274 | 0.216 | 0.256 |
+| FM control | cut | 0.327 | 0.11 | 0.170 | 0.41 | 0.33 | 0.098 | 0.149 | 0.143 |
+| FM + Minkowski | full | 0.530 | 0.49 | 0.675 | 0.75 | 0.68 | 0.742 | 0.449 | 0.445 |
+| FM + Minkowski | cut | 0.403 | 0.24 | 0.285 | 0.52 | 0.59 | 0.221 | 0.234 | 0.206 |
+| MSE random drop (size-matched control) | full | 0.124 | 0.03 | 0.074 | 0.24 | – | exc 0.058 | | |
